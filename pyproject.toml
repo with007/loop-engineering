@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "loop-engineering"
+version = "0.1.0"
+description = "Agent 自主任务执行系统 - 可复用 CLI 工具"
+requires-python = ">=3.9"
+dependencies = [
+    "pyyaml>=6.0",
+    "jinja2>=3.0",
+]
+
+[project.optional-dependencies]
+ui = [
+    "fastapi>=0.100",
+    "uvicorn>=0.23",
+]
+
+[project.scripts]
+loop = "loop_engineering.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

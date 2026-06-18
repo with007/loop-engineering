@@ -1,0 +1,719 @@
+"""Loop Engineering 环境搭建.
+
+一键创建 Agent worktree、MCP 配置、PackageCache 共享、脚本部署。
+"""
+
+import os
+import sys
+import json
+import shutil
+import subprocess
+import platform
+from pathlib import Path
+
+from . import config as cfg
+
+
+def _run(cmd, cwd=None, check=False):
+    """运行 shell 命令."""
+    result = subprocess.run(
+        cmd, shell=True, capture_output=True, text=True, cwd=cwd, timeout=120
+    )
+    if check and result.returncode != 0:
+        raise RuntimeError(f"Command failed: {cmd}\n{result.stderr}")
+    return result.returncode, result.stdout.strip(), result.stderr.strip()
+
+
+def create_worktrees(config):
+    """创建 Agent worktree（含可选的 data repo）.
+
+    幂等：如果 worktree 已存在则跳过。
+    """
+    print("--- 创建 Agent Worktree ---")
+    project_root = config["project"]["root"]
+    agent_workspace = config["agent"]["workspace"]
+    project_name = config["project"]["name"]
+    agent_dir = os.path.join(agent_workspace, project_name)
+
+    # 确保 agent workspace 目录存在
+    os.makedirs(agent_workspace, exist_ok=True)
+
+    # 主工程 worktree
+    _create_single_worktree(project_root, agent_dir, "主工程")
+
+    # Data repo worktree（可选）
+    data_repo = config.get("data_repo", {}).get("path")
+    if data_repo:
+        data_name = os.path.basename(data_repo)
+        data_agent_dir = os.path.join(agent_workspace, data_name)
+        _create_single_worktree(data_repo, data_agent_dir, "配表/数据")
+    else:
+        print("  无 data_repo，跳过")
+
+
+def _create_single_worktree(source_repo, target_dir, label):
+    """创建单个 git worktree."""
+    if os.path.isdir(os.path.join(target_dir, ".git")):
+        print(f"  ✓ {label} worktree 已存在: {target_dir}")
+        # 同步
+        _run("git fetch origin --prune", cwd=target_dir)
+        return
+
+    print(f"  创建 {label} worktree ...")
+    _run("git fetch origin", cwd=source_repo)
+    code, stdout, stderr = _run(
+        f'git worktree add "{target_dir}" origin/master', cwd=source_repo
+    )
+    if code != 0:
+        # 清理可能存在的残留并重试
+        print(f"  警告: {stderr}")
+        _run(f'git worktree prune', cwd=source_repo)
+        # 如果目录存在但不是 worktree，先删除
+        if os.path.exists(target_dir) and not os.path.isdir(os.path.join(target_dir, ".git")):
+            shutil.rmtree(target_dir, ignore_errors=True)
+        _run(f'git worktree add "{target_dir}" origin/master', cwd=source_repo, check=True)
+    print(f"  ✓ {label} worktree 创建完成: {target_dir}")
+
+
+def generate_mcp_configs(config):
+    """生成主工程和 agent 的 MCP 配置文件.
+
+    - 主工程 .mcp.json → main.mcp_port
+    - Agent .mcp.json → agent.mcp_port
+    - Agent McpProjectConfig.json → agent.mcp_port
+    """
+    print("--- 生成 MCP 配置 ---")
+    project_root = config["project"]["root"]
+    project_name = config["project"]["name"]
+    agent_workspace = config["agent"]["workspace"]
+    agent_dir = os.path.join(agent_workspace, project_name)
+    main_port = config["main"]["mcp_port"]
+    agent_port = config["agent"]["mcp_port"]
+
+    # 主工程 .mcp.json
+    main_mcp = {
+        "mcpServers": {
+            "UnityMCP": {
+                "type": "http",
+                "url": f"http://127.0.0.1:{main_port}/mcp"
+            }
+        }
+    }
+    _write_json_if_changed(os.path.join(project_root, ".mcp.json"), main_mcp, "主工程 .mcp.json")
+    _ensure_gitignore(project_root, ".mcp.json")
+
+    # Agent .mcp.json
+    agent_mcp = {
+        "mcpServers": {
+            "UnityMCP": {
+                "type": "http",
+                "url": f"http://127.0.0.1:{agent_port}/mcp"
+            }
+        }
+    }
+    _write_json_if_changed(os.path.join(agent_dir, ".mcp.json"), agent_mcp, "Agent .mcp.json")
+    _ensure_gitignore(agent_dir, ".mcp.json")
+
+    # Agent McpProjectConfig.json (Unity 特定)
+    unity_project_dir = os.path.join(agent_dir, "ProjectSettings")
+    if os.path.isdir(unity_project_dir):
+        mcp_project_config = {
+            "projectName": project_name,
+            "httpBaseUrl": f"http://127.0.0.1:{agent_port}",
+            "httpRemoteBaseUrl": "",
+            "httpTransportScope": "local",
+            "unitySocketPort": 6401,
+        }
+        _write_json_if_changed(
+            os.path.join(unity_project_dir, "McpProjectConfig.json"),
+            mcp_project_config,
+            "Agent McpProjectConfig.json",
+        )
+    else:
+        print("  (非 Unity 工程，跳过 McpProjectConfig.json)")
+
+
+def _write_json_if_changed(path, data, label):
+    """写入 JSON 文件，如果内容相同则跳过."""
+    new_content = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            old_content = f.read()
+        if old_content.strip() == new_content.strip():
+            print(f"  ✓ {label} 已是最新，跳过")
+            return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(new_content)
+    print(f"  ✓ {label} 已生成")
+
+
+def _ensure_gitignore(project_dir, entry):
+    """确保 .gitignore 包含指定条目."""
+    gitignore = os.path.join(project_dir, ".gitignore")
+    if os.path.exists(gitignore):
+        with open(gitignore, "r", encoding="utf-8") as f:
+            content = f.read()
+        if entry in content.split("\n"):
+            return
+    with open(gitignore, "a", encoding="utf-8") as f:
+        f.write(f"\n{entry}\n")
+
+
+def share_package_cache(config):
+    """通过 mklink /J 共享 PackageCache 和 PackageManager (仅 Windows + Unity).
+
+    幂等：junction 已存在则跳过。
+    """
+    print("--- PackageCache 共享 ---")
+    if platform.system() != "Windows":
+        print("  非 Windows，跳过 PackageCache 共享（仅在 Windows 上使用 mklink /J）")
+        return
+
+    project_root = config["project"]["root"]
+    project_name = config["project"]["name"]
+    agent_workspace = config["agent"]["workspace"]
+    agent_dir = os.path.join(agent_workspace, project_name)
+
+    # 检查主工程是否有 PackageCache
+    main_library = os.path.join(project_root, "Library")
+    if not os.path.isdir(main_library):
+        print("  主工程 Library/ 不存在（非 Unity 工程？），跳过")
+        return
+
+    agent_library = os.path.join(agent_dir, "Library")
+    os.makedirs(agent_library, exist_ok=True)
+
+    for folder in ["PackageCache", "PackageManager"]:
+        main_path = os.path.join(main_library, folder)
+        agent_path = os.path.join(agent_library, folder)
+
+        if not os.path.isdir(main_path):
+            print(f"  主工程 Library/{folder}/ 不存在，跳过")
+            continue
+
+        # 检查是否已是 junction
+        if os.path.isdir(agent_path):
+            # 用 dir 检查是否是 junction
+            code, stdout, _ = _run(f'cmd.exe /c "dir /AL {agent_path}"')
+            if "JUNCTION" in stdout:
+                print(f"  ✓ Library/{folder} junction 已存在，跳过")
+                continue
+            else:
+                print(f"  警告: Library/{folder} 是普通目录，将删除后创建 junction")
+                shutil.rmtree(agent_path)
+
+        cmd = f'cmd.exe /c "mklink /J {agent_path} {main_path}"'
+        code, stdout, stderr = _run(cmd)
+        if code == 0:
+            print(f"  ✓ Library/{folder} junction 已创建")
+        else:
+            print(f"  ✗ Library/{folder} junction 创建失败: {stderr}")
+
+
+def deploy_scripts(config):
+    """复制环境脚本到 .claude/scripts/.
+
+    幂等：文件已存在且内容相同时跳过。
+    """
+    print("--- 部署环境脚本 ---")
+    project_root = config["project"]["root"]
+    target_dir = os.path.join(project_root, ".claude", "scripts")
+    os.makedirs(target_dir, exist_ok=True)
+
+    # 源目录：loop-engineering 包中的 templates/scripts/
+    pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src_dir = os.path.join(os.path.dirname(pkg_dir), "templates", "scripts")
+
+    if not os.path.isdir(src_dir):
+        print(f"  警告: 模板脚本目录不存在: {src_dir}")
+        print(f"  (预期在 loop-engineering/templates/scripts/)")
+        return
+
+    deployed = 0
+    for fname in os.listdir(src_dir):
+        src = os.path.join(src_dir, fname)
+        dst = os.path.join(target_dir, fname)
+        if not os.path.isfile(src):
+            continue
+        if os.path.exists(dst):
+            with open(src, "rb") as fs:
+                src_content = fs.read()
+            with open(dst, "rb") as fd:
+                dst_content = fd.read()
+            if src_content == dst_content:
+                print(f"  ✓ {fname} 已是最新，跳过")
+                continue
+        shutil.copy2(src, dst)
+        print(f"  ✓ {fname} 已部署")
+        deployed += 1
+
+    if deployed == 0:
+        print("  所有脚本已是最新")
+    else:
+        print(f"  共部署 {deployed} 个脚本")
+
+
+def render_skill_md(config):
+    """从 Jinja2 模板渲染 SKILL.md."""
+    print("--- 渲染 SKILL.md ---")
+    from jinja2 import Environment, BaseLoader
+
+    # 模板内联（避免额外的模板文件依赖问题）
+    template_str = SKILL_MD_TEMPLATE
+    env = Environment(loader=BaseLoader())
+    template = env.from_string(template_str)
+
+    # 构建模板变量
+    project_name = config["project"]["name"]
+    project_root = config["project"]["root"]
+    agent_workspace = config["agent"]["workspace"]
+    agent_dir = os.path.join(agent_workspace, project_name)
+    agent_port = config["agent"]["mcp_port"]
+
+    data_repo = config.get("data_repo", {})
+    data_repo_path = data_repo.get("path", "")
+    data_repo_name = os.path.basename(data_repo_path) if data_repo_path else ""
+
+    rendered = template.render(
+        project_name=project_name,
+        project_root=project_root,
+        agent_workspace=agent_workspace,
+        agent_dir=agent_dir,
+        agent_port=agent_port,
+        data_repo_path=data_repo_path,
+        data_repo_name=data_repo_name,
+        has_data_repo=bool(data_repo_path),
+    )
+
+    target_dir = os.path.join(project_root, ".claude", "skills", "task-runner")
+    os.makedirs(target_dir, exist_ok=True)
+    target_path = os.path.join(target_dir, "SKILL.md")
+
+    with open(target_path, "w", encoding="utf-8") as f:
+        f.write(rendered)
+    print(f"  ✓ SKILL.md 已生成: {target_path}")
+
+
+def register_protocol(config):
+    """注册 taskrunner:// 协议（仅 Windows）."""
+    print("--- 注册通知协议 ---")
+    if platform.system() != "Windows":
+        print("  非 Windows，跳过协议注册")
+        return
+
+    project_root = config["project"]["root"]
+    ps1_path = os.path.join(project_root, ".claude", "scripts", "register-protocol.ps1")
+
+    if not os.path.exists(ps1_path):
+        print(f"  警告: {ps1_path} 不存在，跳过")
+        return
+
+    code, stdout, stderr = _run(f'powershell -ExecutionPolicy Bypass -File "{ps1_path}"')
+    if code == 0:
+        print(f"  ✓ taskrunner:// 协议已注册")
+    else:
+        print(f"  ✗ 协议注册失败: {stderr}")
+
+
+def run_setup(config, force=False):
+    """执行完整 setup 流程.
+
+    按顺序执行所有步骤，每步前显示进度。
+    """
+    print("=" * 50)
+    print(f"Loop Engineering Setup - {config['project']['name']}")
+    print("=" * 50)
+    print()
+
+    steps = [
+        ("创建 Agent Worktree", lambda: create_worktrees(config)),
+        ("生成 MCP 配置", lambda: generate_mcp_configs(config)),
+        ("PackageCache 共享", lambda: share_package_cache(config)),
+        ("部署环境脚本", lambda: deploy_scripts(config)),
+        ("渲染 SKILL.md", lambda: render_skill_md(config)),
+        ("注册通知协议", lambda: register_protocol(config)),
+    ]
+
+    for i, (label, fn) in enumerate(steps, 1):
+        print(f"\n[{i}/{len(steps)}] {label}")
+        try:
+            fn()
+        except Exception as e:
+            print(f"  ✗ 失败: {e}")
+            if not force:
+                raise
+
+    # 写入配置文件
+    # 从 config 中移除内部字段（_detected）
+    clean_config = {k: v for k, v in config.items() if not k.startswith("_")}
+    config_path = cfg.write_config(config["project"]["root"], clean_config)
+
+    print()
+    print("=" * 50)
+    print("✓ Setup 完成！")
+    print()
+    print("接下来:")
+    agent_dir = os.path.join(config["agent"]["workspace"], config["project"]["name"])
+    print(f"  1. 在 Unity Hub 打开 {agent_dir}")
+    print(f"  2. 在 Claude Code 中运行 /runloop")
+    if not config.get("data_repo"):
+        print(f"  (未配置 data_repo，配表/数据相关任务可能无法执行)")
+
+
+# ── SKILL.md 模板 ─────────────────────────────────────────────
+
+SKILL_MD_TEMPLATE = """---
+name: task-runner
+description: >
+  通用任务执行器。每轮取一个分配给当前用户的待办，进入 agent worktree 独立分支，
+  派发实现/验证子代理，推送后等人合入。实现者不能自己验收，Agent 不能自己合入 master。
+user_invocable: true
+---
+
+# Task Runner（任务执行器）
+
+你是任务编排 Agent。每轮取一个**分配给你**的待办 → 进入 agent worktree → fork 分支 → 派子代理实现和验证 → 推分支 → 弹通知等人合入。不亲自写代码，不合入 master。
+
+## 关键路径
+
+| 项目 | 路径 |
+|------|------|
+| 主工作树 | `{{ project_root }}` |
+| **Agent 工作树** | `{{ agent_dir }}` |
+{% if has_data_repo %}
+| Agent 数据工作树 | `{{ agent_workspace }}/{{ data_repo_name }}` |
+{% endif %}
+| Agent MCP 端口 | HTTP `{{ agent_port }}` |
+
+子代理在 agent worktree 上下文中运行，自动通过 `.mcp.json` 连接 agent Unity MCP（{{ agent_port }}），与主工程（8080）隔离。
+
+## 原则
+
+- **谁的任务谁做** — 只做 `tasks.md` 中标记 `(→ 你的名字)` 的任务
+- **实现者不能给自己验收** — verifier 是独立子代理
+- **Agent 不能自己合入 master** — 推送后等人审查
+- **每个任务从 master fork** — 分支 `agent/[用户名]/[任务ID]`，从最新 origin/master 创建
+
+## ⚠️ 关键禁令
+
+- **禁止 `git checkout master`** — agent worktree 永远不能 checkout master（master 被主 worktree 占用）。只用 `origin/master` 远程引用。
+- **同步用 `git fetch origin && git reset --hard origin/master`**（detached HEAD），或用 `git checkout -B agent/xxx origin/master`（fork 分支）。
+
+## 每轮执行流程
+
+### Step 0: 确认身份 + 判断上下文
+
+```bash
+whoami = git config user.name    # 如 "withg"
+```
+
+**0a. 判断启动位置**：
+
+```bash
+if echo "$(pwd)" | grep -q "{{ project_name | lower }}-agent"; then
+  echo "MODE=AGENT"
+else
+  echo "MODE=MAIN"
+fi
+```
+
+| 输出 | 模式 | 处理方式 |
+|------|------|----------|
+| `MODE=AGENT` | **Agent 模式**（最常见） | 已在 agent worktree，直接同步+执行。**禁止 `git checkout master`** |
+| `MODE=MAIN` | **主工程模式** | 需要 EnterWorktree 进入 agent worktree |
+
+---
+
+### Agent 模式（已在 agent worktree）
+
+**同步 + 清理**：
+
+```bash
+git fetch origin --prune
+# 如果当前在某个 agent 分支上，先 detach
+git checkout --detach origin/master 2>/dev/null
+# 删掉已推送的旧本地分支
+git branch --list "agent/*" | xargs -r git branch -D 2>/dev/null
+```
+
+**检查已合入的远程分支**：
+
+```bash
+python -m loop_engineering.scripts.task_cleanup $whoami
+```
+
+然后直接进入 Step 1 选任务。子代理自动继承当前 worktree 上下文 + agent MCP。
+
+**完成后**：保持当前状态即可，不需要 ExitWorktree。
+
+---
+
+### 主工程模式（在主 worktree 被调用）
+
+**0b. 确保 agent worktree 存在**（首次或手动清理后重建）：
+
+```bash
+ls {{ agent_dir }}/.git 2>/dev/null || {
+  mkdir -p {{ agent_workspace }}
+  cd {{ project_root }}
+  git fetch origin
+  git worktree prune
+  git worktree add {{ agent_dir }} origin/master
+}
+{% if has_data_repo %}
+ls {{ agent_workspace }}/{{ data_repo_name }}/.git 2>/dev/null || {
+  cd {{ data_repo_path }}
+  git fetch origin
+  git worktree prune
+  git worktree add {{ agent_workspace }}/{{ data_repo_name }} origin/master
+}
+{% endif %}
+```
+
+**0c. 同步 agent worktree**：
+
+```bash
+cd {{ agent_dir }}
+git fetch origin --prune
+git checkout --detach origin/master 2>/dev/null
+git branch --list "agent/*" | xargs -r git branch -D 2>/dev/null
+```
+
+**0d. 检查已合入的远程分支**：
+
+```bash
+python -m loop_engineering.scripts.task_cleanup $whoami
+```
+
+**0e. 进入 agent worktree**：
+
+调用 `EnterWorktree(path="{{ agent_dir }}")`。
+
+此后会话切换到 agent worktree，`.mcp.json` → MCP {{ agent_port }}。子代理自动继承。
+
+> **注意**：Step 6 完成后必须 `ExitWorktree(action="keep")` 回到主 worktree。
+
+### Step 1: 选任务
+
+```bash
+python -m loop_engineering.scripts.task_pick $whoami
+```
+- 输出格式: `taskID=xxx desc=... openSpec=true|false`
+- `openSpec=true` → 任务关联 `openspec/changes/<taskID>/`，implementer 按 OpenSpec apply 流程处理
+- 无匹配则 `NONE` → `ExitWorktree(action="keep")` → 停止。
+
+### Step 2: Fork 分支 + 标记进行中
+
+```bash
+# 从最新 origin/master 创建分支（覆盖已存在的同名分支）
+git checkout -B agent/$whoami/[任务ID] origin/master
+
+# 本地 tasks.md 标记进行中（不提交，只给人看）
+# [ ] M6 (→ withg)  改为  [~] M6 (→ withg)
+```
+
+### Step 3: 派发实现子代理
+
+用 `Agent` 工具。子代理**自动继承**当前 worktree 上下文和 agent MCP。
+
+**openSpec=true** 时：
+
+```
+## 任务（OpenSpec）
+taskID: <taskID>
+OpenSpec 路径: openspec/changes/<taskID>/
+
+## 你的工作
+1. 读 openspec/changes/<taskID>/proposal.md 理解目标与范围
+2. 读 openspec/changes/<taskID>/design.md 理解架构决策
+3. 读 openspec/changes/<taskID>/tasks.md 获取子任务列表
+4. 读 openspec/changes/<taskID>/specs/ 下各 spec 获取详细规格
+5. 按 openspec-apply-change 流程逐子任务实现
+6. 每个子任务完成后标记 openspec/changes/<taskID>/tasks.md 中的 [ ] → [x]
+7. 全部完成后输出变更概要
+
+## 分支
+agent/<whoami>/<taskID>
+
+## 规范
+遵循 CLAUDE.md，只改必要文件，修改后 refresh_unity + read_console 确认 0 errors。
+
+## 自主运行
+你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行、输出结果。你是一个纯函数——输入任务，输出结果。如果失败，输出 FAIL + 原因；如果成功，输出 PASS + 变更概要。绝不输出问句。
+
+## 输出
+完成后输出"变更概要"：改了哪些文件、每个文件改了什么、影响哪些运行时行为。
+```
+
+**openSpec=false** 时：
+
+```
+## 任务
+<描述 + 验收条件，来自 tasks.md>
+
+## 分支
+agent/<whoami>/<taskID>
+
+## 规范
+遵循 CLAUDE.md，只改必要文件，修改后 refresh_unity + read_console 确认 0 errors。
+
+## 自主运行
+你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行、输出结果。你是一个纯函数——输入任务，输出结果。如果失败，输出 FAIL + 原因；如果成功，输出 PASS + 变更概要。绝不输出问句。
+
+## 输出
+完成代码后，输出一段"变更概要"：改了哪些文件、每个文件改了什么、影响哪些运行时行为。
+```
+
+### Step 4: 派发验证子代理
+
+用 `Agent` 工具，独立上下文，只能验证不能改代码。同样继承 worktree 上下文。
+
+**openSpec=true** 时：
+
+```
+## 任务（OpenSpec）
+taskID: <taskID>
+OpenSpec 路径: openspec/changes/<taskID>/
+
+## 变更
+分支: agent/<whoami>/<taskID>
+<implementer 输出的变更概要>
+
+## 你的工作（只能验证，不能改代码）
+1. 读 openspec/changes/<taskID>/proposal.md 确认目标
+2. 读 openspec/changes/<taskID>/tasks.md 确认全部子任务 [x]
+3. refresh_unity + read_console → 0 errors
+4. 读完整 diff，分析每个变更对应的运行时行为
+5. 为每个行为设计 Lua 测试代码，遵循 [AUTO TEST: 名] PASS/FAIL 标记约定
+6. 用 register_lua_test 注册，接入 config.json + 入口 requireLua，调用 runtime-test skill 执行
+7. 输出：PASS 或 FAIL + 原因（每个测试点单独标注）
+
+## 自主运行
+你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行。你是一个纯函数——输入任务，输出验证结果（PASS/FAIL + 原因）。绝不输出问句。
+
+## retry 上下文（第 2、3 次验证时有）
+上次 FAIL:
+  - 测试点 A: <原因>
+  - 测试点 B: <原因>
+implementer 修复说明: <...>
+请重点验证上述失败测试点，已通过的可以跳过。
+```
+
+**openSpec=false** 时：
+
+```
+## 任务
+<描述 + 验收条件，来自 tasks.md>
+
+## 变更
+分支: agent/<whoami>/<taskID>
+
+## 你的工作（只能验证，不能改代码）
+1. refresh_unity + read_console → 0 errors
+2. 读完整 diff，分析每个变更对应的运行时行为
+3. 为每个行为设计 Lua 测试代码，遵循 [AUTO TEST: 名] PASS/FAIL 标记约定
+4. 用 register_lua_test 注册，接入 config.json + 入口 requireLua，调用 runtime-test skill 执行
+5. 输出：PASS 或 FAIL + 原因（每个测试点单独标注）
+
+## 自主运行
+你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行。你是一个纯函数——输入任务，输出验证结果（PASS/FAIL + 原因）。绝不输出问句。
+
+## retry 上下文（第 2、3 次验证时有）
+上次 FAIL:
+  - 测试点 A: <原因>
+  - 测试点 B: <原因>
+implementer 修复说明: <...>
+请重点验证上述失败测试点，已通过的可以跳过。
+```
+
+### Step 5: 结果处理
+
+**PASS**:
+1. 检查 `git status`，确认改动文件合理
+2. 运行收尾脚本（更新 tasks.md: [~]→[x]、生成 diff、弹通知）：
+   ```bash
+   python -m loop_engineering.scripts.task_done $whoami [任务ID] [IMP序号] [VFY轮数]
+   ```
+3. 提交并推送：
+   ```bash
+   git add <改动的源文件> tasks.md
+   git commit -m "[任务ID] 完成"
+   git push origin agent/$whoami/[任务ID]
+   ```
+4. 清理本地分支：
+   ```bash
+   git checkout --detach origin/master
+   git branch -D agent/$whoami/[任务ID]
+   ```
+
+**FAIL**:
+```
+记录 FAIL 数 → SendMessage 当前 implementer（≤5次，每次携带 FAIL 测试点）
+    ├─ FAIL 数收敛（↓）→ 继续
+    └─ 5 次不收敛 → 新起 implementer（新鲜上下文，携带全部 FAIL 历史）
+                        ├─ 最多 3 个 implementer
+                        │   ├─ 收敛 → 继续
+                        │   └─ 不收敛 → 下一个
+                        └─ 3 个都不收敛 → 交给人
+```
+
+**交人时**:
+- tasks.md 行尾记录 `IMPx(未收敛)`
+- 弹通知：
+  ```bash
+  python .claude/scripts/notify.py "[任务ID] 需人工介入" "FAIL 数不收敛 IMP1-3"
+  ```
+- 清理本地分支 → `git checkout --detach origin/master && git branch -D agent/$whoami/[任务ID]`
+
+### Step 6: 收尾
+
+| 模式 | 收尾操作 |
+|------|----------|
+| **Agent 模式** | 无需操作。agent worktree 保持在 detached HEAD，下次复用 |
+| **主工程模式** | `ExitWorktree(action="keep")` 回到主 worktree |
+
+等待人审查合入。合入后下轮 Step 0 的 `task_cleanup.py` 自动删远程分支。
+
+## Agent Worktree 维护
+
+### 初始创建（一次性）
+
+由 Step 0a 自动处理。
+
+### PackageCache 共享（节省 1.1GB）
+
+```bash
+# 首次创建 worktree 后执行一次
+mkdir -p {{ agent_dir }}/Library
+cmd.exe /c "mklink /J {{ agent_dir }}\\Library\\PackageCache {{ project_root }}\\Library\\PackageCache"
+```
+
+### 手动清理
+
+```bash
+cd {{ project_root }}
+git worktree remove --force {{ agent_dir }}
+git worktree prune
+```
+
+## 验收门控
+
+| 门控 | C# | Lua |
+|------|-----|-----|
+| 编译 | `read_console` 0 errors | N/A |
+| 运行时 | 变更驱动的行为验证 | 变更驱动的行为验证 |
+| 合入 | **人审查 + 人 merge** | **人审查 + 人 merge** |
+
+## 交给人
+
+FAIL 数不收敛（3 个 implementer 都不收敛）/ 架构变更 / 需改配表 / 任务不清 / >5 文件跨模块
+
+## 输出
+
+```markdown
+## [任务ID] 等待合入
+**分支**: agent/$whoami/[任务ID] | **编译**: pass | **运行时**: pass
+**审查**: git fetch && git diff origin/master...origin/agent/$whoami/[任务ID]
+```
+"""

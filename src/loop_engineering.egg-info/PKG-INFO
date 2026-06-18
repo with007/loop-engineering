@@ -1,0 +1,10 @@
+Metadata-Version: 2.4
+Name: loop-engineering
+Version: 0.1.0
+Summary: Agent 自主任务执行系统 - 可复用 CLI 工具
+Requires-Python: >=3.9
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: jinja2>=3.0
+Provides-Extra: ui
+Requires-Dist: fastapi>=0.100; extra == "ui"
+Requires-Dist: uvicorn>=0.23; extra == "ui"
