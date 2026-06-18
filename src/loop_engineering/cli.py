@@ -43,6 +43,9 @@ def main():
     setup_parser.add_argument(
         "--force", action="store_true", help="忽略非致命错误继续执行"
     )
+    setup_parser.add_argument(
+        "-y", "--yes", action="store_true", help="跳过确认提示，直接执行"
+    )
 
     # loop init
     subparsers.add_parser("init", help="交互式向导模式")
@@ -93,11 +96,12 @@ def _cmd_setup(args):
     _print_summary(config)
 
     # 确认
-    print()
-    response = input("确认执行? [Y/n]: ").strip().lower()
-    if response and response not in ("y", "yes", ""):
-        print("已取消")
-        sys.exit(0)
+    if not args.yes:
+        print()
+        response = input("确认执行? [Y/n]: ").strip().lower()
+        if response and response not in ("y", "yes", ""):
+            print("已取消")
+            sys.exit(0)
 
     # 执行
     setup.run_setup(config, force=args.force)

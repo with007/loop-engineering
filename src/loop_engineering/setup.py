@@ -53,8 +53,9 @@ def create_worktrees(config):
 
 def _create_single_worktree(source_repo, target_dir, label):
     """创建单个 git worktree."""
-    if os.path.isdir(os.path.join(target_dir, ".git")):
-        print(f"  ✓ {label} worktree 已存在: {target_dir}")
+    # git worktree 中 .git 是文件（不是目录）
+    if os.path.exists(os.path.join(target_dir, ".git")):
+        print(f"  [OK] {label} worktree 已存在: {target_dir}")
         # 同步
         _run("git fetch origin --prune", cwd=target_dir)
         return
@@ -65,14 +66,20 @@ def _create_single_worktree(source_repo, target_dir, label):
         f'git worktree add "{target_dir}" origin/master', cwd=source_repo
     )
     if code != 0:
-        # 清理可能存在的残留并重试
-        print(f"  警告: {stderr}")
-        _run(f'git worktree prune', cwd=source_repo)
-        # 如果目录存在但不是 worktree，先删除
-        if os.path.exists(target_dir) and not os.path.isdir(os.path.join(target_dir, ".git")):
-            shutil.rmtree(target_dir, ignore_errors=True)
+        # first attempt failed — clean up and retry
+        print(f"  retrying: {stderr.strip()[:120]}")
+        # clean git worktree metadata
+        _run("git worktree prune", cwd=source_repo)
+        # try to remove orphan directory
+        if os.path.exists(target_dir) and not os.path.exists(os.path.join(target_dir, ".git")):
+            try:
+                shutil.rmtree(target_dir, ignore_errors=True)
+            except Exception:
+                pass  # may be locked by another process
+        # also try git's own remove
+        _run(f'git worktree remove --force "{target_dir}"', cwd=source_repo)
         _run(f'git worktree add "{target_dir}" origin/master', cwd=source_repo, check=True)
-    print(f"  ✓ {label} worktree 创建完成: {target_dir}")
+    print(f"  [OK] {label} worktree 创建完成: {target_dir}")
 
 
 def generate_mcp_configs(config):
@@ -140,12 +147,12 @@ def _write_json_if_changed(path, data, label):
         with open(path, "r", encoding="utf-8") as f:
             old_content = f.read()
         if old_content.strip() == new_content.strip():
-            print(f"  ✓ {label} 已是最新，跳过")
+            print(f"  [OK] {label} 已是最新，跳过")
             return
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(new_content)
-    print(f"  ✓ {label} 已生成")
+    print(f"  [OK] {label} 已生成")
 
 
 def _ensure_gitignore(project_dir, entry):
@@ -197,18 +204,18 @@ def share_package_cache(config):
             # 用 dir 检查是否是 junction
             code, stdout, _ = _run(f'cmd.exe /c "dir /AL {agent_path}"')
             if "JUNCTION" in stdout:
-                print(f"  ✓ Library/{folder} junction 已存在，跳过")
+                print(f"  [OK] Library/{folder} junction 已存在，跳过")
                 continue
             else:
-                print(f"  警告: Library/{folder} 是普通目录，将删除后创建 junction")
+                print(f"  WARNING:: Library/{folder} 是普通目录，将删除后创建 junction")
                 shutil.rmtree(agent_path)
 
         cmd = f'cmd.exe /c "mklink /J {agent_path} {main_path}"'
         code, stdout, stderr = _run(cmd)
         if code == 0:
-            print(f"  ✓ Library/{folder} junction 已创建")
+            print(f"  [OK] Library/{folder} junction 已创建")
         else:
-            print(f"  ✗ Library/{folder} junction 创建失败: {stderr}")
+            print(f"  [FAIL] Library/{folder} junction 创建失败: {stderr}")
 
 
 def deploy_scripts(config):
@@ -226,7 +233,7 @@ def deploy_scripts(config):
     src_dir = os.path.join(os.path.dirname(pkg_dir), "templates", "scripts")
 
     if not os.path.isdir(src_dir):
-        print(f"  警告: 模板脚本目录不存在: {src_dir}")
+        print(f"  WARNING:: 模板脚本目录不存在: {src_dir}")
         print(f"  (预期在 loop-engineering/templates/scripts/)")
         return
 
@@ -242,10 +249,10 @@ def deploy_scripts(config):
             with open(dst, "rb") as fd:
                 dst_content = fd.read()
             if src_content == dst_content:
-                print(f"  ✓ {fname} 已是最新，跳过")
+                print(f"  [OK] {fname} 已是最新，跳过")
                 continue
         shutil.copy2(src, dst)
-        print(f"  ✓ {fname} 已部署")
+        print(f"  [OK] {fname} 已部署")
         deployed += 1
 
     if deployed == 0:
@@ -292,7 +299,7 @@ def render_skill_md(config):
 
     with open(target_path, "w", encoding="utf-8") as f:
         f.write(rendered)
-    print(f"  ✓ SKILL.md 已生成: {target_path}")
+    print(f"  [OK] SKILL.md 已生成: {target_path}")
 
 
 def register_protocol(config):
@@ -306,14 +313,14 @@ def register_protocol(config):
     ps1_path = os.path.join(project_root, ".claude", "scripts", "register-protocol.ps1")
 
     if not os.path.exists(ps1_path):
-        print(f"  警告: {ps1_path} 不存在，跳过")
+        print(f"  WARNING:: {ps1_path} 不存在，跳过")
         return
 
     code, stdout, stderr = _run(f'powershell -ExecutionPolicy Bypass -File "{ps1_path}"')
     if code == 0:
-        print(f"  ✓ taskrunner:// 协议已注册")
+        print(f"  [OK] taskrunner:// 协议已注册")
     else:
-        print(f"  ✗ 协议注册失败: {stderr}")
+        print(f"  [FAIL] 协议注册失败: {stderr}")
 
 
 def run_setup(config, force=False):
@@ -340,7 +347,9 @@ def run_setup(config, force=False):
         try:
             fn()
         except Exception as e:
-            print(f"  ✗ 失败: {e}")
+            # avoid UnicodeEncodeError on Windows GBK terminal
+            msg = str(e).encode('ascii', errors='replace').decode('ascii')
+            print(f"  [FAIL] {msg}")
             if not force:
                 raise
 
@@ -351,7 +360,7 @@ def run_setup(config, force=False):
 
     print()
     print("=" * 50)
-    print("✓ Setup 完成！")
+    print("[OK] Setup 完成！")
     print()
     print("接下来:")
     agent_dir = os.path.join(config["agent"]["workspace"], config["project"]["name"])
@@ -395,7 +404,7 @@ user_invocable: true
 - **Agent 不能自己合入 master** — 推送后等人审查
 - **每个任务从 master fork** — 分支 `agent/[用户名]/[任务ID]`，从最新 origin/master 创建
 
-## ⚠️ 关键禁令
+## [WARNING] 关键禁令
 
 - **禁止 `git checkout master`** — agent worktree 永远不能 checkout master（master 被主 worktree 占用）。只用 `origin/master` 远程引用。
 - **同步用 `git fetch origin && git reset --hard origin/master`**（detached HEAD），或用 `git checkout -B agent/xxx origin/master`（fork 分支）。
