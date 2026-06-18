@@ -1,0 +1,52 @@
+<div hx-get="/control" hx-trigger="every 10s" hx-swap="outerHTML">
+    <h2>Control</h2>
+
+    <div class="card">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+            <span class="status-dot {% if status.paused %}status-paused{% else %}status-idle{% endif %}"></span>
+            <strong>Status: {{ 'Paused' if status.paused else 'Active' }}</strong>
+            <span style="color: #64748b;">Throttle: {{ status.throttle }}</span>
+        </div>
+
+        <div class="controls">
+            {% if status.paused %}
+            <button class="btn btn-success"
+                    hx-delete="/api/control/pause"
+                    hx-target="closest div[hx-get]"
+                    hx-swap="outerHTML">Resume</button>
+            {% else %}
+            <button class="btn btn-warn"
+                    style="background: #f59e0b; color: #000;"
+                    hx-post="/api/control/pause"
+                    hx-target="closest div[hx-get]"
+                    hx-swap="outerHTML">Pause</button>
+            {% endif %}
+
+            <button class="btn btn-primary"
+                    hx-post="/api/control/next"
+                    hx-target="closest div[hx-get]"
+                    hx-swap="outerHTML">Run Next</button>
+
+            <div class="form-group" style="width: 100px; margin: 0;">
+                <input type="text" id="throttle-input" value="{{ status.throttle }}"
+                       style="background:#0f172a; color:#e2e8f0; border:1px solid #334155;
+                              padding:6px 10px; border-radius:6px; width:100%;">
+            </div>
+            <button class="btn btn-sm btn-primary"
+                    onclick="set_throttle()">Set</button>
+        </div>
+    </div>
+
+    <script>
+        function set_throttle() {
+            var val = document.getElementById('throttle-input').value;
+            fetch('/api/control/throttle', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({interval: val})
+            }).then(function() {
+                htmx.trigger(document.querySelector('[hx-get="/control"]'), 'htmx:trigger');
+            });
+        }
+    </script>
+</div>

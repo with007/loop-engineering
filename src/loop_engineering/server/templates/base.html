@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loop Engineering Dashboard</title>
+    <script src="https://unpkg.com/htmx.org@1.9"></script>
+    <script defer src="https://unpkg.com/alpinejs@3"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+        nav { display: flex; gap: 16px; padding: 16px 0; border-bottom: 1px solid #1e293b; margin-bottom: 24px; }
+        nav a { color: #94a3b8; text-decoration: none; padding: 8px 16px; border-radius: 6px; }
+        nav a:hover, nav a.active { background: #1e293b; color: #e2e8f0; }
+        h1 { font-size: 24px; margin-bottom: 16px; }
+        h2 { font-size: 18px; margin-bottom: 12px; }
+        .card { background: #1e293b; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+        .badge-pass { background: #166534; color: #4ade80; }
+        .badge-fail { background: #7f1d1d; color: #f87171; }
+        .badge-pending { background: #1e3a5f; color: #60a5fa; }
+        .badge-warn { background: #713f12; color: #fbbf24; }
+        .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
+        .btn-primary { background: #2563eb; color: white; }
+        .btn-danger { background: #dc2626; color: white; }
+        .btn-success { background: #16a34a; color: white; }
+        .btn-sm { padding: 4px 10px; font-size: 12px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #1e293b; }
+        th { color: #94a3b8; font-weight: 500; font-size: 13px; }
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; margin-bottom: 4px; color: #94a3b8; font-size: 13px; }
+        .form-group input, .form-group select { width: 100%; padding: 8px 12px; border: 1px solid #334155; border-radius: 6px; background: #0f172a; color: #e2e8f0; }
+        .controls { display: flex; gap: 12px; align-items: center; padding: 12px 0; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .status-running { background: #4ade80; }
+        .status-paused { background: #fbbf24; }
+        .status-idle { background: #94a3b8; }
+        .inline-form { display: flex; gap: 8px; align-items: flex-end; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .runs-list { max-height: 600px; overflow-y: auto; }
+        .run-item { cursor: pointer; }
+        .run-detail { display: none; padding: 12px; background: #0f172a; border-radius: 4px; margin-top: 4px; }
+        .run-detail.open { display: block; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Loop Engineering</h1>
+        <nav>
+            <a href="/" hx-get="/" hx-target="#content" hx-push-url="true" class="active">Projects</a>
+            <a href="/tasks" hx-get="/tasks" hx-target="#content" hx-push-url="true">Tasks</a>
+            <a href="/runs" hx-get="/runs" hx-target="#content" hx-push-url="true">Runs</a>
+            <a href="/branches" hx-get="/branches" hx-target="#content" hx-push-url="true">Branches</a>
+            <a href="/control" hx-get="/control" hx-target="#content" hx-push-url="true">Control</a>
+        </nav>
+        <div id="content">
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+</body>
+</html>

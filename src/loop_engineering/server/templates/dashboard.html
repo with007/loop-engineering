@@ -1,0 +1,27 @@
+<div>
+    <h2>Projects</h2>
+    <div class="grid" hx-get="/" hx-trigger="every 30s" hx-swap="outerHTML">
+        {% for proj in projects %}
+        <div class="card">
+            <h3>{{ proj.name }}</h3>
+            <div style="margin: 8px 0;">
+                <span class="badge badge-pending">{{ proj.tasks.pending }} pending</span>
+                <span class="badge badge-warn">{{ proj.tasks.in_progress }} active</span>
+                <span class="badge badge-pass">{{ proj.tasks.done }} done</span>
+            </div>
+            <div>PASS rate (7d):
+                <strong>{{ proj.pass_rate.rate }}%</strong>
+                ({{ proj.pass_rate.passed }}/{{ proj.pass_rate.total }})
+            </div>
+            <div style="margin-top: 4px; color: #94a3b8;">
+                {{ proj.unmerged_branches }} unmerged branches
+            </div>
+        </div>
+        {% endfor %}
+        {% if not projects %}
+        <div class="card">
+            <p>No projects found. Run <code>loop setup</code> in a project directory.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>

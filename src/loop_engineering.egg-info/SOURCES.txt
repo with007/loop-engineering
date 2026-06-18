@@ -3,7 +3,11 @@ pyproject.toml
 src/loop_engineering/__init__.py
 src/loop_engineering/cli.py
 src/loop_engineering/config.py
+src/loop_engineering/control.py
+src/loop_engineering/presets.py
+src/loop_engineering/runlog.py
 src/loop_engineering/setup.py
+src/loop_engineering/verify.py
 src/loop_engineering.egg-info/PKG-INFO
 src/loop_engineering.egg-info/SOURCES.txt
 src/loop_engineering.egg-info/dependency_links.txt
@@ -15,4 +19,10 @@ src/loop_engineering/scripts/task_cleanup.py
 src/loop_engineering/scripts/task_done.py
 src/loop_engineering/scripts/task_pick.py
 src/loop_engineering/server/__init__.py
+src/loop_engineering/server/app.py
 src/loop_engineering/server/api/__init__.py
+src/loop_engineering/server/api/branches.py
+src/loop_engineering/server/api/control.py
+src/loop_engineering/server/api/projects.py
+src/loop_engineering/server/api/runs.py
+src/loop_engineering/server/api/tasks.py

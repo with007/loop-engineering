@@ -1,0 +1,64 @@
+<div hx-get="/runs" hx-trigger="every 30s" hx-swap="outerHTML">
+    <h2>Run History</h2>
+
+    <div class="controls">
+        <span>PASS rate (7d): <strong>{{ pass_rate.rate }}%</strong>
+              ({{ pass_rate.passed }}/{{ pass_rate.total }})</span>
+        <select hx-get="/runs" hx-target="closest div" hx-include="this" name="whoami"
+                hx-swap="outerHTML" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:4px 8px;border-radius:4px;">
+            <option value="">All agents</option>
+            {% for a in agents %}
+            <option value="{{ a }}" {% if filter_whoami == a %}selected{% endif %}>{{ a }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="runs-list">
+        {% for r in runs %}
+        <div class="card run-item" style="padding: 12px; cursor: pointer;"
+             x-data="{ open: false }">
+            <div @click="open = !open" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    {% if r.result == 'PASS' %}
+                    <span class="badge badge-pass">PASS</span>
+                    {% elif r.result == 'FAIL' %}
+                    <span class="badge badge-fail">FAIL</span>
+                    {% else %}
+                    <span class="badge badge-warn">{{ r.result }}</span>
+                    {% endif %}
+                    <strong>{{ r.task_id }}</strong>
+                    <span style="color: #94a3b8; font-size: 12px;">IMP{{ r.imp_round }}/VFY{{ r.vfy_round }}</span>
+                </div>
+                <div style="color: #64748b; font-size: 12px;">
+                    {{ r.whoami }} · {{ r.completed[:16] }}
+                </div>
+            </div>
+            <div class="run-detail" :class="{ open: open }" style="margin-top: 8px;">
+                <p>{{ r.task_desc }}</p>
+                {% if r.summary %}
+                <p style="color: #94a3b8; margin-top: 4px;">{{ r.summary }}</p>
+                {% endif %}
+                {% if r.tests %}
+                <div style="margin-top: 8px;">
+                    {% for t in r.tests %}
+                    <div>
+                        <span class="badge {% if t.result == 'PASS' %}badge-pass{% else %}badge-fail{% endif %}">{{ t.result }}</span>
+                        {{ t.name }}
+                        {% if t.output %}
+                        <pre style="font-size: 11px; color: #64748b; margin: 4px 0;">{{ t.output }}</pre>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% if r.fail_reason %}
+                <p style="color: #f87171; margin-top: 4px;">Fail: {{ r.fail_reason }}</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% if not runs %}
+    <div class="card"><p>No runs yet.</p></div>
+    {% endif %}
+</div>

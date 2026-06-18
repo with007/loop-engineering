@@ -14,14 +14,12 @@ import yaml
 # 默认配置
 DEFAULT_CONFIG = {
     "agent": {
-        "workspace": None,   # 自动检测: 项目同级目录 + "-agent"
+        "name": None,          # 自动检测: git config user.name
+        "workspace": None,     # 自动检测: 项目同级目录 + "-agent"
         "mcp_port": 9080,
     },
     "main": {
         "mcp_port": 8080,
-    },
-    "user": {
-        "git_name": None,
     },
     # data_repo 可选
 }
@@ -78,14 +76,12 @@ def detect_config(project_root):
             "root": project_root,
         },
         "agent": {
+            "name": _detect_git_user(project_root),
             "workspace": _detect_workspace(project_root, project_name),
             "mcp_port": DEFAULT_CONFIG["agent"]["mcp_port"],
         },
         "main": {
             "mcp_port": _detect_mcp_port(project_root),
-        },
-        "user": {
-            "git_name": _detect_git_user(project_root),
         },
     }
 

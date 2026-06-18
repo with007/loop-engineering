@@ -119,7 +119,6 @@ def generate_mcp_configs(config):
         }
     }
     _write_json_if_changed(os.path.join(agent_dir, ".mcp.json"), agent_mcp, "Agent .mcp.json")
-    _ensure_gitignore(agent_dir, ".mcp.json")
 
     # Agent McpProjectConfig.json (Unity 特定)
     unity_project_dir = os.path.join(agent_dir, "ProjectSettings")
@@ -201,14 +200,19 @@ def share_package_cache(config):
 
         # 检查是否已是 junction
         if os.path.isdir(agent_path):
-            # 用 dir 检查是否是 junction
-            code, stdout, _ = _run(f'cmd.exe /c "dir /AL {agent_path}"')
-            if "JUNCTION" in stdout:
+            # 用 dir 检查是否是 junction（需要 Windows 反斜杠路径）
+            win_path = agent_path.replace("/", "\\")
+            code, stdout, _ = _run(f'cmd.exe /c "dir /AL {win_path}"')
+            if "<JUNCTION>" in stdout:
                 print(f"  [OK] Library/{folder} junction 已存在，跳过")
                 continue
             else:
-                print(f"  WARNING:: Library/{folder} 是普通目录，将删除后创建 junction")
-                shutil.rmtree(agent_path)
+                print(f"  删除现有 Library/{folder} 后创建 junction ...")
+                # junction 不能用 shutil.rmtree 删除，用 rmdir
+                _run(f'cmd.exe /c "rmdir {win_path}"')
+                if os.path.exists(agent_path):
+                    print(f"  [FAIL] 无法删除 Library/{folder}")
+                    continue
 
         cmd = f'cmd.exe /c "mklink /J {agent_path} {main_path}"'
         code, stdout, stderr = _run(cmd)
@@ -277,6 +281,7 @@ def render_skill_md(config):
     agent_workspace = config["agent"]["workspace"]
     agent_dir = os.path.join(agent_workspace, project_name)
     agent_port = config["agent"]["mcp_port"]
+    agent_name = config["agent"]["name"]
 
     data_repo = config.get("data_repo", {})
     data_repo_path = data_repo.get("path", "")
@@ -288,6 +293,7 @@ def render_skill_md(config):
         agent_workspace=agent_workspace,
         agent_dir=agent_dir,
         agent_port=agent_port,
+        agent_name=agent_name,
         data_repo_path=data_repo_path,
         data_repo_name=data_repo_name,
         has_data_repo=bool(data_repo_path),
@@ -323,6 +329,32 @@ def register_protocol(config):
         print(f"  [FAIL] 协议注册失败: {stderr}")
 
 
+def sync_to_agent(config):
+    """同步 gitignored 文件到 agent worktree.
+
+    .mcp.json + loop-config.yaml 包含机器特定配置，不提交 git。
+    需要手动复制到 agent worktree。
+    """
+    print("--- 同步配置到 Agent Worktree ---")
+    project_root = config["project"]["root"]
+    project_name = config["project"]["name"]
+    agent_workspace = config["agent"]["workspace"]
+    agent_dir = os.path.join(agent_workspace, project_name)
+
+    if not os.path.isdir(agent_dir):
+        print(f"  [FAIL] Agent worktree 不存在: {agent_dir}")
+        return
+
+    for fname in ["loop-config.yaml", ".mcp.json"]:
+        src = os.path.join(project_root, fname)
+        dst = os.path.join(agent_dir, fname)
+        if os.path.exists(src):
+            shutil.copy2(src, dst)
+            print(f"  [OK] {fname} 已同步")
+        else:
+            print(f"  跳过 {fname}（不存在）")
+
+
 def run_setup(config, force=False):
     """执行完整 setup 流程.
 
@@ -340,6 +372,7 @@ def run_setup(config, force=False):
         ("部署环境脚本", lambda: deploy_scripts(config)),
         ("渲染 SKILL.md", lambda: render_skill_md(config)),
         ("注册通知协议", lambda: register_protocol(config)),
+        ("同步配置到 Agent Worktree", lambda: sync_to_agent(config)),
     ]
 
     for i, (label, fn) in enumerate(steps, 1):
@@ -357,15 +390,18 @@ def run_setup(config, force=False):
     # 从 config 中移除内部字段（_detected）
     clean_config = {k: v for k, v in config.items() if not k.startswith("_")}
     config_path = cfg.write_config(config["project"]["root"], clean_config)
+    _ensure_gitignore(config["project"]["root"], "loop-config.yaml")
 
     print()
     print("=" * 50)
     print("[OK] Setup 完成！")
     print()
     print("接下来:")
+    print(f"  1. git add .claude/ && git commit -m \"chore: loop-engineering setup\" && git push")
+    print(f"     (.mcp.json 和 loop-config.yaml 已 gitignore，不会提交)")
     agent_dir = os.path.join(config["agent"]["workspace"], config["project"]["name"])
-    print(f"  1. 在 Unity Hub 打开 {agent_dir}")
-    print(f"  2. 在 Claude Code 中运行 /runloop")
+    print(f"  2. 在 Unity Hub 打开 {agent_dir}")
+    print(f"  3. 在 Claude Code 中运行 /runloop")
     if not config.get("data_repo"):
         print(f"  (未配置 data_repo，配表/数据相关任务可能无法执行)")
 
@@ -413,8 +449,12 @@ user_invocable: true
 
 ### Step 0: 确认身份 + 判断上下文
 
+Agent 身份从 `loop-config.yaml` 的 `agent.name` 读取：
+
 ```bash
-whoami = git config user.name    # 如 "withg"
+# 从 loop-config.yaml 读取 agent name
+whoami = $(python -c "import yaml; print(yaml.safe_load(open('loop-config.yaml'))['agent']['name'])")
+# 如: "with"
 ```
 
 **0a. 判断启动位置**：

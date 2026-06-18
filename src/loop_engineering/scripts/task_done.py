@@ -4,8 +4,8 @@
 注意：不 commit、不 push、不 checkout —— 由调用方（SKILL.md Step 5）负责。
 用法: python -m loop_engineering.scripts.task_done <username> <taskID> [IMP序号] [VFY轮数]
 """
-import subprocess, sys, re, time, os, hashlib
-from datetime import datetime
+import subprocess, sys, re, time, os, hashlib, json
+from datetime import datetime, timezone
 
 
 def run(cmd):
@@ -81,6 +81,9 @@ def main():
     # 更新 tasks.md
     update_tasks_md(task_id, whoami, imp_n, vfy_n, project_root)
 
+    # 写 run log（结构化日志）
+    _write_run_log(project_root, task_id, whoami, imp_n, vfy_n, branch)
+
     # 弹通知（不用 shell=True，避免 cmd.exe 破坏含换行符的参数）
     notify_path = os.path.join(project_root, ".claude", "scripts", "notify.py")
     subprocess.Popen(
@@ -90,6 +93,34 @@ def main():
     time.sleep(2)
 
     print(f"=== {task_id} 已推送，等人合入 ===")
+
+
+def _write_run_log(project_root, task_id, whoami, imp_n, vfy_n, branch):
+    """写结构化 run log."""
+    from loop_engineering.runlog import write_run_log
+    # 读取任务描述
+    tasks_path = os.path.join(project_root, "tasks.md")
+    task_desc = ""
+    try:
+        with open(tasks_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if task_id in line.lower().replace(" ", "-"):
+                    task_desc = line.strip().lstrip("- [x~ ]").strip()
+                    break
+    except Exception:
+        pass
+
+    entry = {
+        "task_id": task_id,
+        "task_desc": task_desc[:200],
+        "branch": branch,
+        "whoami": whoami,
+        "phase": "verify",
+        "imp_round": int(imp_n),
+        "vfy_round": int(vfy_n),
+        "result": "PASS",
+    }
+    write_run_log(project_root, entry)
 
 
 if __name__ == "__main__":

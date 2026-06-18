@@ -1,0 +1,34 @@
+<div hx-get="/branches" hx-trigger="every 60s" hx-swap="outerHTML">
+    <h2>Agent Branches</h2>
+
+    {% set pending = branches | selectattr('merged', 'equalto', false) | list %}
+    {% set merged = branches | selectattr('merged', 'equalto', true) | list %}
+
+    {% if pending %}
+    <h3 style="margin-bottom: 8px;">Pending Merge ({{ pending | length }})</h3>
+    <table>
+        {% for b in pending %}
+        <tr>
+            <td>{{ b.name }}</td>
+            <td><span class="badge badge-warn">waiting</span></td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+
+    {% if merged %}
+    <h3 style="margin: 16px 0 8px;">Recently Merged ({{ merged | length }})</h3>
+    <table>
+        {% for b in merged %}
+        <tr>
+            <td>{{ b.name }}</td>
+            <td><span class="badge badge-pass">merged</span></td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+
+    {% if not branches %}
+    <div class="card"><p>No agent branches found.</p></div>
+    {% endif %}
+</div>

@@ -1,7 +1,7 @@
 """Loop Engineering CLI.
 
 用法:
-  loop setup --project-root <path> --git-user <name> [options]
+  loop setup --project-root <path> [options]
   loop init
 """
 
@@ -26,7 +26,7 @@ def main():
         "--project-root", required=True, help="项目根目录路径"
     )
     setup_parser.add_argument(
-        "--git-user", required=True, help="Git 用户名（需与 tasks.md 中的分配标记一致）"
+        "--agent-name", default=None, help="Agent 名称（用于任务分配，默认自动读取 git config user.name）"
     )
     setup_parser.add_argument(
         "--data-repo", default=None, help="配表/数据仓库路径（可选）"
@@ -46,9 +46,19 @@ def main():
     setup_parser.add_argument(
         "-y", "--yes", action="store_true", help="跳过确认提示，直接执行"
     )
+    setup_parser.add_argument(
+        "--type", default=None, help="项目类型预设 (unity-tolua, node-frontend, go-backend, generic)"
+    )
 
     # loop init
     subparsers.add_parser("init", help="交互式向导模式")
+
+    # loop ui
+    ui_parser = subparsers.add_parser("ui", help="Dashboard 管理")
+    ui_sub = ui_parser.add_subparsers(dest="ui_command")
+    ui_start = ui_sub.add_parser("start", help="启动 Dashboard")
+    ui_start.add_argument("--port", type=int, default=8765, help="端口（默认 8765）")
+    ui_start.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
 
     args = parser.parse_args()
 
@@ -56,6 +66,8 @@ def main():
         _cmd_setup(args)
     elif args.command == "init":
         _cmd_init()
+    elif args.command == "ui":
+        _cmd_ui(args)
     else:
         parser.print_help()
         sys.exit(1)
@@ -76,7 +88,16 @@ def _cmd_setup(args):
 
     # 构建最终配置：CLI 参数覆盖自动检测
     config = detected.copy()
-    config["user"]["git_name"] = args.git_user
+
+    if args.agent_name:
+        config["agent"]["name"] = args.agent_name
+
+    # agent name 从 git config 自动读取，也可通过 --agent-name 覆盖
+    agent_name = config["agent"]["name"]
+    if not agent_name:
+        print("错误: 未检测到 agent 名称，请先执行 git config user.name <你的名字> 或用 --agent-name 指定")
+        sys.exit(1)
+    print(f"  Agent 名称: {agent_name}（来自 git config user.name）")
 
     if args.agent_workspace:
         config["agent"]["workspace"] = os.path.abspath(args.agent_workspace)
@@ -86,6 +107,15 @@ def _cmd_setup(args):
         config["main"]["mcp_port"] = args.main_port
     if args.data_repo:
         config["data_repo"] = {"path": os.path.abspath(args.data_repo)}
+
+    # 应用项目类型预设
+    if args.type:
+        from loop_engineering.presets import apply_preset, get_preset
+        if get_preset(args.type):
+            config = apply_preset(config, args.type)
+            print(f"  项目类型: {args.type}")
+        else:
+            print(f"  警告: 未知预设 '{args.type}'，已忽略。可用: unity-tolua, node-frontend, go-backend, generic")
 
     # 如果没有自动检测到 workspace，使用默认规则
     if not config["agent"]["workspace"]:
@@ -136,13 +166,13 @@ def _cmd_init():
     print(f"  主 MCP 端口: {config['main']['mcp_port']}")
     print()
 
-    # 3. Git 用户名
-    default_user = config["user"]["git_name"] or ""
-    user_input = input(f"Git 用户名 [{default_user}]: ").strip()
-    config["user"]["git_name"] = user_input if user_input else default_user
+    # 3. Agent 名称
+    default_name = config["agent"]["name"] or ""
+    name_input = input(f"Agent 名称 [{default_name}]: ").strip()
+    config["agent"]["name"] = name_input if name_input else default_name
 
-    if not config["user"]["git_name"]:
-        print("错误: 必须指定 Git 用户名")
+    if not config["agent"]["name"]:
+        print("错误: 必须指定 Agent 名称")
         sys.exit(1)
 
     # 4. Agent workspace
@@ -166,6 +196,17 @@ def _cmd_init():
         if "data_repo" in config:
             del config["data_repo"]
 
+    # 7. Project type
+    from loop_engineering.presets import list_presets, apply_preset
+    presets = list_presets()
+    print("\n可用项目类型预设:")
+    for key, name, desc in presets:
+        print(f"  {key}: {name} — {desc}")
+    type_input = input(f"项目类型 [{config.get('type', 'skip')}]: ").strip()
+    if type_input and type_input.lower() != "skip":
+        if type_input in dict((k, v) for k, v, _ in presets):
+            config = apply_preset(config, type_input)
+
     print()
 
     # 显示摘要
@@ -185,10 +226,39 @@ def _print_summary(config):
     print("--- 配置摘要 ---")
     print(f"  项目:     {config['project']['name']}")
     print(f"  根目录:   {config['project']['root']}")
-    print(f"  Git 用户: {config['user']['git_name']}")
+    print(f"  Agent:    {config['agent']['name']}")
     print(f"  Agent WS: {config['agent']['workspace']}")
     print(f"  MCP 端口: 主 {config['main']['mcp_port']} / Agent {config['agent']['mcp_port']}")
     if config.get("data_repo"):
         print(f"  Data repo: {config['data_repo']['path']}")
     else:
         print(f"  Data repo: (无)")
+
+
+def _cmd_ui(args):
+    """Dashboard 管理."""
+    if args.ui_command == "start":
+        _find_and_start_ui(args)
+    else:
+        print("用法: loop ui start [--port 8765]")
+        sys.exit(1)
+
+
+def _find_and_start_ui(args):
+    """从当前目录向上查找 loop-config.yaml，启动 Dashboard."""
+    from loop_engineering.server.app import start_server
+
+    p = os.getcwd()
+    project_root = p
+    for _ in range(10):
+        if os.path.exists(os.path.join(p, "loop-config.yaml")):
+            project_root = p
+            break
+        parent = os.path.dirname(p)
+        if parent == p:
+            break
+        p = parent
+
+    print(f"Project: {project_root}")
+    print(f"Dashboard: http://localhost:{args.port}")
+    start_server(project_root, port=args.port, open_browser=not args.no_browser)

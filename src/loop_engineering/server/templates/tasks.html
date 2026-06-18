@@ -1,0 +1,50 @@
+<div hx-get="/tasks" hx-trigger="every 30s" hx-swap="outerHTML">
+    <h2>Tasks</h2>
+
+    <div class="card" style="margin-bottom: 16px;">
+        <form hx-post="/api/tasks/add" hx-target="#task-list" hx-swap="innerHTML"
+              hx-on::after-request="this.reset()">
+            <div class="inline-form">
+                <div class="form-group" style="flex: 1;">
+                    <input name="description" placeholder="Task description" required>
+                </div>
+                <div class="form-group" style="width: 150px;">
+                    <input name="assignee" placeholder="Assignee" required value="{{ agent_name }}">
+                </div>
+                <button type="submit" class="btn btn-primary">Add Task</button>
+            </div>
+        </form>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Status</th>
+                <th>Description</th>
+                <th>Assignee</th>
+                <th>Info</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for t in tasks %}
+            <tr>
+                <td>
+                    {% if t.status == 'done' %}
+                    <span class="badge badge-pass">x</span>
+                    {% elif t.status == 'in_progress' %}
+                    <span class="badge badge-warn">~</span>
+                    {% else %}
+                    <span class="badge badge-pending">_</span>
+                    {% endif %}
+                </td>
+                <td>{{ t.description }}</td>
+                <td>{{ t.assignee }}</td>
+                <td style="color: #94a3b8; font-size: 12px;">{{ t.meta }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if not tasks %}
+    <div class="card"><p>No tasks yet.</p></div>
+    {% endif %}
+</div>
