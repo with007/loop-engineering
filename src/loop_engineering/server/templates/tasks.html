@@ -45,7 +45,7 @@
     <div class="card" style="padding: 16px 20px; margin-bottom: 8px;">
         <div style="display: flex; align-items: flex-start; gap: 14px;">
             <div class="status-icon {% if t.status == 'done' %}status-done{% elif t.status == 'in_progress' %}status-active-label{% else %}status-pending-label{% endif %}">
-                {% if t.status == '完成' %}&#x2713;{% elif t.status == 'in_progress' %}&#x223C;{% else %}&#x2014;{% endif %}
+                {% if t.status == 'done' %}&#x2713;{% elif t.status == 'in_progress' %}&#x223C;{% else %}&#x2014;{% endif %}
             </div>
             <div style="flex: 1;">
                 <div style="font-size: 15px; font-weight: 500;">{{ t.description | truncate(120) }}</div>
@@ -59,7 +59,7 @@
                 </div>
             </div>
             <div>
-                {% if t.status == '完成' %}
+                {% if t.status == 'done' %}
                 <span class="badge badge-pass">已完成</span>
                 {% elif t.status == 'in_progress' %}
                 <span class="badge badge-active">进行中</span>
