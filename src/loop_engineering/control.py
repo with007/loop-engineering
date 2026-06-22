@@ -142,20 +142,8 @@ def get_status(project_root):
 
 
 def _loop_window_alive(project_root):
-    """检查 loop 终端窗口是否存在。非 Windows 退回 PID 检测."""
-    if platform.system() == "Windows":
-        try:
-            project_name = os.path.basename(project_root)
-            title = f"Loop: {project_name}"
-            code, stdout, _ = _run(
-                f'powershell -NoProfile -Command '
-                f'"if (Get-Process cmd | Where-Object {{$_.MainWindowTitle -like \'*{title}*\'}}) {{ exit 0 }} else {{ exit 1 }}"',
-                cwd=project_root
-            )
-            return code == 0
-        except Exception:
-            return False
-    return _pid_alive(_read_pid(project_root))
+    """检查 loop 终端是否存活（有心跳文件即为有效）."""
+    return read_heartbeat(project_root) is not None
 
 
 # ── loop process management ──
@@ -170,16 +158,25 @@ def start_loop(project_root):
 
     if platform.system() == "Windows":
         pid_path = os.path.join(_control_dir(project_root), "loop.pid")
+        hb_path = _flag_path(project_root, "heartbeat")
         ps_script = (
             f'$p = Start-Process cmd -ArgumentList \'/k title Loop: {project_name} && cd /d {project_root} && claude --dangerously-skip-permissions\' '
             f'-WindowStyle Normal -PassThru;'
             f'[System.IO.File]::WriteAllText(\'{pid_path}\', $p.Id.ToString());'
+            # SendKeys 先执行
             f'Start-Sleep -Seconds 2;'
             f'$ws = New-Object -ComObject WScript.Shell;'
             f'$ws.AppActivate(\'Loop: {project_name}\');Start-Sleep -Seconds 1;'
             f'$ws.SendKeys(\'/runloop\');Start-Sleep -Milliseconds 300;'
             f'$ws.SendKeys(\'{"{ENTER}"}\');Start-Sleep -Milliseconds 300;'
-            f'$ws.SendKeys(\'{"{ENTER}"}\')'
+            f'$ws.SendKeys(\'{"{ENTER}"}\');'
+            # 然后后台持续写心跳，每 30 秒一次，直到窗口关闭
+            f'while(-not $p.HasExited){{'
+            f'[System.IO.File]::WriteAllText(\'{hb_path}\', [DateTime]::UtcNow.ToString("o"));'
+            f'Start-Sleep -Seconds 30'
+            f'}};'
+            f'Remove-Item \'{hb_path}\' -ErrorAction SilentlyContinue;'
+            f'Remove-Item \'{pid_path}\' -ErrorAction SilentlyContinue'
         )
         ps_path = os.path.join(_control_dir(project_root), "loop.ps1")
         os.makedirs(os.path.dirname(ps_path), exist_ok=True)
