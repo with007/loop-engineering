@@ -51,6 +51,19 @@ def create_worktrees(config):
         print("  无 data_repo，跳过")
 
 
+def _default_branch(repo_path):
+    """获取远程默认分支名，如 'origin/main' 或 'origin/master'."""
+    code, stdout, _ = _run("git symbolic-ref refs/remotes/origin/HEAD --short", cwd=repo_path)
+    if code == 0 and stdout:
+        return stdout
+    # fallback: try common names
+    for branch in ["origin/main", "origin/master"]:
+        code, _, _ = _run(f"git rev-parse --verify {branch}", cwd=repo_path)
+        if code == 0:
+            return branch
+    return "origin/master"  # last resort
+
+
 def _create_single_worktree(source_repo, target_dir, label):
     """创建单个 git worktree."""
     # git worktree 中 .git 是文件（不是目录）
@@ -62,8 +75,9 @@ def _create_single_worktree(source_repo, target_dir, label):
 
     print(f"  创建 {label} worktree ...")
     _run("git fetch origin", cwd=source_repo)
+    default_ref = _default_branch(source_repo)
     code, stdout, stderr = _run(
-        f'git worktree add "{target_dir}" origin/master', cwd=source_repo
+        f'git worktree add "{target_dir}" {default_ref}', cwd=source_repo
     )
     if code != 0:
         # first attempt failed — clean up and retry
@@ -78,7 +92,7 @@ def _create_single_worktree(source_repo, target_dir, label):
                 pass  # may be locked by another process
         # also try git's own remove
         _run(f'git worktree remove --force "{target_dir}"', cwd=source_repo)
-        _run(f'git worktree add "{target_dir}" origin/master', cwd=source_repo, check=True)
+        _run(f'git worktree add "{target_dir}" {default_ref}', cwd=source_repo, check=True)
     print(f"  [OK] {label} worktree 创建完成: {target_dir}")
 
 
