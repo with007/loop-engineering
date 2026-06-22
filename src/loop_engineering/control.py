@@ -169,6 +169,16 @@ def start_loop(project_root):
         with open(ps_path, "w", encoding="utf-8") as f:
             f.write(ps_script)
         cmd = f'powershell -NoProfile -ExecutionPolicy Bypass -File "{ps_path}"'
+    else:
+        cmd = (
+            f'osascript -e \'tell app "Terminal" to do script '
+            f'"cd {project_root} && claude --dangerously-skip-permissions"\''
+        )
+
+    proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Windows: PID 由 ps1 脚本异步写入 loop.pid；非 Windows: 直接用 proc.pid
+    if platform.system() != "Windows":
+        _write_pid(project_root, proc.pid)
 
     return {"started": True, "pid": proc.pid}
 
