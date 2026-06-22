@@ -143,6 +143,27 @@ def get_status(project_root):
 
 # ── loop process management ──
 
+def _find_claude():
+    """查找 claude CLI 路径。"""
+    import shutil as _shutil
+    # 1. 检查 PATH 里有没有
+    found = _shutil.which("claude")
+    if found:
+        return found
+    # 2. Windows 常见位置
+    if platform.system() == "Windows":
+        for base in [os.environ.get("APPDATA", ""), os.environ.get("LOCALAPPDATA", "")]:
+            for sub in ["npm/claude.cmd", "npm/claude", "Programs/Claude Code/claude.exe"]:
+                p = os.path.join(base, sub)
+                if os.path.exists(p):
+                    return p
+    # 3. macOS/Linux 常见位置
+    for p in ["/usr/local/bin/claude", os.path.expanduser("~/.npm-global/bin/claude")]:
+        if os.path.exists(p):
+            return p
+    return None
+
+
 def start_loop(project_root):
     """启动 loop 终端窗口."""
     if is_loop_running(project_root) and _pid_alive(_read_pid(project_root)):
@@ -151,16 +172,20 @@ def start_loop(project_root):
     _ensure_dir(project_root)
     project_name = os.path.basename(project_root)
 
+    claude_path = _find_claude()
+    if not claude_path:
+        return {"started": False, "reason": "claude CLI not found. Install Claude Code or add it to PATH."}
+
     # 终端命令：新窗口运行 claude --dangerously-skip-permissions -p "/runloop"
     if platform.system() == "Windows":
         cmd = (
             f'start "Loop: {project_name}" cmd /k '
-            f'"cd /d {project_root} && claude --dangerously-skip-permissions -p /runloop"'
+            f'"cd /d {project_root} && \"{claude_path}\" --dangerously-skip-permissions -p /runloop"'
         )
     else:
         cmd = (
             f'osascript -e \'tell app "Terminal" to do script '
-            f'"cd {project_root} && claude --dangerously-skip-permissions -p \'/runloop\'"\''
+            f'"cd {project_root} && {claude_path} --dangerously-skip-permissions -p /runloop"\''
         )
 
     proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
