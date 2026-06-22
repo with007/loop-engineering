@@ -323,6 +323,37 @@ async def browse_dirs(path: str = ""):
     return {"path": path.replace("\\", "/"), "parent": parent, "entries": entries}
 
 
+@app.get("/api/setup/pickfolder")
+async def pick_folder():
+    """VBS COM 原生文件夹选择器."""
+    import platform as _plat, tempfile
+    if _plat.system() != "Windows":
+        return {"path": ""}
+
+    vbs = tempfile.mktemp(suffix=".vbs")
+    with open(vbs, "w") as f:
+        f.write("""
+Set objShell = CreateObject("Shell.Application")
+Set objFolder = objShell.BrowseForFolder(0, "Select Folder", 0, 0)
+If Not objFolder Is Nothing Then
+    WScript.Echo objFolder.Self.Path
+End If
+""")
+    try:
+        r = subprocess.run(
+            ["cscript", "//Nologo", vbs],
+            capture_output=True, text=True, timeout=300
+        )
+        path = r.stdout.strip()
+    except Exception:
+        path = ""
+    try:
+        os.remove(vbs)
+    except Exception:
+        pass
+    return {"path": path}
+
+
 # ── Startup ──
 
 def start_server(project_root, port=8765, open_browser=True):
