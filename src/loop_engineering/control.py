@@ -162,8 +162,8 @@ def start_loop(project_root):
             f'$ws.SendKeys(\'/runloop\');Start-Sleep -Milliseconds 300;'
             f'$ws.SendKeys(\'{"{ENTER}"}\');Start-Sleep -Milliseconds 300;'
             f'$ws.SendKeys(\'{"{ENTER}"}\');'
-            f'$pid=(Get-Process cmd | Where-Object {{$_.MainWindowTitle -eq \'Loop: {project_name}\'}} | Select-Object -First 1 -ExpandProperty Id);'
-            f'if($pid){{[System.IO.File]::WriteAllText(\'{pid_path}\',$pid.ToString())}}"\r\n'
+            f'$cppid=(Get-Process cmd | Where-Object {{$_.MainWindowTitle -eq \'Loop: {project_name}\'}} | Select-Object -First 1 -ExpandProperty Id);'
+            f'if($cppid){{[System.IO.File]::WriteAllText(\'{pid_path}\',$cppid.ToString())}}"\r\n'
         )
         bat_path = os.path.join(_control_dir(project_root), "loop.bat")
         os.makedirs(os.path.dirname(bat_path), exist_ok=True)
