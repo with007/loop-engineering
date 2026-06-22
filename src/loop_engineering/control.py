@@ -152,10 +152,9 @@ def start_loop(project_root):
     project_name = os.path.basename(project_root)
 
     if platform.system() == "Windows":
-        # 交互式 REPL：echo /runloop 自动输入首条命令，more 保持 stdin 不关闭
         loop_bat = (
             f"cd /d {project_root}\r\n"
-            f"(echo /runloop & more) | claude --dangerously-skip-permissions"
+            f"claude --dangerously-skip-permissions"
         )
         bat_path = os.path.join(_control_dir(project_root), "loop.bat")
         os.makedirs(os.path.dirname(bat_path), exist_ok=True)
