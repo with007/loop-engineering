@@ -200,11 +200,9 @@ def start_loop(project_root):
 def stop_loop(project_root):
     """停止 loop 终端窗口."""
     pid = _read_pid(project_root)
-    if not pid:
-        return {"stopped": False, "reason": "no pid recorded"}
-
     killed = False
-    if _pid_alive(pid):
+
+    if pid and _pid_alive(pid):
         try:
             if platform.system() == "Windows":
                 subprocess.run(f"taskkill /F /PID {pid}", shell=True,
@@ -215,13 +213,11 @@ def stop_loop(project_root):
         except Exception:
             pass
 
-    # 清理文件
+    # 清理文件（无论 PID 是否存在都清理）
     _clear_pid(project_root)
-    # 删心跳（停止后不再运行）
     hb_path = _flag_path(project_root, "heartbeat")
     if os.path.exists(hb_path):
         os.remove(hb_path)
-    # 也清理 pause（stop 后恢复 unpaused 状态）
     set_pause(project_root, False)
 
     return {"stopped": killed, "pid": pid}
