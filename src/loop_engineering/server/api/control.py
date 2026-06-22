@@ -2,6 +2,7 @@
 
 import os
 from fastapi import APIRouter, Query
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -36,14 +37,14 @@ def get_status(project: str = Query(None)):
 def pause(project: str = Query(None)):
     from loop_engineering.control import set_pause
     set_pause(_project_root(project), True)
-    return {"paused": True}
+    return Response(status_code=200, headers={"HX-Refresh": "true"})
 
 
 @router.delete("/pause")
 def resume(project: str = Query(None)):
     from loop_engineering.control import set_pause
     set_pause(_project_root(project), False)
-    return {"paused": False}
+    return Response(status_code=200, headers={"HX-Refresh": "true"})
 
 
 @router.post("/next")
@@ -53,23 +54,33 @@ def next_cycle(project: str = Query(None)):
     path = _flag_path(pr, "next")
     _ensure_dir(pr)
     open(path, "w").close()
-    return {"next": True}
+    return Response(status_code=200, headers={"HX-Refresh": "true"})
 
 
 @router.put("/throttle")
 def set_throttle(req: ThrottleRequest, project: str = Query(None)):
     from loop_engineering.control import set_throttle as ctrl_set
     ctrl_set(_project_root(project), req.interval)
-    return {"throttle": req.interval}
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(content=f"<span style='color:var(--pass);font-size:13px;'>间隔设为 {req.interval}</span>")
 
 
 @router.post("/start")
 def start(project: str = Query(None)):
     from loop_engineering.control import start_loop
-    return start_loop(_project_root(project))
+    result = start_loop(_project_root(project))
+    if result.get("started"):
+        return Response(status_code=200, headers={"HX-Refresh": "true"})
+    return Response(
+        status_code=200,
+        headers={"HX-Refresh": "true"},
+        content=f"<div class='card' style='border-color:var(--fail);background:var(--fail-bg);'><p>{result.get('reason','Failed')}</p></div>",
+        media_type="text/html",
+    )
 
 
 @router.post("/stop")
 def stop(project: str = Query(None)):
     from loop_engineering.control import stop_loop
-    return stop_loop(_project_root(project))
+    result = stop_loop(_project_root(project))
+    return Response(status_code=200, headers={"HX-Refresh": "true"})

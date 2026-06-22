@@ -155,7 +155,7 @@ def start_loop(project_root):
     if platform.system() == "Windows":
         cmd = (
             f'start "Loop: {project_name}" cmd /k '
-            f'"cd /d {project_root} && claude --dangerously-skip-permissions -p \'/runloop\'"'
+            f'"cd /d {project_root} && claude --dangerously-skip-permissions -p /runloop"'
         )
     else:
         cmd = (
