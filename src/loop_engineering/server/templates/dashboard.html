@@ -1,27 +1,102 @@
-<div>
-    <h2>Projects</h2>
-    <div class="grid" hx-get="/" hx-trigger="every 30s" hx-swap="outerHTML">
-        {% for proj in projects %}
-        <div class="card">
-            <h3>{{ proj.name }}</h3>
-            <div style="margin: 8px 0;">
-                <span class="badge badge-pending">{{ proj.tasks.pending }} pending</span>
-                <span class="badge badge-warn">{{ proj.tasks.in_progress }} active</span>
-                <span class="badge badge-pass">{{ proj.tasks.done }} done</span>
-            </div>
-            <div>PASS rate (7d):
-                <strong>{{ proj.pass_rate.rate }}%</strong>
-                ({{ proj.pass_rate.passed }}/{{ proj.pass_rate.total }})
-            </div>
-            <div style="margin-top: 4px; color: #94a3b8;">
-                {{ proj.unmerged_branches }} unmerged branches
-            </div>
-        </div>
-        {% endfor %}
-        {% if not projects %}
-        <div class="card">
-            <p>No projects found. Run <code>loop setup</code> in a project directory.</p>
-        </div>
-        {% endif %}
+<div hx-get="/" hx-trigger="every 30s" hx-swap="outerHTML">
+    {% if not projects %}
+    <div class="card" style="text-align: center; padding: 60px 20px;">
+        <h2>No projects found</h2>
+        <p style="color: var(--muted); margin-top: 8px;">Run <code>loop setup</code> in a project directory.</p>
     </div>
+    {% else %}
+
+    {% for proj in projects %}
+    <h1>{{ proj.name }}</h1>
+    <p style="color: var(--muted); margin-bottom: 24px;">{{ proj.root }}</p>
+
+    <!-- Stats -->
+    <div class="grid grid-4" style="margin-bottom: 24px;">
+        <div class="card stat">
+            <div class="stat-value blue">{{ proj.tasks.pending }}</div>
+            <div class="stat-label">Pending</div>
+        </div>
+        <div class="card stat">
+            <div class="stat-value amber">{{ proj.tasks.in_progress }}</div>
+            <div class="stat-label">Active</div>
+        </div>
+        <div class="card stat">
+            <div class="stat-value green">{{ proj.tasks.done }}</div>
+            <div class="stat-label">Completed</div>
+        </div>
+        <div class="card stat">
+            <div class="stat-value" style="color: {{ '#22c55e' if proj.pass_rate.rate >= 80 else '#f59e0b' if proj.pass_rate.rate >= 50 else '#ef4444' }}">{{ proj.pass_rate.rate }}%</div>
+            <div class="stat-label">PASS Rate (7d)</div>
+        </div>
+    </div>
+
+    <!-- PASS Rate Chart + Task Breakdown -->
+    <div class="grid grid-2" style="margin-bottom: 24px;">
+        <!-- Donut chart -->
+        <div class="card">
+            <h3>PASS Rate (7 days)</h3>
+            {% if proj.pass_rate.total > 0 %}
+            <div class="chart-wrap">
+                <canvas id="passChart"></canvas>
+                <div class="chart-center">
+                    <div class="pct" style="color: {{ '#22c55e' if proj.pass_rate.rate >= 80 else '#f59e0b' if proj.pass_rate.rate >= 50 else '#ef4444' }}">{{ proj.pass_rate.rate }}%</div>
+                    <div class="lbl">{{ proj.pass_rate.passed }}/{{ proj.pass_rate.total }} runs</div>
+                </div>
+            </div>
+            <script>
+                (function() {
+                    var ctx = document.getElementById('passChart');
+                    if (!ctx) return;
+                    var passed = {{ proj.pass_rate.passed }};
+                    var failed = {{ proj.pass_rate.total - proj.pass_rate.passed }};
+                    new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Passed', 'Failed'],
+                            datasets: [{
+                                data: [passed, failed],
+                                backgroundColor: ['#22c55e', '#ef4444'],
+                                borderColor: '#111827',
+                                borderWidth: 3,
+                                borderRadius: 2,
+                            }]
+                        },
+                        options: {
+                            cutout: '75%',
+                            plugins: { legend: { display: false } },
+                            responsive: true,
+                        }
+                    });
+                })();
+            </script>
+            {% else %}
+            <p style="color: var(--dim); padding: 40px 0; text-align: center;">No run data yet</p>
+            {% endif %}
+        </div>
+
+        <!-- Task breakdown -->
+        <div class="card">
+            <h3>Task Breakdown</h3>
+            <div style="padding: 10px 0;">
+                {% set total = proj.tasks.pending + proj.tasks.in_progress + proj.tasks.done %}
+                {% set pct_pending = (proj.tasks.pending / total * 100) if total > 0 else 0 %}
+                {% set pct_active = (proj.tasks.in_progress / total * 100) if total > 0 else 0 %}
+                {% set pct_done = (proj.tasks.done / total * 100) if total > 0 else 0 %}
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px;">
+                    <span style="color: var(--blue);">Pending {{ proj.tasks.pending }}</span>
+                    <span style="color: var(--amber);">Active {{ proj.tasks.in_progress }}</span>
+                    <span style="color: var(--green);">Done {{ proj.tasks.done }}</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill green" style="width: {{ pct_done }}%"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: 24px; font-size: 13px; color: var(--dim);">
+                    <span>{{ proj.unmerged_branches }} unmerged branches</span>
+                    <span>{{ total }} total tasks</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% endif %}
 </div>

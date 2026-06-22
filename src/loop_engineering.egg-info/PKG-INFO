@@ -8,3 +8,4 @@ Requires-Dist: jinja2>=3.0
 Provides-Extra: ui
 Requires-Dist: fastapi>=0.100; extra == "ui"
 Requires-Dist: uvicorn>=0.23; extra == "ui"
+Requires-Dist: python-multipart>=0.0.5; extra == "ui"

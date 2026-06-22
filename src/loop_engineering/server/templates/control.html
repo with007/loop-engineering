@@ -1,11 +1,16 @@
 <div hx-get="/control" hx-trigger="every 10s" hx-swap="outerHTML">
-    <h2>Control</h2>
+    <h1>Control</h1>
 
-    <div class="card">
-        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
-            <span class="status-dot {% if status.paused %}status-paused{% else %}status-idle{% endif %}"></span>
-            <strong>Status: {{ 'Paused' if status.paused else 'Active' }}</strong>
-            <span style="color: #64748b;">Throttle: {{ status.throttle }}</span>
+    <!-- Status card -->
+    <div class="card" style="margin-bottom: 20px;">
+        <div class="status-indicator" style="margin-bottom: 16px;">
+            <span class="status-dot {% if status.paused %}paused{% else %}active{% endif %}"></span>
+            <span style="font-weight: 600; font-size: 16px;">
+                {{ 'Paused' if status.paused else 'Running' }}
+            </span>
+            <span style="color: var(--dim); font-size: 13px; margin-left: auto;">
+                Tick: {{ status.throttle }}
+            </span>
         </div>
 
         <div class="controls">
@@ -13,27 +18,51 @@
             <button class="btn btn-success"
                     hx-delete="/api/control/pause"
                     hx-target="closest div[hx-get]"
-                    hx-swap="outerHTML">Resume</button>
+                    hx-swap="outerHTML">
+                Resume Loop
+            </button>
             {% else %}
             <button class="btn btn-warn"
-                    style="background: #f59e0b; color: #000;"
                     hx-post="/api/control/pause"
                     hx-target="closest div[hx-get]"
-                    hx-swap="outerHTML">Pause</button>
+                    hx-swap="outerHTML">
+                Pause Loop
+            </button>
             {% endif %}
 
             <button class="btn btn-primary"
                     hx-post="/api/control/next"
                     hx-target="closest div[hx-get]"
-                    hx-swap="outerHTML">Run Next</button>
+                    hx-swap="outerHTML">
+                Run Next Cycle
+            </button>
 
-            <div class="form-group" style="width: 100px; margin: 0;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-left: 12px;">
+                <span style="color: var(--muted); font-size: 13px;">Throttle:</span>
                 <input type="text" id="throttle-input" value="{{ status.throttle }}"
-                       style="background:#0f172a; color:#e2e8f0; border:1px solid #334155;
-                              padding:6px 10px; border-radius:6px; width:100%;">
+                       style="background: var(--bg); color: var(--text); border: 1px solid var(--border);
+                              padding: 6px 10px; border-radius: 6px; width: 70px; font-size: 13px; text-align: center;">
+                <button class="btn btn-sm btn-primary"
+                        onclick="set_throttle()">Set</button>
             </div>
-            <button class="btn btn-sm btn-primary"
-                    onclick="set_throttle()">Set</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Signal Files</h3>
+        <p style="color: var(--muted); font-size: 13px;">
+            Task-runner checks these signal files at the start of each tick.<br>
+            Signals are file-based — Dashboard doesn't need to be running for them to work.
+        </p>
+        <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-family: monospace;">
+            <div style="display: flex; justify-content: space-between;">
+                <span>.loop-engineering/control/pause</span>
+                <span style="color: {{ '#f59e0b' if status.paused else '#64748b' }}">{{ 'EXISTS' if status.paused else 'absent' }}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <span>.loop-engineering/control/throttle</span>
+                <span style="color: var(--dim);">{{ status.throttle }}</span>
+            </div>
         </div>
     </div>
 

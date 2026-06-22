@@ -1,34 +1,49 @@
 <div hx-get="/branches" hx-trigger="every 60s" hx-swap="outerHTML">
-    <h2>Agent Branches</h2>
+    <h1>Agent Branches</h1>
 
     {% set pending = branches | selectattr('merged', 'equalto', false) | list %}
     {% set merged = branches | selectattr('merged', 'equalto', true) | list %}
 
+    <div class="grid grid-2" style="margin-bottom: 24px;">
+        <div class="card stat">
+            <div class="stat-value amber">{{ pending | length }}</div>
+            <div class="stat-label">Pending Merge</div>
+        </div>
+        <div class="card stat">
+            <div class="stat-value green">{{ merged | length }}</div>
+            <div class="stat-label">Merged</div>
+        </div>
+    </div>
+
     {% if pending %}
-    <h3 style="margin-bottom: 8px;">Pending Merge ({{ pending | length }})</h3>
-    <table>
+    <div class="card" style="margin-bottom: 20px;">
+        <h3>Waiting for Review ({{ pending | length }})</h3>
         {% for b in pending %}
-        <tr>
-            <td>{{ b.name }}</td>
-            <td><span class="badge badge-warn">waiting</span></td>
-        </tr>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border);">
+            <div>
+                <code style="font-size: 14px; color: var(--blue);">{{ b.name }}</code>
+            </div>
+            <span class="badge badge-active">Waiting</span>
+        </div>
         {% endfor %}
-    </table>
+    </div>
     {% endif %}
 
     {% if merged %}
-    <h3 style="margin: 16px 0 8px;">Recently Merged ({{ merged | length }})</h3>
-    <table>
+    <div class="card">
+        <h3>Recently Merged ({{ merged | length }})</h3>
         {% for b in merged %}
-        <tr>
-            <td>{{ b.name }}</td>
-            <td><span class="badge badge-pass">merged</span></td>
-        </tr>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border);">
+            <code style="font-size: 13px; color: var(--dim);">{{ b.name }}</code>
+            <span class="badge badge-pass">Merged</span>
+        </div>
         {% endfor %}
-    </table>
+    </div>
     {% endif %}
 
     {% if not branches %}
-    <div class="card"><p>No agent branches found.</p></div>
+    <div class="card" style="text-align: center; padding: 60px 20px; color: var(--dim);">
+        <p>No agent branches found</p>
+    </div>
     {% endif %}
 </div>

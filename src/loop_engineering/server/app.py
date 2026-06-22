@@ -12,6 +12,7 @@ app = FastAPI(title="Loop Engineering Dashboard")
 
 _tpl_dir = os.path.join(os.path.dirname(__file__), "templates")
 templates = Jinja2Templates(directory=_tpl_dir)
+templates.env.cache = None  # 禁用 Jinja2 模板缓存，避免 Python 3.14 兼容性问题
 
 # API 路由
 from .api import control, projects, tasks, runs, branches  # noqa: E402
@@ -78,7 +79,7 @@ async def dashboard(request: Request):
     except Exception:
         branch_count = 0
 
-    return templates.TemplateResponse("dashboard.html", {
+    return templates.TemplateResponse(request, "dashboard.html", {
         "request": request,
         "projects": [{
             "name": name,
@@ -92,7 +93,7 @@ async def dashboard(request: Request):
 
 @app.get("/tasks")
 async def tasks_page(request: Request):
-    return templates.TemplateResponse("tasks.html", {
+    return templates.TemplateResponse(request, "tasks.html", {
         "request": request,
         "tasks": _read_tasks(),
         "agent_name": _agent_name(),
@@ -111,7 +112,7 @@ async def tasks_add(request: Request, description: str = Form(...), assignee: st
         with open(tp, "w", encoding="utf-8") as f:
             f.write("# Tasks\n\n")
             f.write(line)
-    return templates.TemplateResponse("tasks.html", {
+    return templates.TemplateResponse(request, "tasks.html", {
         "request": request,
         "tasks": _read_tasks(),
         "agent_name": _agent_name(),
@@ -128,7 +129,7 @@ async def runs_page(request: Request, whoami: str = ""):
     # collect distinct agents
     agents = list(set(e.get("whoami", "") for e in entries if e.get("whoami")))
 
-    return templates.TemplateResponse("runs.html", {
+    return templates.TemplateResponse(request, "runs.html", {
         "request": request,
         "runs": entries,
         "pass_rate": {"passed": passed, "total": total, "rate": round(rate * 100, 1)},
@@ -157,7 +158,7 @@ async def branches_page(request: Request):
     except Exception:
         pass
 
-    return templates.TemplateResponse("branches.html", {
+    return templates.TemplateResponse(request, "branches.html", {
         "request": request,
         "branches": branches_list,
     })
@@ -166,7 +167,7 @@ async def branches_page(request: Request):
 @app.get("/control")
 async def control_page(request: Request):
     from loop_engineering.control import get_status
-    return templates.TemplateResponse("control.html", {
+    return templates.TemplateResponse(request, "control.html", {
         "request": request,
         "status": get_status(_project_root()),
     })
