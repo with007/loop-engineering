@@ -103,22 +103,23 @@ def detect_config(project_root):
 
 
 def _detect_workspace(project_root, project_name):
-    """推断 agent workspace 路径."""
-    parent = os.path.dirname(project_root)
-    # project_root = d:/work_pvp/pvp8/PVPProject8
-    # workspace = d:/work_pvp/pvp8-agent
-    # 去掉项目名本身，在同级创建 -agent 目录
-    candidate = os.path.join(parent, project_name + "-agent")
-    # 如果该目录不存在，检查有没有 pvp8-agent 这种模式
-    if not os.path.exists(candidate):
-        # 试试 project_root 上层 + 项目目录名去掉一个层级
-        # d:/work_pvp/pvp8/PVPProject8 → d:/work_pvp/pvp8-agent
-        grandparent = os.path.dirname(parent)
-        project_dir = os.path.basename(parent)  # 如 pvp8
-        candidate2 = os.path.join(grandparent, project_dir + "-agent")
-        if os.path.exists(candidate2):
-            return candidate2
-    return candidate
+    """推断 agent workspace 路径.
+
+    优先: grandparent/<parent-dir>-agent (如 d:/work_pvp/pvp8-agent)
+    回退: parent/<project>-agent (如 d:/work_pvp/MyProject-agent)
+    """
+    parent = os.path.dirname(project_root)          # d:/work_pvp/pvp8
+    grandparent = os.path.dirname(parent)            # d:/work_pvp
+    parent_name = os.path.basename(parent)           # pvp8
+
+    # 优先: grandparent/<parent-dir>-agent
+    candidate = os.path.join(grandparent, parent_name + "-agent")
+    if os.path.exists(candidate):
+        return candidate
+
+    # 回退: parent/<project>-agent
+    fallback = os.path.join(parent, project_name + "-agent")
+    return fallback
 
 
 def _detect_mcp_port(project_root):
