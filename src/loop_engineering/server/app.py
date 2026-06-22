@@ -3,6 +3,7 @@
 import os
 import re
 import webbrowser
+from urllib.parse import quote
 import subprocess
 
 from fastapi import FastAPI, Request, Form, Query
@@ -179,7 +180,7 @@ async def dashboard(request: Request, project: str = Query(None)):
         # Filter to only those with loop-config.yaml
         valid = [p for p in projects if os.path.exists(os.path.join(p["root"], "loop-config.yaml"))]
         if valid:
-            return RedirectResponse(f"/?project={valid[0]['root']}", status_code=303)
+            return RedirectResponse(f"/?project={quote(valid[0]['root'])}", status_code=303)
         else:
             return RedirectResponse("/setup", status_code=303)
 
@@ -320,7 +321,7 @@ async def setup_run(request: Request, project_root: str = Form(...), agent_name:
         from loop_engineering.setup import run_setup
         run_setup(config, force=True)
         register_project(project_root, config["project"]["name"])
-        return RedirectResponse(f"/?project={project_root}", status_code=303)
+        return RedirectResponse(f"/?project={quote(project_root)}", status_code=303)
     except Exception as e:
         return _render(request, "setup.html", {
             "request": request,
