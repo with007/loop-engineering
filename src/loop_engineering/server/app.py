@@ -326,25 +326,36 @@ async def browse_dirs(path: str = ""):
 @app.get("/api/setup/pickfolder")
 async def pick_folder():
     """VBS COM 原生文件夹选择器."""
-    import platform as _plat, tempfile
+    import platform as _plat, tempfile, time as _time
     if _plat.system() != "Windows":
         return {"path": ""}
 
     vbs = tempfile.mktemp(suffix=".vbs")
+    out = tempfile.mktemp(suffix=".txt")
     with open(vbs, "w") as f:
-        f.write("""
+        f.write(f"""
 Set objShell = CreateObject("Shell.Application")
 Set objFolder = objShell.BrowseForFolder(0, "Select Folder", 0, 0)
+Set fso = CreateObject("Scripting.FileSystemObject")
+Set out = fso.CreateTextFile("{out.replace(chr(92), chr(92)+chr(92))}", True)
 If Not objFolder Is Nothing Then
-    WScript.Echo objFolder.Self.Path
+    out.Write objFolder.Self.Path
 End If
+out.Close
 """)
     try:
-        r = subprocess.run(
+        # 不捕获输出，让 cscript 正常显示对话框
+        subprocess.run(
             ["cscript", "//Nologo", vbs],
-            capture_output=True, text=True, timeout=300
+            timeout=300
         )
-        path = r.stdout.strip()
+        _time.sleep(0.5)
+        if os.path.exists(out):
+            with open(out) as f:
+                path = f.read().strip()
+            os.remove(out)
+        else:
+            path = ""
     except Exception:
         path = ""
     try:
