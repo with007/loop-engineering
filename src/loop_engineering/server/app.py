@@ -268,6 +268,12 @@ async def setup_run(request: Request, project_root: str = Form(...), agent_name:
             "error": f"目录不存在: {project_root}",
         })
 
+    if not os.path.isdir(os.path.join(project_root, ".git")):
+        return _render(request, "setup.html", {
+            "request": request,
+            "error": f"不是 Git 仓库: {project_root}\n请先用 git init 或 git clone 初始化项目",
+        })
+
     # 确定 agent name
     if not agent_name:
         try:

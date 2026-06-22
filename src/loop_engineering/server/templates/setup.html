@@ -27,40 +27,36 @@
     <div class="grid grid-2" style="margin-bottom: 16px;">
         <div class="card">
             <h3>项目根目录</h3>
-            <template x-if="isUnity">
-                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-                    <div class="form-group" style="flex: 1; margin: 0;">
-                        <label>MCP 端口</label>
-                        <input type="number" x-model="mainPort" name="main_port" value="8080"
-                               style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 8px 12px; border-radius: 7px; font-size: 14px; width: 100%;">
-                    </div>
-                </div>
-            </template>
             <div style="display: flex; gap: 8px;">
                 <input type="text" x-model="projectRoot" placeholder="d:/work_pvp/myproject"
                        style="flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px 14px; border-radius: 7px; font-size: 14px;">
                 <button class="btn btn-sm" style="background: var(--surface2); color: var(--text);"
                         @click="pickFolder('project')">选择</button>
             </div>
+            <template x-if="isUnity">
+                <div class="form-group" style="margin-top: 8px; margin-bottom: 0;">
+                    <label>MCP 端口</label>
+                    <input type="number" x-model="mainPort" name="main_port" value="8080"
+                           style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 8px 12px; border-radius: 7px; font-size: 14px; width: 120px;">
+                </div>
+            </template>
         </div>
 
         <div class="card">
             <h3>Agent 工作区目录</h3>
-            <template x-if="isUnity">
-                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-                    <div class="form-group" style="flex: 1; margin: 0;">
-                        <label>MCP 端口</label>
-                        <input type="number" x-model="agentPort" name="agent_port" value="9080"
-                               style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 8px 12px; border-radius: 7px; font-size: 14px; width: 100%;">
-                    </div>
-                </div>
-            </template>
             <div style="display: flex; gap: 8px;">
                 <input type="text" x-model="agentWorkspace" placeholder="选择项目根目录后自动填入"
                        style="flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px 14px; border-radius: 7px; font-size: 14px;">
                 <button class="btn btn-sm" style="background: var(--surface2); color: var(--text);"
                         @click="pickFolder('agent')">选择</button>
             </div>
+            <template x-if="isUnity">
+                <div class="form-group" style="margin-top: 8px; margin-bottom: 0;">
+                    <label>MCP 端口</label>
+                    <input type="number" x-model="agentPort" name="agent_port" value="9080"
+                           style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 8px 12px; border-radius: 7px; font-size: 14px; width: 120px;">
+                </div>
+            </template>
         </div>
     </div>
 

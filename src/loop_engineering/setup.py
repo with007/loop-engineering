@@ -364,6 +364,38 @@ def sync_to_agent(config):
 
 
 def deploy_skills(config):
+
+
+def add_unity_mcp(config):
+    """添加 Unity MCP 包依赖到 Packages/manifest.json."""
+    print("--- Unity MCP 依赖 ---")
+    project_root = config["project"]["root"]
+    project_name = config["project"]["name"]
+    agent_workspace = config["agent"]["workspace"]
+    agent_dir = os.path.join(agent_workspace, project_name)
+
+    pkg = "com.coplaydev.unity-mcp"
+    pkg_url = "https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#main"
+
+    for worktree, label in [(project_root, "主工程"), (agent_dir, "Agent")]:
+        manifest = os.path.join(worktree, "Packages", "manifest.json")
+        if not os.path.exists(manifest):
+            print(f"  (非 Unity 工程，跳过 {label})")
+            continue
+
+        with open(manifest, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        deps = data.setdefault("dependencies", {})
+        if pkg in deps:
+            print(f"  [OK] {label} 已有 unity-mcp")
+            continue
+
+        deps[pkg] = pkg_url
+        with open(manifest, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        print(f"  [OK] {label} 已添加 unity-mcp")
     """部署 Claude Code skills、commands 和 settings."""
     print("--- 部署 Skill 和 Command ---")
     project_root = config["project"]["root"]
@@ -418,6 +450,7 @@ def run_setup(config, force=False):
         ("PackageCache 共享", lambda: share_package_cache(config)),
         ("部署环境脚本", lambda: deploy_scripts(config)),
         ("部署 Skill 和 Command", lambda: deploy_skills(config)),
+        ("添加 Unity MCP 依赖", lambda: add_unity_mcp(config)),
         ("渲染 SKILL.md", lambda: render_skill_md(config)),
         ("注册通知协议", lambda: register_protocol(config)),
         ("同步配置到 Agent Worktree", lambda: sync_to_agent(config)),
