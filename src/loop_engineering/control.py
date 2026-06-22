@@ -152,15 +152,18 @@ def start_loop(project_root):
     project_name = os.path.basename(project_root)
 
     if platform.system() == "Windows":
-        loop_bat = (
-            f"cd /d {project_root}\r\n"
-            f"claude --dangerously-skip-permissions"
+        # VBS 脚本：打开 cmd 窗口启动 claude，然后 SendKeys 输入 /runloop
+        vbs = (
+            f'Set WshShell = CreateObject("WScript.Shell")\r\n'
+            f'WshShell.Run "cmd /k cd /d {project_root} && claude --dangerously-skip-permissions", 1\r\n'
+            f'WScript.Sleep 4000\r\n'
+            f'WshShell.SendKeys "/runloop{{ENTER}}"\r\n'
         )
-        bat_path = os.path.join(_control_dir(project_root), "loop.bat")
-        os.makedirs(os.path.dirname(bat_path), exist_ok=True)
-        with open(bat_path, "w") as f:
-            f.write(loop_bat)
-        cmd = f'start "Loop: {project_name}" cmd /k "{bat_path}"'
+        vbs_path = os.path.join(_control_dir(project_root), "loop.vbs")
+        os.makedirs(os.path.dirname(vbs_path), exist_ok=True)
+        with open(vbs_path, "w") as f:
+            f.write(vbs)
+        cmd = f'cscript //Nologo "{vbs_path}"'
     else:
         cmd = (
             f'osascript -e \'tell app "Terminal" to do script '
