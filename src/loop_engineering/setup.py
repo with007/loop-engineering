@@ -507,18 +507,62 @@ def run_setup(config, force=False):
     config_path = cfg.write_config(config["project"]["root"], clean_config)
     _ensure_gitignore(config["project"]["root"], "loop-config.yaml")
 
+    # 自动提交 setup 产生的文件
+    _commit_setup_files(config)
+
     print()
     print("=" * 50)
     print("[OK] Setup 完成！")
     print()
     print("接下来:")
-    print(f"  1. git add .claude/ && git commit -m \"chore: loop-engineering setup\" && git push")
-    print(f"     (.mcp.json 和 loop-config.yaml 已 gitignore，不会提交)")
     agent_dir = os.path.join(config["agent"]["workspace"], config["project"]["name"])
-    print(f"  2. 在 Unity Hub 打开 {agent_dir}")
-    print(f"  3. 在 Claude Code 中运行 /runloop")
+    print(f"  1. 在 Unity Hub 打开 {agent_dir}")
+    print(f"  2. 在 Claude Code 中运行 /runloop")
     if not config.get("data_repo"):
         print(f"  (未配置 data_repo，配表/数据相关任务可能无法执行)")
+
+
+def _commit_setup_files(config):
+    """自动将 setup 产生的文件提交到 git."""
+    project_root = config["project"]["root"]
+
+    # 检查是否是 git 仓库
+    code, _, _ = _run("git rev-parse --git-dir", cwd=project_root)
+    if code != 0:
+        print("\n  (非 git 仓库，跳过自动提交)")
+        return
+
+    # 检查是否有未提交的变更
+    code, stdout, _ = _run("git status --porcelain", cwd=project_root)
+    if code != 0 or not stdout.strip():
+        print("\n  (无需提交)")
+        return
+
+    # 添加 setup 产生的文件
+    files_to_add = [
+        ".claude/",
+        "Packages/manifest.json",
+        "ProjectSettings/McpProjectConfig.json",
+        ".gitignore",
+    ]
+    for f in files_to_add:
+        full = os.path.join(project_root, f)
+        if os.path.exists(full):
+            _run(f'git add "{f}"', cwd=project_root)
+
+    # 提交
+    code, stdout, stderr = _run(
+        'git commit -m "chore: loop-engineering setup"',
+        cwd=project_root
+    )
+    if code == 0:
+        print("\n  [OK] 已自动提交 setup 文件")
+    else:
+        # 可能 nothing to commit
+        if "nothing to commit" in stderr.lower() or "nothing to commit" in stdout.lower():
+            print("\n  (无需提交)")
+        else:
+            print(f"\n  [WARN] 自动提交失败: {stderr.strip()[:120]}")
 
 
 # ── SKILL.md 模板 ─────────────────────────────────────────────
