@@ -79,9 +79,14 @@ def _create_single_worktree(source_repo, target_dir, label):
     print(f"  创建 {label} worktree ...")
     _run("git fetch origin", cwd=source_repo)
     default_ref = _default_branch(source_repo)
-    code, stdout, stderr = _run(
-        f'git worktree add "{target_dir}" {default_ref}', cwd=source_repo
-    )
+
+    # remote ref 可以直接用；local branch 需要 --detach（避免 already checked out）
+    if default_ref.startswith("origin/"):
+        add_cmd = f'git worktree add "{target_dir}" {default_ref}'
+    else:
+        add_cmd = f'git worktree add --detach "{target_dir}" {default_ref}'
+
+    code, stdout, stderr = _run(add_cmd, cwd=source_repo)
     if code != 0:
         # first attempt failed — clean up and retry
         print(f"  retrying: {stderr.strip()[:120]}")
@@ -95,7 +100,7 @@ def _create_single_worktree(source_repo, target_dir, label):
                 pass  # may be locked by another process
         # also try git's own remove
         _run(f'git worktree remove --force "{target_dir}"', cwd=source_repo)
-        _run(f'git worktree add "{target_dir}" {default_ref}', cwd=source_repo, check=True)
+        _run(add_cmd, cwd=source_repo, check=True)
     print(f"  [OK] {label} worktree 创建完成: {target_dir}")
 
 
