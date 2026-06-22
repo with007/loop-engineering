@@ -55,6 +55,23 @@ def _agent_name():
     return cfg.get("agent", {}).get("name", "")
 
 
+def _is_htmx(request: Request):
+    """检查是否为 HTMX 请求（部分刷新）."""
+    return request.headers.get("HX-Request", "") == "true"
+
+
+def _render(request: Request, template_name: str, context: dict):
+    """渲染模板。HTMX 请求返回纯内容，完整请求包裹 base.html 布局."""
+    if _is_htmx(request):
+        return templates.TemplateResponse(request, template_name, context)
+    # 完整页面：先渲染内容，再嵌入 base.html
+    content_html = templates.get_template(template_name).render(context)
+    return templates.TemplateResponse(request, "base.html", {
+        "request": request,
+        "content": content_html,
+    })
+
+
 # ── 页面路由 ──
 
 
@@ -79,7 +96,7 @@ async def dashboard(request: Request):
     except Exception:
         branch_count = 0
 
-    return templates.TemplateResponse(request, "dashboard.html", {
+    return _render(request, "dashboard.html", {
         "request": request,
         "projects": [{
             "name": name,
@@ -93,7 +110,7 @@ async def dashboard(request: Request):
 
 @app.get("/tasks")
 async def tasks_page(request: Request):
-    return templates.TemplateResponse(request, "tasks.html", {
+    return _render(request, "tasks.html", {
         "request": request,
         "tasks": _read_tasks(),
         "agent_name": _agent_name(),
@@ -112,7 +129,7 @@ async def tasks_add(request: Request, description: str = Form(...), assignee: st
         with open(tp, "w", encoding="utf-8") as f:
             f.write("# Tasks\n\n")
             f.write(line)
-    return templates.TemplateResponse(request, "tasks.html", {
+    return _render(request, "tasks.html", {
         "request": request,
         "tasks": _read_tasks(),
         "agent_name": _agent_name(),
@@ -129,7 +146,7 @@ async def runs_page(request: Request, whoami: str = ""):
     # collect distinct agents
     agents = list(set(e.get("whoami", "") for e in entries if e.get("whoami")))
 
-    return templates.TemplateResponse(request, "runs.html", {
+    return _render(request, "runs.html", {
         "request": request,
         "runs": entries,
         "pass_rate": {"passed": passed, "total": total, "rate": round(rate * 100, 1)},
@@ -158,7 +175,7 @@ async def branches_page(request: Request):
     except Exception:
         pass
 
-    return templates.TemplateResponse(request, "branches.html", {
+    return _render(request, "branches.html", {
         "request": request,
         "branches": branches_list,
     })
@@ -167,7 +184,7 @@ async def branches_page(request: Request):
 @app.get("/control")
 async def control_page(request: Request):
     from loop_engineering.control import get_status
-    return templates.TemplateResponse(request, "control.html", {
+    return _render(request, "control.html", {
         "request": request,
         "status": get_status(_project_root()),
     })

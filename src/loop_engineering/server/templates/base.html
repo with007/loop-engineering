@@ -137,8 +137,17 @@
             </nav>
         </header>
         <div id="content">
-            {% block content %}{% endblock %}
+            {{ content | safe }}
         </div>
     </div>
+    <script>
+        // Update nav active state after HTMX navigation
+        document.body.addEventListener('htmx:afterSettle', function(evt) {
+            var path = evt.detail.pathInfo?.requestPath || window.location.pathname;
+            document.querySelectorAll('nav a').forEach(function(a) {
+                a.classList.toggle('active', a.getAttribute('href') === path);
+            });
+        });
+    </script>
 </body>
 </html>
