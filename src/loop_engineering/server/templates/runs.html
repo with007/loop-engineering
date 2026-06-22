@@ -1,3 +1,5 @@
+{% extends "base.html" %}
+{% block content %}
 <div hx-get="/runs" hx-trigger="every 30s" hx-swap="outerHTML">
     <h1>Run History</h1>
 
@@ -140,3 +142,4 @@
     </div>
     {% endif %}
 </div>
+{% endblock %}

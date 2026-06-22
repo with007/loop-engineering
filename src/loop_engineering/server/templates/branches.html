@@ -1,3 +1,5 @@
+{% extends "base.html" %}
+{% block content %}
 <div hx-get="/branches" hx-trigger="every 60s" hx-swap="outerHTML">
     <h1>Agent Branches</h1>
 
@@ -47,3 +49,4 @@
     </div>
     {% endif %}
 </div>
+{% endblock %}

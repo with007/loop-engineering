@@ -1,3 +1,5 @@
+{% extends "base.html" %}
+{% block content %}
 <div hx-get="/" hx-trigger="every 30s" hx-swap="outerHTML">
     {% if not projects %}
     <div class="card" style="text-align: center; padding: 60px 20px;">
@@ -10,7 +12,6 @@
     <h1>{{ proj.name }}</h1>
     <p style="color: var(--muted); margin-bottom: 24px;">{{ proj.root }}</p>
 
-    <!-- Stats -->
     <div class="grid grid-4" style="margin-bottom: 24px;">
         <div class="card stat">
             <div class="stat-value blue">{{ proj.tasks.pending }}</div>
@@ -30,9 +31,7 @@
         </div>
     </div>
 
-    <!-- PASS Rate Chart + Task Breakdown -->
     <div class="grid grid-2" style="margin-bottom: 24px;">
-        <!-- Donut chart -->
         <div class="card">
             <h3>PASS Rate (7 days)</h3>
             {% if proj.pass_rate.total > 0 %}
@@ -47,25 +46,13 @@
                 (function() {
                     var ctx = document.getElementById('passChart');
                     if (!ctx) return;
-                    var passed = {{ proj.pass_rate.passed }};
-                    var failed = {{ proj.pass_rate.total - proj.pass_rate.passed }};
                     new Chart(ctx, {
                         type: 'doughnut',
                         data: {
                             labels: ['Passed', 'Failed'],
-                            datasets: [{
-                                data: [passed, failed],
-                                backgroundColor: ['#22c55e', '#ef4444'],
-                                borderColor: '#111827',
-                                borderWidth: 3,
-                                borderRadius: 2,
-                            }]
+                            datasets: [{data: [{{ proj.pass_rate.passed }}, {{ proj.pass_rate.total - proj.pass_rate.passed }}], backgroundColor: ['#22c55e','#ef4444'], borderColor: '#111827', borderWidth: 3}]
                         },
-                        options: {
-                            cutout: '75%',
-                            plugins: { legend: { display: false } },
-                            responsive: true,
-                        }
+                        options: { cutout: '75%', plugins: { legend: { display: false } } }
                     });
                 })();
             </script>
@@ -73,30 +60,22 @@
             <p style="color: var(--dim); padding: 40px 0; text-align: center;">No run data yet</p>
             {% endif %}
         </div>
-
-        <!-- Task breakdown -->
         <div class="card">
             <h3>Task Breakdown</h3>
-            <div style="padding: 10px 0;">
-                {% set total = proj.tasks.pending + proj.tasks.in_progress + proj.tasks.done %}
-                {% set pct_pending = (proj.tasks.pending / total * 100) if total > 0 else 0 %}
-                {% set pct_active = (proj.tasks.in_progress / total * 100) if total > 0 else 0 %}
-                {% set pct_done = (proj.tasks.done / total * 100) if total > 0 else 0 %}
-                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px;">
-                    <span style="color: var(--blue);">Pending {{ proj.tasks.pending }}</span>
-                    <span style="color: var(--amber);">Active {{ proj.tasks.in_progress }}</span>
-                    <span style="color: var(--green);">Done {{ proj.tasks.done }}</span>
-                </div>
-                <div class="progress-bar">
-                    <div class="progress-fill green" style="width: {{ pct_done }}%"></div>
-                </div>
-                <div style="display: flex; justify-content: space-between; margin-top: 24px; font-size: 13px; color: var(--dim);">
-                    <span>{{ proj.unmerged_branches }} unmerged branches</span>
-                    <span>{{ total }} total tasks</span>
-                </div>
+            {% set total = proj.tasks.pending + proj.tasks.in_progress + proj.tasks.done %}
+            {% set pct_done = (proj.tasks.done / total * 100) if total > 0 else 0 %}
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px;">
+                <span style="color: var(--blue);">Pending {{ proj.tasks.pending }}</span>
+                <span style="color: var(--amber);">Active {{ proj.tasks.in_progress }}</span>
+                <span style="color: var(--green);">Done {{ proj.tasks.done }}</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill green" style="width: {{ pct_done }}%"></div></div>
+            <div style="display: flex; justify-content: space-between; margin-top: 24px; font-size: 13px; color: var(--dim);">
+                <span>{{ proj.unmerged_branches }} branches</span><span>{{ total }} total</span>
             </div>
         </div>
     </div>
     {% endfor %}
     {% endif %}
 </div>
+{% endblock %}

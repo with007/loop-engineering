@@ -1,3 +1,5 @@
+{% extends "base.html" %}
+{% block content %}
 <div hx-get="/control" hx-trigger="every 10s" hx-swap="outerHTML">
     <h1>Control</h1>
 
@@ -79,3 +81,4 @@
         }
     </script>
 </div>
+{% endblock %}

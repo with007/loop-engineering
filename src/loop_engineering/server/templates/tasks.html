@@ -1,3 +1,5 @@
+{% extends "base.html" %}
+{% block content %}
 <div hx-get="/tasks" hx-trigger="every 30s" hx-swap="outerHTML">
     <h1>Tasks</h1>
 
@@ -77,3 +79,4 @@
     </div>
     {% endif %}
 </div>
+{% endblock %}
