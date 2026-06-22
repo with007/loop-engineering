@@ -125,6 +125,7 @@ def generate_mcp_configs(config):
 
     # 主工程 McpProjectConfig.json
     _write_mcp_project_config(project_root, project_name, main_port, "主工程")
+    _ensure_gitignore(project_root, "ProjectSettings/McpProjectConfig.json")
 
 
 def _write_mcp_project_config(worktree_dir, project_name, port, label):
@@ -542,7 +543,6 @@ def _commit_setup_files(config):
     files_to_add = [
         ".claude/",
         "Packages/manifest.json",
-        "ProjectSettings/McpProjectConfig.json",
         ".gitignore",
     ]
     for f in files_to_add:
