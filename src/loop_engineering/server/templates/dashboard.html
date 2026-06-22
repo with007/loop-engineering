@@ -1,8 +1,8 @@
 <div hx-get="/" hx-trigger="every 30s" hx-swap="outerHTML">
     {% if not projects %}
     <div class="card" style="text-align: center; padding: 60px 20px;">
-        <h2>No projects found</h2>
-        <p style="color: var(--muted); margin-top: 8px;">Run <code>loop setup</code> in a project directory.</p>
+        <h2>未找到项目</h2>
+        <p style="color: var(--muted); margin-top: 8px;">在项目目录运行 <code>loop setup</code></p>
     </div>
     {% else %}
 
@@ -13,31 +13,31 @@
     <div class="grid grid-4" style="margin-bottom: 24px;">
         <div class="card stat">
             <div class="stat-value pending">{{ proj.tasks.pending }}</div>
-            <div class="stat-label">Pending</div>
+            <div class="stat-label">待办</div>
         </div>
         <div class="card stat">
             <div class="stat-value active">{{ proj.tasks.in_progress }}</div>
-            <div class="stat-label">Active</div>
+            <div class="stat-label">进行中</div>
         </div>
         <div class="card stat">
             <div class="stat-value pass">{{ proj.tasks.done }}</div>
-            <div class="stat-label">Completed</div>
+            <div class="stat-label">已完成</div>
         </div>
         <div class="card stat">
             <div class="stat-value" style="color: {{ 'var(--pass)' if proj.pass_rate.rate >= 80 else 'var(--active)' if proj.pass_rate.rate >= 50 else 'var(--fail)' }}">{{ proj.pass_rate.rate }}%</div>
-            <div class="stat-label">PASS Rate (7d)</div>
+            <div class="stat-label">7日通过率</div>
         </div>
     </div>
 
     <div class="grid grid-2" style="margin-bottom: 24px;">
         <div class="card">
-            <h3>PASS Rate (7 days)</h3>
+            <h3>7日通过率</h3>
             {% if proj.pass_rate.total > 0 %}
             <div class="chart-wrap">
                 <canvas id="passChart"></canvas>
                 <div class="chart-center">
                     <div class="pct" style="color: {{ 'var(--pass)' if proj.pass_rate.rate >= 80 else 'var(--active)' if proj.pass_rate.rate >= 50 else 'var(--fail)' }}">{{ proj.pass_rate.rate }}%</div>
-                    <div class="lbl">{{ proj.pass_rate.passed }}/{{ proj.pass_rate.total }} runs</div>
+                    <div class="lbl">{{ proj.pass_rate.passed }}/{{ proj.pass_rate.total }}</div>
                 </div>
             </div>
             <script>
@@ -47,7 +47,7 @@
                     new Chart(ctx, {
                         type: 'doughnut',
                         data: {
-                            labels: ['Passed', 'Failed'],
+                            labels: ['通过', '失败'],
                             datasets: [{data: [{{ proj.pass_rate.passed }}, {{ proj.pass_rate.total - proj.pass_rate.passed }}], backgroundColor: ['#3b82f6','#f97316'], borderColor: '#111827', borderWidth: 3}]
                         },
                         options: { cutout: '75%', plugins: { legend: { display: false } } }
@@ -55,24 +55,60 @@
                 })();
             </script>
             {% else %}
-            <p style="color: var(--dim); padding: 40px 0; text-align: center;">No run data yet</p>
+            <p style="color: var(--dim); padding: 40px 0; text-align: center;">暂无运行数据</p>
             {% endif %}
         </div>
         <div class="card">
-            <h3>Task Breakdown</h3>
+            <h3>任务进度</h3>
             {% set total = proj.tasks.pending + proj.tasks.in_progress + proj.tasks.done %}
             {% set pct_done = (proj.tasks.done / total * 100) if total > 0 else 0 %}
             <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px;">
-                <span style="color: var(--blue);">Pending {{ proj.tasks.pending }}</span>
-                <span style="color: var(--active);">Active {{ proj.tasks.in_progress }}</span>
-                <span style="color: var(--pass);">Done {{ proj.tasks.done }}</span>
+                <span style="color: var(--pending);">待办 {{ proj.tasks.pending }}</span>
+                <span style="color: var(--active);">进行中 {{ proj.tasks.in_progress }}</span>
+                <span style="color: var(--pass);">已完成 {{ proj.tasks.done }}</span>
             </div>
             <div class="progress-bar"><div class="progress-fill pass" style="width: {{ pct_done }}%"></div></div>
-            <div style="display: flex; justify-content: space-between; margin-top: 24px; font-size: 13px; color: var(--dim);">
-                <span>{{ proj.unmerged_branches }} branches</span><span>{{ total }} total</span>
-            </div>
+            <div style="margin-top: 12px; font-size: 13px; color: var(--dim);">{{ total }} 个任务</div>
         </div>
     </div>
+
+    {% set pending_br = proj.branches | selectattr('merged', 'equalto', false) | list %}
+    {% set merged_br = proj.branches | selectattr('merged', 'equalto', true) | list %}
+    {% if proj.branches %}
+    <div class="card">
+        <h3>Agent 分支
+            {% if pending_br %}
+            <span class="badge badge-active" style="margin-left: 8px;">{{ pending_br | length }} 待合入</span>
+            {% endif %}
+        </h3>
+        {% if pending_br %}
+        <div style="margin-bottom: 12px;">
+            {% for b in pending_br %}
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
+                <code style="color: var(--pass); font-size: 13px;">{{ b.name }}</code>
+                <span class="badge badge-active">待审查</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% if merged_br %}
+        <details>
+            <summary style="cursor: pointer; color: var(--muted); font-size: 13px; padding: 4px 0;">
+                {{ merged_br | length }} 已合入
+            </summary>
+            {% for b in merged_br[:10] %}
+            <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border);">
+                <code style="color: var(--dim); font-size: 12px;">{{ b.name }}</code>
+                <span class="badge badge-pass">已合入</span>
+            </div>
+            {% endfor %}
+        </details>
+        {% endif %}
+        {% if not pending_br and not merged_br %}
+        <p style="color: var(--dim); font-size: 13px;">暂无 Agent 分支</p>
+        {% endif %}
+    </div>
+    {% endif %}
     {% endfor %}
     {% endif %}
 </div>

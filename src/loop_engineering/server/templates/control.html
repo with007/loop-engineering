@@ -12,15 +12,15 @@
         <div class="status-indicator" style="margin-bottom: 16px;">
             <span class="status-dot {% if is_running %}active{% elif status.paused %}paused{% endif %}"></span>
             <span style="font-weight: 600; font-size: 18px;">
-                {% if is_running %}Loop Running
-                {% elif status.paused %}Paused
-                {% else %}Idle{% endif %}
+                {% if is_running %}Loop 运行中
+                {% elif status.paused %}已暂停
+                {% else %}空闲{% endif %}
             </span>
             <span style="color: var(--dim); font-size: 13px; margin-left: auto;">
                 {% if status.heartbeat %}
                 HB: <span id="hb-time" data-iso="{{ status.heartbeat }}">{{ status.heartbeat[:19] | replace('T', ' ') }}</span>
                 {% else %}
-                No heartbeat
+                无心跳
                 {% endif %}
             </span>
         </div>
@@ -31,14 +31,14 @@
                     hx-post="/api/control/stop"
                     hx-target="closest div[hx-get]"
                     hx-swap="outerHTML">
-                Stop Loop
+                停止 Loop
             </button>
             {% else %}
             <button class="btn btn-success"
                     hx-post="/api/control/start"
                     hx-target="closest div[hx-get]"
                     hx-swap="outerHTML">
-                Start Loop
+                启动 Loop
             </button>
             {% endif %}
 
@@ -48,14 +48,14 @@
                     hx-delete="/api/control/pause"
                     hx-target="closest div[hx-get]"
                     hx-swap="outerHTML">
-                Resume
+                恢复
             </button>
             {% else %}
             <button class="btn btn-warn"
                     hx-post="/api/control/pause"
                     hx-target="closest div[hx-get]"
                     hx-swap="outerHTML">
-                Pause
+                暂停
             </button>
             {% endif %}
             {% endif %}
@@ -65,12 +65,12 @@
                     hx-post="/api/control/next"
                     hx-target="closest div[hx-get]"
                     hx-swap="outerHTML">
-                Force Next
+                立即执行
             </button>
             {% endif %}
 
             <div style="display: flex; align-items: center; gap: 8px; margin-left: 12px;">
-                <span style="color: var(--muted); font-size: 13px;">Tick:</span>
+                <span style="color: var(--muted); font-size: 13px;">间隔：</span>
                 <input type="text" id="throttle-input" value="{{ status.throttle }}"
                        style="background: var(--bg); color: var(--text); border: 1px solid var(--border);
                               padding: 6px 10px; border-radius: 6px; width: 70px; font-size: 13px; text-align: center;">
@@ -81,15 +81,15 @@
 
     <div class="grid grid-2">
         <div class="card">
-            <h3>Signal Files</h3>
+            <h3>信号文件</h3>
             <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-family: monospace;">
                 <div style="display: flex; justify-content: space-between;">
                     <span>control/heartbeat</span>
-                    <span style="color: {{ 'var(--pass)' if is_running else '#64748b' }}">{{ status.heartbeat or 'absent' }}</span>
+                    <span style="color: {{ 'var(--pass)' if is_running else '#64748b' }}">{{ status.heartbeat or '无' }}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between;">
                     <span>control/pause</span>
-                    <span style="color: {{ 'var(--active)' if status.paused else '#64748b' }}">{{ 'ON' if status.paused else 'off' }}</span>
+                    <span style="color: {{ 'var(--active)' if status.paused else '#64748b' }}">{{ 'ON' if status.paused else '关' }}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between;">
                     <span>control/throttle</span>
@@ -97,21 +97,21 @@
                 </div>
                 <div style="display: flex; justify-content: space-between;">
                     <span>control/loop.pid</span>
-                    <span style="color: var(--dim);">{{ status.pid or 'none' }}</span>
+                    <span style="color: var(--dim);">{{ status.pid or '无' }}</span>
                 </div>
             </div>
         </div>
 
         <div class="card">
-            <h3>How it works</h3>
+            <h3>工作原理</h3>
             <p style="color: var(--muted); font-size: 13px; line-height: 1.6;">
-                <strong>Start</strong> opens a terminal window running<br>
+                <strong>Start</strong> 打开终端窗口运行<br>
                 <code style="color: var(--blue);">claude --dangerously-skip-permissions -p '/runloop'</code>
             </p>
             <p style="color: var(--muted); font-size: 13px; line-height: 1.6; margin-top: 8px;">
-                Dashboard detects loop status via:<br>
-                • Heartbeat file (updated each tick)<br>
-                • Process ID (terminal window alive)
+                Dashboard 通过以下方式检测 Loop 状态：<br>
+                • 心跳文件（每轮更新）<br>
+                • 进程 ID（终端窗口存活）
             </p>
         </div>
     </div>

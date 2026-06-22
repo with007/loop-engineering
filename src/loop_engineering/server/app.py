@@ -89,12 +89,22 @@ async def dashboard(request: Request):
     done = sum(1 for t in tasks_list if t["status"] == "done")
     passed, total, rate = get_pass_rate(pr, days=7)
 
-    # count agent branches
+    # agent branches
+    branches_list = []
     try:
         r = subprocess.run("git branch -r", shell=True, capture_output=True, text=True, cwd=pr, timeout=10)
-        branch_count = sum(1 for l in r.stdout.split("\n") if "agent/" in l)
+        for line in r.stdout.strip().split("\n"):
+            line = line.strip()
+            if "agent/" not in line:
+                continue
+            b = line.replace("origin/", "")
+            r2 = subprocess.run(
+                f"git merge-base --is-ancestor origin/{b} origin/master",
+                shell=True, capture_output=True, cwd=pr, timeout=10
+            )
+            branches_list.append({"name": b, "merged": r2.returncode == 0})
     except Exception:
-        branch_count = 0
+        pass
 
     return _render(request, "dashboard.html", {
         "request": request,
@@ -103,7 +113,7 @@ async def dashboard(request: Request):
             "root": pr,
             "tasks": {"pending": pending, "in_progress": active, "done": done},
             "pass_rate": {"passed": passed, "total": total, "rate": round(rate * 100, 1)},
-            "unmerged_branches": branch_count,
+            "branches": branches_list,
         }]
     })
 

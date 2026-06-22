@@ -1,26 +1,26 @@
 <div hx-get="/runs" hx-trigger="every 30s" hx-swap="outerHTML">
-    <h1>Run History</h1>
+    <h1>运行历史</h1>
 
     <!-- Stats row -->
     <div class="grid grid-3" style="margin-bottom: 20px;">
         <div class="card stat">
             <div class="stat-value pass">{{ pass_rate.rate }}%</div>
-            <div class="stat-label">PASS Rate (7d)</div>
+            <div class="stat-label">7日通过率</div>
         </div>
         <div class="card stat">
             <div class="stat-value pending">{{ pass_rate.passed }}</div>
-            <div class="stat-label">Passed</div>
+            <div class="stat-label">通过</div>
         </div>
         <div class="card stat">
             <div class="stat-value fail">{{ pass_rate.total - pass_rate.passed }}</div>
-            <div class="stat-label">Failed</div>
+            <div class="stat-label">失败</div>
         </div>
     </div>
 
     <!-- Bar chart for recent runs -->
     {% if runs %}
     <div class="card" style="margin-bottom: 20px;">
-        <h3>Recent Results</h3>
+        <h3>最近结果</h3>
         <div style="height: 120px;">
             <canvas id="runsChart"></canvas>
         </div>
@@ -66,12 +66,12 @@
         <select hx-get="/runs" hx-target="closest div[hx-get]" hx-include="this" name="whoami"
                 hx-swap="outerHTML"
                 style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 6px 12px; border-radius: 6px; font-size: 13px;">
-            <option value="">All agents</option>
+            <option value="">全部 Agent</option>
             {% for a in agents %}
             <option value="{{ a }}" {% if filter_whoami == a %}selected{% endif %}>{{ a }}</option>
             {% endfor %}
         </select>
-        <span style="color: var(--dim); font-size: 12px; margin-left: auto;">{{ runs | length }} runs shown</span>
+        <span style="color: var(--dim); font-size: 12px; margin-left: auto;">{{ runs | length }} 条记录</span>
     </div>
 
     <!-- Timeline -->
@@ -99,23 +99,23 @@
                         <span class="value">{{ r.whoami }}</span>
                     </div>
                     <div class="info-item">
-                        <span class="label">Round</span>
+                        <span class="label">轮次</span>
                         <span class="value">IMP{{ r.imp_round }} / VFY{{ r.vfy_round }}</span>
                     </div>
                     <div class="info-item">
-                        <span class="label">Phase</span>
+                        <span class="label">阶段</span>
                         <span class="value">{{ r.phase }}</span>
                     </div>
                     {% if r.summary %}
                     <div class="info-item" style="flex-basis: 100%;">
-                        <span class="label">Summary</span>
+                        <span class="label">变更摘要</span>
                         <span class="value">{{ r.summary }}</span>
                     </div>
                     {% endif %}
                 </div>
                 {% if r.tests %}
                 <div style="margin-top: 12px;">
-                    <h3>Test Results</h3>
+                    <h3>测试结果</h3>
                     {% for t in r.tests %}
                     <div style="display: flex; gap: 8px; align-items: center; padding: 6px 0; font-size: 13px;">
                         <span class="badge {% if t.result == 'PASS' %}badge-pass{% else %}badge-fail{% endif %}" style="font-size: 10px;">{{ t.result }}</span>
@@ -135,8 +135,8 @@
     </div>
     {% else %}
     <div class="card" style="text-align: center; padding: 60px 20px; color: var(--dim);">
-        <p style="font-size: 16px;">No run history yet</p>
-        <p style="margin-top: 4px;">Runs appear here after task-runner completes a task</p>
+        <p style="font-size: 16px;">暂无运行记录</p>
+        <p style="margin-top: 4px;">任务完成后运行记录会显示在这里</p>
     </div>
     {% endif %}
 </div>

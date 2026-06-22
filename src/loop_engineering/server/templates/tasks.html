@@ -1,5 +1,5 @@
 <div hx-get="/tasks" hx-trigger="every 30s" hx-swap="outerHTML">
-    <h1>Tasks</h1>
+    <h1>任务</h1>
 
     <!-- Add task form -->
     <div class="card" style="margin-bottom: 20px;">
@@ -7,17 +7,17 @@
               hx-on::after-request="this.reset()">
             <div class="inline-form">
                 <div class="form-group">
-                    <input name="description" placeholder="What needs to be done?" required>
+                    <input name="description" placeholder="任务描述?" required>
                 </div>
                 <div class="form-group" style="max-width: 160px;">
-                    <input name="assignee" placeholder="Assignee" required value="{{ agent_name }}">
+                    <input name="assignee" placeholder="负责人" required value="{{ agent_name }}">
                 </div>
-                <button type="submit" class="btn btn-primary">Add Task</button>
+                <button type="submit" class="btn btn-primary">添加任务</button>
             </div>
         </form>
     </div>
 
-    <!-- Progress bar -->
+    <!-- 进度 bar -->
     {% set total = tasks | length %}
     {% if total > 0 %}
     {% set done = tasks | selectattr('status', 'equalto', 'done') | list | length %}
@@ -25,16 +25,16 @@
     {% set pending = tasks | selectattr('status', 'equalto', 'pending') | list | length %}
     <div class="card" style="margin-bottom: 20px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <span style="font-weight: 600;">Progress</span>
-            <span style="color: var(--muted); font-size: 13px;">{{ done }}/{{ total }} done</span>
+            <span style="font-weight: 600;">进度</span>
+            <span style="color: var(--muted); font-size: 13px;">{{ done }}/{{ total }} 完成</span>
         </div>
         <div class="progress-bar" style="height: 8px;">
-            <div class="progress-fill pass" style="width: {{ (done / total * 100) | round(1) }}%"></div>
+            <div class="progress-fill pass" style="width: {{ (完成 / total * 100) | round(1) }}%"></div>
         </div>
         <div style="display: flex; gap: 16px; margin-top: 8px; font-size: 12px; color: var(--dim);">
-            <span class="badge badge-pending">{{ pending }} pending</span>
+            <span class="badge badge-待办">{{ pending }} 待办</span>
             <span class="badge badge-active">{{ active }} active</span>
-            <span class="badge badge-pass">{{ done }} done</span>
+            <span class="badge badge-pass">{{ done }} 完成</span>
         </div>
     </div>
     {% endif %}
@@ -44,14 +44,14 @@
     {% for t in tasks %}
     <div class="card" style="padding: 16px 20px; margin-bottom: 8px;">
         <div style="display: flex; align-items: flex-start; gap: 14px;">
-            <div class="status-icon {% if t.status == 'done' %}status-done{% elif t.status == 'in_progress' %}status-active{% else %}status-pending{% endif %}">
-                {% if t.status == 'done' %}&#x2713;{% elif t.status == 'in_progress' %}&#x223C;{% else %}&#x2014;{% endif %}
+            <div class="status-icon {% if t.status == '完成' %}status-完成{% elif t.status == 'in_progress' %}status-active{% else %}status-待办{% endif %}">
+                {% if t.status == '完成' %}&#x2713;{% elif t.status == 'in_progress' %}&#x223C;{% else %}&#x2014;{% endif %}
             </div>
             <div style="flex: 1;">
                 <div style="font-size: 15px; font-weight: 500;">{{ t.description | truncate(120) }}</div>
                 <div style="display: flex; gap: 12px; margin-top: 6px; font-size: 12px; color: var(--dim);">
                     {% if t.assignee %}
-                    <span>Assign to: <strong style="color: var(--text);">{{ t.assignee }}</strong></span>
+                    <span>分配给： <strong style="color: var(--text);">{{ t.assignee }}</strong></span>
                     {% endif %}
                     {% if t.meta %}
                     <span>{{ t.meta }}</span>
@@ -59,12 +59,12 @@
                 </div>
             </div>
             <div>
-                {% if t.status == 'done' %}
-                <span class="badge badge-pass">Done</span>
+                {% if t.status == '完成' %}
+                <span class="badge badge-pass">已完成</span>
                 {% elif t.status == 'in_progress' %}
-                <span class="badge badge-active">Active</span>
+                <span class="badge badge-active">进行中</span>
                 {% else %}
-                <span class="badge badge-pending">Pending</span>
+                <span class="badge badge-待办">待办</span>
                 {% endif %}
             </div>
         </div>
@@ -72,8 +72,8 @@
     {% endfor %}
     {% else %}
     <div class="card" style="text-align: center; padding: 60px 20px; color: var(--dim);">
-        <p style="font-size: 16px;">No tasks yet</p>
-        <p style="margin-top: 4px;">Add your first task above</p>
+        <p style="font-size: 16px;">暂无任务</p>
+        <p style="margin-top: 4px;">在上方添加第一个任务</p>
     </div>
     {% endif %}
 </div>
