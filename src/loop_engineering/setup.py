@@ -355,6 +355,36 @@ def sync_to_agent(config):
             print(f"  跳过 {fname}（不存在）")
 
 
+def deploy_skills(config):
+    """部署 Claude Code skills 和 commands."""
+    print("--- 部署 Skill 和 Command ---")
+    project_root = config["project"]["root"]
+    pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    templates_dir = os.path.join(os.path.dirname(pkg_dir), "templates")
+
+    skills_src = os.path.join(templates_dir, "skills")
+    if os.path.isdir(skills_src):
+        skills_dst = os.path.join(project_root, ".claude", "skills")
+        for name in os.listdir(skills_src):
+            src = os.path.join(skills_src, name, "SKILL.md")
+            dst = os.path.join(skills_dst, name, "SKILL.md")
+            if os.path.exists(src):
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy2(src, dst)
+                print(f"  [OK] skill: {name}")
+
+    cmds_src = os.path.join(templates_dir, "commands")
+    if os.path.isdir(cmds_src):
+        cmds_dst = os.path.join(project_root, ".claude", "commands")
+        for name in os.listdir(cmds_src):
+            src = os.path.join(cmds_src, name)
+            dst = os.path.join(cmds_dst, name)
+            if os.path.isfile(src):
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy2(src, dst)
+                print(f"  [OK] command: {name}")
+
+
 def run_setup(config, force=False):
     """执行完整 setup 流程.
 
@@ -370,6 +400,7 @@ def run_setup(config, force=False):
         ("生成 MCP 配置", lambda: generate_mcp_configs(config)),
         ("PackageCache 共享", lambda: share_package_cache(config)),
         ("部署环境脚本", lambda: deploy_scripts(config)),
+        ("部署 Skill 和 Command", lambda: deploy_skills(config)),
         ("渲染 SKILL.md", lambda: render_skill_md(config)),
         ("注册通知协议", lambda: register_protocol(config)),
         ("同步配置到 Agent Worktree", lambda: sync_to_agent(config)),
