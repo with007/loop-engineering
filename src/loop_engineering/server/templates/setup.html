@@ -1,4 +1,4 @@
-<div>
+<div x-data="setupForm()">
     <h1>添加项目</h1>
     <p style="color: var(--muted); margin-bottom: 20px;">在新项目中运行 loop setup</p>
 
@@ -8,28 +8,119 @@
     </div>
     {% endif %}
 
-    <div class="card" style="max-width: 560px;">
-        <form hx-post="/setup/run" hx-target="closest div[hx-get]" hx-swap="outerHTML">
-            <div class="form-group">
-                <label>项目根目录</label>
-                <input name="project_root" placeholder="d:/work_pvp/myproject" required>
+    <div class="grid grid-2" style="margin-bottom: 24px;">
+        <!-- Project root picker -->
+        <div class="card">
+            <h3>项目根目录</h3>
+            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                <input type="text" x-model="projectRoot" id="project_root_input" name="project_root"
+                       placeholder="选择或输入目录路径" style="flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px 14px; border-radius: 7px; font-size: 14px;">
+                <button class="btn btn-sm btn-primary" @click="browse('project')">浏览</button>
             </div>
-            <div class="form-group">
-                <label>Agent 名称（留空自动检测 git config user.name）</label>
-                <input name="agent_name" placeholder="with">
+            <template x-if="showBrowser === 'project'">
+                <div class="card" style="padding: 12px; max-height: 300px; overflow-y: auto; background: var(--bg);">
+                    <div style="margin-bottom: 8px; font-size: 13px; color: var(--muted);">
+                        <a href="#" @click.prevent="navigate('project', browseParent)" style="color: var(--pass);">..</a>
+                        <span style="margin-left: 8px;" x-text="browsePath"></span>
+                    </div>
+                    <template x-for="e in browseEntries" :key="e.path">
+                        <div @click="navigate('project', e.path)"
+                             style="padding: 6px 8px; cursor: pointer; border-radius: 4px; font-size: 13px; color: var(--pass);"
+                             @mouseover="$el.style.background='var(--surface2)'"
+                             @mouseout="$el.style.background='transparent'">
+                            📁 <span x-text="e.name"></span>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </div>
+
+        <!-- Agent workspace picker -->
+        <div class="card">
+            <h3>Agent 工作区目录</h3>
+            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                <input type="text" x-model="agentWorkspace" name="agent_workspace"
+                       placeholder="自动检测，或手动输入" style="flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px 14px; border-radius: 7px; font-size: 14px;">
+                <button class="btn btn-sm btn-primary" @click="browse('agent')">浏览</button>
             </div>
-            <div class="form-group">
-                <label>项目类型预设（可选）</label>
-                <select name="type" style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px 14px; border-radius: 7px; width: 100%; font-size: 14px;">
-                    <option value="">不选择（通用）</option>
-                    <option value="unity-tolua">Unity + ToLua</option>
-                    <option value="unity-basic">Unity Basic (C# only)</option>
-                    <option value="node-frontend">Node.js Frontend</option>
-                    <option value="go-backend">Go Backend</option>
-                    <option value="generic">Generic</option>
-                </select>
-            </div>
-            <button type="submit" class="btn btn-primary" style="margin-top: 8px;">运行 Setup</button>
-        </form>
+            <template x-if="showBrowser === 'agent'">
+                <div class="card" style="padding: 12px; max-height: 300px; overflow-y: auto; background: var(--bg);">
+                    <div style="margin-bottom: 8px; font-size: 13px; color: var(--muted);">
+                        <a href="#" @click.prevent="navigate('agent', browseParent)" style="color: var(--pass);">..</a>
+                        <span style="margin-left: 8px;" x-text="browsePath"></span>
+                    </div>
+                    <template x-for="e in browseEntries" :key="e.path">
+                        <div @click="navigate('agent', e.path)"
+                             style="padding: 6px 8px; cursor: pointer; border-radius: 4px; font-size: 13px; color: var(--pass);"
+                             @mouseover="$el.style.background='var(--surface2)'"
+                             @mouseout="$el.style.background='transparent'">
+                            📁 <span x-text="e.name"></span>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </div>
     </div>
+
+    <div class="card" style="max-width: 560px; margin-bottom: 16px;">
+        <div class="form-group">
+            <label>Agent 名称（留空自动检测 git config user.name）</label>
+            <input name="agent_name" placeholder="with">
+        </div>
+        <div class="form-group">
+            <label>项目类型预设（可选）</label>
+            <select name="type" style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px 14px; border-radius: 7px; width: 100%; font-size: 14px;">
+                <option value="">不选择（通用）</option>
+                <option value="unity-tolua">Unity + ToLua</option>
+                <option value="unity-basic">Unity Basic (C# only)</option>
+                <option value="node-frontend">Node.js Frontend</option>
+                <option value="go-backend">Go Backend</option>
+                <option value="generic">Generic</option>
+            </select>
+        </div>
+    </div>
+
+    <form hx-post="/setup/run" hx-target="closest div" hx-swap="outerHTML"
+          x-on:submit="prepareSubmit($event)">
+        <input type="hidden" name="project_root" :value="projectRoot">
+        <input type="hidden" name="agent_workspace" :value="agentWorkspace">
+        <button type="submit" class="btn btn-primary">运行 Setup</button>
+    </form>
 </div>
+
+<script>
+    function setupForm() {
+        return {
+            projectRoot: '',
+            agentWorkspace: '',
+            showBrowser: null,
+            browsePath: '',
+            browseParent: '',
+            browseEntries: [],
+            browse(target) {
+                this.showBrowser = target;
+                this.loadDir('');
+            },
+            navigate(target, path) {
+                this.loadDir(path);
+                if (target === 'project') this.projectRoot = path;
+                else this.agentWorkspace = path;
+            },
+            async loadDir(path) {
+                var url = '/api/setup/browse';
+                if (path) url += '?path=' + encodeURIComponent(path);
+                var resp = await fetch(url);
+                var data = await resp.json();
+                this.browsePath = data.path || '/';
+                this.browseParent = data.parent || '';
+                this.browseEntries = data.entries || [];
+            },
+            prepareSubmit(evt) {
+                // Sync Alpine model values to hidden inputs
+                var form = evt.target;
+                form.querySelector('[name="project_root"]').value = this.projectRoot;
+                form.querySelector('[name="agent_workspace"]').value = this.agentWorkspace;
+            }
+        }
+    }
+</script>

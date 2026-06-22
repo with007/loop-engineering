@@ -250,6 +250,35 @@ async def setup_run(request: Request, project_root: str = Form(...), agent_name:
         })
 
 
+@app.get("/api/setup/browse")
+async def browse_dirs(path: str = ""):
+    """浏览目录结构，用于 setup 表单的可视化目录选择."""
+    import platform as _plat
+    if not path or not os.path.exists(path):
+        if _plat.system() == "Windows":
+            import string
+            drives = []
+            for d in string.ascii_uppercase:
+                dp = f"{d}:/"
+                if os.path.exists(dp):
+                    drives.append({"name": dp, "path": dp, "is_drive": True})
+            return {"path": "", "entries": drives}
+        else:
+            path = "/"
+    entries = []
+    try:
+        for name in sorted(os.listdir(path)):
+            full = os.path.join(path, name)
+            if os.path.isdir(full) and not name.startswith("."):
+                entries.append({"name": name, "path": full.replace("\\", "/"), "is_dir": True})
+    except PermissionError:
+        pass
+    parent = os.path.dirname(path).replace("\\", "/")
+    if parent == path:
+        parent = ""
+    return {"path": path.replace("\\", "/"), "parent": parent, "entries": entries}
+
+
 # ── Startup ──
 
 def start_server(project_root, port=8765, open_browser=True):
