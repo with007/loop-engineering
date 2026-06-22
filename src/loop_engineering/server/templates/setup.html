@@ -1,4 +1,4 @@
-<div x-data="setupForm()">
+<div x-data="setupForm()" x-init="$watch('projectRoot', val => { if (val) { var p = val.replace(/\\/g,'/').replace(/\/$/,''); var parent = p.substring(0, p.lastIndexOf('/')); var name = p.substring(p.lastIndexOf('/')+1); agentWorkspace = parent + '/' + name + '-agent'; } })">
     <h1>添加项目</h1>
     <p style="color: var(--muted); margin-bottom: 20px;">在新项目中运行 loop setup</p>
 

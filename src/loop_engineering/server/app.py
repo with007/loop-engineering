@@ -301,42 +301,51 @@ async def browse_dirs(path: str = ""):
 
 @app.get("/api/setup/pickfolder")
 async def pick_folder():
-    """打开操作系统原生文件夹选择器."""
+    """打开 Windows 原生文件夹选择器."""
     import platform as _plat
     if _plat.system() != "Windows":
         return {"path": ""}
 
-    # 用 tkinter（Windows Python 自带）+ 临时脚本文件，确保有独立窗口
-    import tempfile
+    import tempfile, time as _time
     tmp = tempfile.mktemp(suffix=".py")
     out = tempfile.mktemp(suffix=".txt")
     with open(tmp, "w") as f:
         f.write("""
-import tkinter.filedialog, tkinter
+import tkinter.filedialog, tkinter, sys
 root = tkinter.Tk()
 root.withdraw()
+root.attributes('-topmost', True)
+root.focus_force()
 path = tkinter.filedialog.askdirectory(title="Select Folder")
-with open(__import__('sys').argv[1], "w") as f:
+with open(sys.argv[1], "w") as f:
     f.write(path or "")
+root.destroy()
 """)
     try:
-        subprocess.run(
-            f'start "Picker" /WAIT python "{tmp}" "{out}"',
-            shell=True, timeout=120
+        # 使用 pythonw 避免控制台窗口一闪
+        subprocess.Popen(
+            ["pythonw", tmp, out],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
-        if os.path.exists(out):
-            with open(out) as f:
-                path = f.read().strip()
-            os.remove(out)
-        else:
-            path = ""
+        # 轮询输出文件等待选择完成
+        for _ in range(120):
+            _time.sleep(1)
+            if os.path.exists(out) and os.path.getsize(out) > 0:
+                with open(out) as f:
+                    path = f.read().strip()
+                os.remove(out)
+                try:
+                    os.remove(tmp)
+                except Exception:
+                    pass
+                return {"path": path}
+        path = ""
     except Exception:
         path = ""
-    finally:
-        try:
-            os.remove(tmp)
-        except Exception:
-            pass
+    try:
+        os.remove(tmp)
+    except Exception:
+        pass
     return {"path": path}
 
 
