@@ -356,12 +356,13 @@ def sync_to_agent(config):
 
 
 def deploy_skills(config):
-    """部署 Claude Code skills 和 commands."""
+    """部署 Claude Code skills、commands 和 settings."""
     print("--- 部署 Skill 和 Command ---")
     project_root = config["project"]["root"]
     pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     templates_dir = os.path.join(os.path.dirname(pkg_dir), "templates")
 
+    # Skills
     skills_src = os.path.join(templates_dir, "skills")
     if os.path.isdir(skills_src):
         skills_dst = os.path.join(project_root, ".claude", "skills")
@@ -373,6 +374,7 @@ def deploy_skills(config):
                 shutil.copy2(src, dst)
                 print(f"  [OK] skill: {name}")
 
+    # Commands
     cmds_src = os.path.join(templates_dir, "commands")
     if os.path.isdir(cmds_src):
         cmds_dst = os.path.join(project_root, ".claude", "commands")
@@ -383,6 +385,13 @@ def deploy_skills(config):
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 shutil.copy2(src, dst)
                 print(f"  [OK] command: {name}")
+
+    # Settings (bypass permissions for unattended loop)
+    settings_src = os.path.join(templates_dir, "config", "settings.local.json")
+    if os.path.exists(settings_src):
+        settings_dst = os.path.join(project_root, ".claude", "settings.local.json")
+        shutil.copy2(settings_src, settings_dst)
+        print(f"  [OK] settings.local.json")
 
 
 def run_setup(config, force=False):

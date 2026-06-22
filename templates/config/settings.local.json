@@ -1,0 +1,18 @@
+{
+  "skipDangerousModePermissionPrompt": true,
+  "skipAutoPermissionPrompt": true,
+  "useAutoModeDuringPlan": true,
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "Bash(*)",
+      "mcp__UnityMCP__*",
+      "WebSearch",
+      "WebFetch(*)",
+      "Edit(**)",
+      "Write(**)",
+      "Read(**)",
+      "Skill(*)"
+    ]
+  }
+}
