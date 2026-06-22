@@ -168,7 +168,20 @@ async def project_switcher(request: Request, project: str = Query(None)):
 
 @app.get("/")
 async def dashboard(request: Request, project: str = Query(None)):
-    pr = _project_root(q=project)
+    pr = _project_root(request, q=project)
+    from loop_engineering.registry import list_projects
+
+    # If current dir is not a project, fall back to a registered one
+    cfg_path = os.path.join(pr, "loop-config.yaml")
+    if not os.path.exists(cfg_path):
+        projects = list_projects()
+        # Filter to only those with loop-config.yaml
+        valid = [p for p in projects if os.path.exists(os.path.join(p["root"], "loop-config.yaml"))]
+        if valid:
+            return RedirectResponse(f"/?project={valid[0]['root']}", status_code=303)
+        else:
+            return RedirectResponse("/setup", status_code=303)
+
     all_projects = _build_projects_context(request, pr)
     current = next((p for p in all_projects if p["is_current"]), all_projects[0] if all_projects else None)
     return _render(request, "dashboard.html", {
