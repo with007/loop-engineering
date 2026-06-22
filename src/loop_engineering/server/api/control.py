@@ -10,7 +10,16 @@ router = APIRouter()
 def _project_root(project: str = None):
     if project:
         return project
-    return os.environ.get("LOOP_PROJECT_ROOT", os.getcwd())
+    # 回退：env 或 cwd，但排除明显错误的系统目录
+    root = os.environ.get("LOOP_PROJECT_ROOT", os.getcwd())
+    # Windows 上如果跑到了 System32，说明 project 没传过来
+    system_root = os.environ.get("SystemRoot", "")
+    if system_root and root.startswith(system_root):
+        raise RuntimeError(
+            f"Project root resolved to system directory '{root}'. "
+            "Please pass ?project=<path> in the URL or set LOOP_PROJECT_ROOT."
+        )
+    return root
 
 
 class ThrottleRequest(BaseModel):
