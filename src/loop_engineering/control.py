@@ -176,12 +176,22 @@ def start_loop(project_root):
     if not claude_path:
         return {"started": False, "reason": "claude CLI not found. Install Claude Code or add it to PATH."}
 
-    # 终端命令：新窗口运行 claude --dangerously-skip-permissions -p "/runloop"
+    # 终端命令：循环运行 claude，每次执行等待 2 分钟后重试
     if platform.system() == "Windows":
-        cmd = (
-            f'start "Loop: {project_name}" cmd /k '
-            f'"cd /d {project_root} && \"{claude_path}\" --dangerously-skip-permissions -p /runloop"'
+        # 使用 batch 标签实现无限循环
+        loop_bat = (
+            f"cd /d {project_root}\r\n"
+            f":loop\r\n"
+            f"\"{claude_path}\" --dangerously-skip-permissions -p /runloop\r\n"
+            f"timeout /t 120 /nobreak >nul\r\n"
+            f"goto loop"
         )
+        import tempfile
+        bat_path = os.path.join(_control_dir(project_root), "loop.bat")
+        os.makedirs(os.path.dirname(bat_path), exist_ok=True)
+        with open(bat_path, "w") as f:
+            f.write(loop_bat)
+        cmd = f'start "Loop: {project_name}" cmd /k "{bat_path}"'
     else:
         cmd = (
             f'osascript -e \'tell app "Terminal" to do script '
