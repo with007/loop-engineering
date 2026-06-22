@@ -152,6 +152,7 @@ def start_loop(project_root):
     project_name = os.path.basename(project_root)
 
     if platform.system() == "Windows":
+        pid_path = os.path.join(_control_dir(project_root), "loop.pid")
         loop_bat = (
             f'@echo off\r\n'
             f'start "Loop: {project_name}" cmd /k "cd /d {project_root} && claude --dangerously-skip-permissions"\r\n'
@@ -160,7 +161,9 @@ def start_loop(project_root):
             f'$ws.AppActivate(\'Loop: {project_name}\');Start-Sleep -Seconds 1;'
             f'$ws.SendKeys(\'/runloop\');Start-Sleep -Milliseconds 300;'
             f'$ws.SendKeys(\'{"{ENTER}"}\');Start-Sleep -Milliseconds 300;'
-            f'$ws.SendKeys(\'{"{ENTER}"}\')"\r\n'
+            f'$ws.SendKeys(\'{"{ENTER}"}\');'
+            f'$pid=(Get-Process cmd | Where-Object {{$_.MainWindowTitle -eq \'Loop: {project_name}\'}} | Select-Object -First 1 -ExpandProperty Id);'
+            f'if($pid){{[System.IO.File]::WriteAllText(\'{pid_path}\',$pid.ToString())}}"\r\n'
         )
         bat_path = os.path.join(_control_dir(project_root), "loop.bat")
         os.makedirs(os.path.dirname(bat_path), exist_ok=True)
@@ -174,9 +177,9 @@ def start_loop(project_root):
         )
 
     proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-    # 记下终端进程 PID（不是 claude 的 PID，但可以用来杀终端窗口）
-    _write_pid(project_root, proc.pid)
+    # PID 由 batch 脚本通过 PowerShell 写入（cmd 窗口的 PID）
+    if platform.system() != "Windows":
+        _write_pid(project_root, proc.pid)
 
     return {"started": True, "pid": proc.pid}
 
