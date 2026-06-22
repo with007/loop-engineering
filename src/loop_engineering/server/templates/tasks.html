@@ -29,11 +29,11 @@
             <span style="color: var(--muted); font-size: 13px;">{{ done }}/{{ total }} 完成</span>
         </div>
         <div class="progress-bar" style="height: 8px;">
-            <div class="progress-fill pass" style="width: {{ (完成 / total * 100) | round(1) }}%"></div>
+            <div class="progress-fill pass" style="width: {{ (done / total * 100) | round(1) }}%"></div>
         </div>
         <div style="display: flex; gap: 16px; margin-top: 8px; font-size: 12px; color: var(--dim);">
             <span class="badge badge-待办">{{ pending }} 待办</span>
-            <span class="badge badge-active">{{ active }} active</span>
+            <span class="badge badge-active">{{ active }} 进行中</span>
             <span class="badge badge-pass">{{ done }} 完成</span>
         </div>
     </div>
@@ -44,7 +44,7 @@
     {% for t in tasks %}
     <div class="card" style="padding: 16px 20px; margin-bottom: 8px;">
         <div style="display: flex; align-items: flex-start; gap: 14px;">
-            <div class="status-icon {% if t.status == '完成' %}status-完成{% elif t.status == 'in_progress' %}status-active{% else %}status-待办{% endif %}">
+            <div class="status-icon {% if t.status == 'done' %}status-done{% elif t.status == 'in_progress' %}status-active-label{% else %}status-pending-label{% endif %}">
                 {% if t.status == '完成' %}&#x2713;{% elif t.status == 'in_progress' %}&#x223C;{% else %}&#x2014;{% endif %}
             </div>
             <div style="flex: 1;">

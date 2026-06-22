@@ -1,0 +1,35 @@
+<div>
+    <h1>添加项目</h1>
+    <p style="color: var(--muted); margin-bottom: 20px;">在新项目中运行 loop setup</p>
+
+    {% if error %}
+    <div class="card" style="background: var(--fail-bg); color: var(--fail); margin-bottom: 16px;">
+        {{ error }}
+    </div>
+    {% endif %}
+
+    <div class="card" style="max-width: 560px;">
+        <form hx-post="/setup/run" hx-target="closest div[hx-get]" hx-swap="outerHTML">
+            <div class="form-group">
+                <label>项目根目录</label>
+                <input name="project_root" placeholder="d:/work_pvp/myproject" required>
+            </div>
+            <div class="form-group">
+                <label>Agent 名称（留空自动检测 git config user.name）</label>
+                <input name="agent_name" placeholder="with">
+            </div>
+            <div class="form-group">
+                <label>项目类型预设（可选）</label>
+                <select name="type" style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px 14px; border-radius: 7px; width: 100%; font-size: 14px;">
+                    <option value="">不选择（通用）</option>
+                    <option value="unity-tolua">Unity + ToLua</option>
+                    <option value="unity-basic">Unity Basic (C# only)</option>
+                    <option value="node-frontend">Node.js Frontend</option>
+                    <option value="go-backend">Go Backend</option>
+                    <option value="generic">Generic</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary" style="margin-top: 8px;">运行 Setup</button>
+        </form>
+    </div>
+</div>

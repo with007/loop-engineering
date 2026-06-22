@@ -133,19 +133,30 @@
 <body>
     <div class="container">
         <header>
-            <div class="logo">Loop <span>Engineering</span></div>
-            <nav>
-                <a href="/" hx-get="/" hx-target="#content" hx-push-url="true" class="active">Overview</a>
-                <a href="/tasks" hx-get="/tasks" hx-target="#content" hx-push-url="true">Tasks</a>
-                <a href="/runs" hx-get="/runs" hx-target="#content" hx-push-url="true">History</a>
-                <a href="/control" hx-get="/control" hx-target="#content" hx-push-url="true">Control</a>
-            </nav>
+            <div style="display: flex; align-items: center; gap: 16px;">
+                <div class="logo">Loop <span>Engineering</span></div>
+                <nav>
+                    <a href="/" hx-get="/" hx-target="#content" hx-push-url="true" class="active">概览</a>
+                    <a href="/tasks" hx-get="/tasks" hx-target="#content" hx-push-url="true">任务</a>
+                    <a href="/runs" hx-get="/runs" hx-target="#content" hx-push-url="true">历史</a>
+                    <a href="/control" hx-get="/control" hx-target="#content" hx-push-url="true">控制</a>
+                    <a href="/setup" hx-get="/setup" hx-target="#content" hx-push-url="true" style="color: var(--active);">+ Setup</a>
+                </nav>
+            </div>
         </header>
         <div id="content">
             {{ content | safe }}
         </div>
     </div>
     <script>
+        // Preserve ?project= param across all HTMX requests
+        document.body.addEventListener('htmx:configRequest', function(evt) {
+            var params = new URLSearchParams(window.location.search);
+            var proj = params.get('project');
+            if (proj && !evt.detail.path.includes('project=')) {
+                evt.detail.path += (evt.detail.path.includes('?') ? '&' : '?') + 'project=' + encodeURIComponent(proj);
+            }
+        });
         document.body.addEventListener('htmx:afterSettle', function(evt) {
             var path = evt.detail.pathInfo?.requestPath || window.location.pathname;
             document.querySelectorAll('nav a').forEach(function(a) {
