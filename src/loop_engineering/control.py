@@ -153,33 +153,22 @@ def start_loop(project_root):
 
     if platform.system() == "Windows":
         pid_path = os.path.join(_control_dir(project_root), "loop.pid")
-        loop_bat = (
-            f'@echo off\r\n'
-            f'start "Loop: {project_name}" cmd /k "cd /d {project_root} && claude --dangerously-skip-permissions"\r\n'
-            f'timeout /t 1 /nobreak >nul\r\n'
-            f'powershell -NoProfile -Command "$ws=New-Object -ComObject WScript.Shell;'
+        ps_script = (
+            f'$p = Start-Process cmd -ArgumentList \'/k title Loop: {project_name} && cd /d {project_root} && claude --dangerously-skip-permissions\' '
+            f'-WindowStyle Normal -PassThru;'
+            f'[System.IO.File]::WriteAllText(\'{pid_path}\', $p.Id.ToString());'
+            f'Start-Sleep -Seconds 2;'
+            f'$ws = New-Object -ComObject WScript.Shell;'
             f'$ws.AppActivate(\'Loop: {project_name}\');Start-Sleep -Seconds 1;'
             f'$ws.SendKeys(\'/runloop\');Start-Sleep -Milliseconds 300;'
             f'$ws.SendKeys(\'{"{ENTER}"}\');Start-Sleep -Milliseconds 300;'
-            f'$ws.SendKeys(\'{"{ENTER}"}\');'
-            f'$cppid=(Get-Process cmd | Where-Object {{$_.MainWindowTitle -eq \'Loop: {project_name}\'}} | Select-Object -First 1 -ExpandProperty Id);'
-            f'if($cppid){{[System.IO.File]::WriteAllText(\'{pid_path}\',$cppid.ToString())}}"\r\n'
+            f'$ws.SendKeys(\'{"{ENTER}"}\')'
         )
-        bat_path = os.path.join(_control_dir(project_root), "loop.bat")
-        os.makedirs(os.path.dirname(bat_path), exist_ok=True)
-        with open(bat_path, "w") as f:
-            f.write(loop_bat)
-        cmd = bat_path
-    else:
-        cmd = (
-            f'osascript -e \'tell app "Terminal" to do script '
-            f'"cd {project_root} && claude --dangerously-skip-permissions"\''
-        )
-
-    proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    # PID 由 batch 脚本通过 PowerShell 写入（cmd 窗口的 PID）
-    if platform.system() != "Windows":
-        _write_pid(project_root, proc.pid)
+        ps_path = os.path.join(_control_dir(project_root), "loop.ps1")
+        os.makedirs(os.path.dirname(ps_path), exist_ok=True)
+        with open(ps_path, "w", encoding="utf-8") as f:
+            f.write(ps_script)
+        cmd = f'powershell -NoProfile -ExecutionPolicy Bypass -File "{ps_path}"'
 
     return {"started": True, "pid": proc.pid}
 
