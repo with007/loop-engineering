@@ -311,6 +311,14 @@ def render_skill_md(config):
     os.makedirs(target_dir, exist_ok=True)
     target_path = os.path.join(target_dir, "SKILL.md")
 
+    # 检查内容是否变化
+    if os.path.exists(target_path):
+        with open(target_path, "r", encoding="utf-8") as f:
+            old = f.read()
+        if old == rendered:
+            print(f"  跳过 SKILL.md（内容相同）")
+            return
+
     with open(target_path, "w", encoding="utf-8") as f:
         f.write(rendered)
     print(f"  [OK] SKILL.md 已生成: {target_path}")
@@ -356,11 +364,14 @@ def sync_to_agent(config):
     for fname in ["loop-config.yaml", ".mcp.json"]:
         src = os.path.join(project_root, fname)
         dst = os.path.join(agent_dir, fname)
-        if os.path.exists(src):
+        if not os.path.exists(src):
+            print(f"  跳过 {fname}（不存在）")
+            continue
+        if _file_changed(src, dst):
             shutil.copy2(src, dst)
             print(f"  [OK] {fname} 已同步")
         else:
-            print(f"  跳过 {fname}（不存在）")
+            print(f"  跳过 {fname}（内容相同）")
 
 
 def deploy_skills(config):
@@ -411,8 +422,11 @@ def add_unity_mcp(config):
             dst = os.path.join(skills_dst, name, "SKILL.md")
             if os.path.exists(src):
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
-                shutil.copy2(src, dst)
-                print(f"  [OK] skill: {name}")
+                if _file_changed(src, dst):
+                    shutil.copy2(src, dst)
+                    print(f"  [OK] skill: {name}")
+                else:
+                    print(f"  跳过 skill: {name}（内容相同）")
 
     # Commands
     cmds_src = os.path.join(templates_dir, "commands")
@@ -423,15 +437,35 @@ def add_unity_mcp(config):
             dst = os.path.join(cmds_dst, name)
             if os.path.isfile(src):
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
-                shutil.copy2(src, dst)
-                print(f"  [OK] command: {name}")
+                if _file_changed(src, dst):
+                    shutil.copy2(src, dst)
+                    print(f"  [OK] command: {name}")
+                else:
+                    print(f"  跳过 command: {name}（内容相同）")
 
-    # Settings (bypass permissions for unattended loop)
+    # Settings
     settings_src = os.path.join(templates_dir, "config", "settings.local.json")
     if os.path.exists(settings_src):
         settings_dst = os.path.join(project_root, ".claude", "settings.local.json")
-        shutil.copy2(settings_src, settings_dst)
-        print(f"  [OK] settings.local.json")
+        if _file_changed(settings_src, settings_dst):
+            shutil.copy2(settings_src, settings_dst)
+            print(f"  [OK] settings.local.json")
+        else:
+            print(f"  跳过 settings.local.json（内容相同）")
+
+
+def _file_changed(src, dst):
+    """检查目标文件是否需要更新."""
+    if not os.path.exists(dst):
+        return True
+    try:
+        with open(src, "rb") as fs:
+            src_content = fs.read()
+        with open(dst, "rb") as fd:
+            dst_content = fd.read()
+        return src_content != dst_content
+    except Exception:
+        return True
 
 
 def run_setup(config, force=False):
