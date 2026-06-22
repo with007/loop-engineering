@@ -176,15 +176,12 @@ def start_loop(project_root):
     if not claude_path:
         return {"started": False, "reason": "claude CLI not found. Install Claude Code or add it to PATH."}
 
-    # 终端命令：循环运行 claude，每次执行等待 2 分钟后重试
+    # 终端命令：启动交互式 Claude，自动输入 /runloop
     if platform.system() == "Windows":
-        # 使用 batch 标签实现无限循环
+        # (echo /runloop & more) 让 claude 进入 REPL 并持续运行
         loop_bat = (
             f"cd /d {project_root}\r\n"
-            f":loop\r\n"
-            f"\"{claude_path}\" --dangerously-skip-permissions -p /runloop\r\n"
-            f"timeout /t 120 /nobreak >nul\r\n"
-            f"goto loop"
+            f"(echo /runloop & more) | \"{claude_path}\" --dangerously-skip-permissions"
         )
         import tempfile
         bat_path = os.path.join(_control_dir(project_root), "loop.bat")
