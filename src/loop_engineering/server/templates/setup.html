@@ -34,6 +34,18 @@
             <label>Agent 名称（留空自动检测 git config user.name）</label>
             <input name="agent_name" placeholder="with">
         </div>
+        <div style="display: flex; gap: 12px;">
+            <div class="form-group" style="flex: 1;">
+                <label>主工程 MCP 端口</label>
+                <input name="main_port" type="number" value="8080" placeholder="8080"
+                       style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px 14px; border-radius: 7px; font-size: 14px; width: 100%;">
+            </div>
+            <div class="form-group" style="flex: 1;">
+                <label>Agent MCP 端口</label>
+                <input name="agent_port" type="number" value="9080" placeholder="9080"
+                       style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px 14px; border-radius: 7px; font-size: 14px; width: 100%;">
+            </div>
+        </div>
         <div class="form-group">
             <label>项目类型预设（可选）</label>
             <select name="type" x-model="selectedType" @change="selectedType = $el.value; verifySteps = PRESETS[$el.value] || []"

@@ -258,7 +258,8 @@ async def setup_page(request: Request):
 
 @app.post("/setup/run")
 async def setup_run(request: Request, project_root: str = Form(...), agent_name: str = Form(None),
-                    agent_workspace: str = Form(None), type: str = Form("")):
+                    agent_workspace: str = Form(None), main_port: int = Form(8080),
+                    agent_port: int = Form(9080), type: str = Form("")):
     from loop_engineering.registry import register_project
 
     if not os.path.isdir(project_root):
@@ -281,6 +282,8 @@ async def setup_run(request: Request, project_root: str = Form(...), agent_name:
     config["agent"]["name"] = agent_name or config["agent"].get("name", "")
     if agent_workspace:
         config["agent"]["workspace"] = os.path.abspath(agent_workspace)
+    config["main"]["mcp_port"] = main_port
+    config["agent"]["mcp_port"] = agent_port
     if type:
         from loop_engineering.presets import apply_preset
         config = apply_preset(config, type)
