@@ -68,14 +68,18 @@ def _render(request: Request, template_name: str, context: dict):
 
 
 def _build_projects_context(request: Request, current_pr: str):
-    """构建项目列表 + 当前项目信息."""
+    """构建项目列表 + 当前项目信息。仅包含有 loop-config.yaml 的项目."""
     from loop_engineering.registry import list_projects, register_project
     projects = list_projects()
 
-    # 自动注册当前项目
-    if current_pr and not any(p["root"] == current_pr for p in projects):
+    # 自动注册当前项目（仅当 loop-config.yaml 存在时）
+    cfg_path = os.path.join(current_pr, "loop-config.yaml")
+    if os.path.exists(cfg_path) and not any(p["root"] == current_pr for p in projects):
         register_project(current_pr)
         projects = list_projects()
+
+    # 过滤掉没有 loop-config.yaml 的孤项目
+    projects = [p for p in projects if os.path.exists(os.path.join(p["root"], "loop-config.yaml"))]
 
     # 构建详情
     result = []
@@ -131,6 +135,33 @@ app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(runs.router, prefix="/api/runs", tags=["runs"])
 app.include_router(branches.router, prefix="/api/branches", tags=["branches"])
+
+
+@app.get("/api/projects/switcher")
+async def project_switcher(request: Request, project: str = Query(None)):
+    """返回项目切换器 HTML 片段."""
+    pr = _project_root(q=project)
+    from loop_engineering.registry import list_projects
+    projects = list_projects()
+    projects = [p for p in projects if os.path.exists(os.path.join(p["root"], "loop-config.yaml"))]
+
+    html = '<select onchange="switchProject(this.value)" style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 6px 12px; border-radius: 7px; font-size: 13px; max-width: 200px;">'
+    if not projects:
+        html += '<option>No projects</option>'
+    else:
+        for p in projects:
+            sel = ' selected' if p["root"] == pr else ''
+            html += f'<option value="{p["root"]}"{sel}>{p["name"]}</option>'
+    html += '</select>'
+    html += '''<script>
+        function switchProject(root) {
+            var url = window.location.pathname + '?project=' + encodeURIComponent(root);
+            htmx.ajax('GET', url, {target: '#content', swap: 'outerHTML'});
+            history.pushState({}, '', url);
+        }
+    </script>'''
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(content=html)
 
 
 # ── Page routes ──

@@ -8,27 +8,6 @@
 
     {% set proj = current %}
 
-    <!-- Project selector (only when multi-project) -->
-    {% if projects | length > 1 %}
-    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
-        <span style="color: var(--muted); font-size: 13px;">项目:</span>
-        <select onchange="switchProject(this.value)"
-                style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 8px 14px; border-radius: 7px; font-size: 15px; font-weight: 600;">
-            {% for p in projects %}
-            <option value="{{ p.root }}" {% if p.is_current %}selected{% endif %}>{{ p.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <script>
-        function switchProject(root) {
-            var url = '/?project=' + encodeURIComponent(root);
-            htmx.ajax('GET', url, {target: '#content', swap: 'outerHTML'});
-            // Update push state
-            history.pushState({}, '', url);
-        }
-    </script>
-    {% endif %}
-
     <h1>{{ proj.name }}</h1>
     <p style="color: var(--muted); margin-bottom: 24px;">{{ proj.root }}</p>
 

@@ -133,7 +133,7 @@
 <body>
     <div class="container">
         <header>
-            <div style="display: flex; align-items: center; gap: 16px;">
+            <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
                 <div class="logo">Loop <span>Engineering</span></div>
                 <nav>
                     <a href="/" hx-get="/" hx-target="#content" hx-push-url="true" class="active">概览</a>
@@ -142,6 +142,10 @@
                     <a href="/control" hx-get="/control" hx-target="#content" hx-push-url="true">控制</a>
                     <a href="/setup" hx-get="/setup" hx-target="#content" hx-push-url="true" style="color: var(--active);">+ Setup</a>
                 </nav>
+                <div id="project-switcher" style="margin-left: auto;"
+                     hx-get="/api/projects/switcher" hx-trigger="load, every 60s">
+                    <span style="color: var(--dim); font-size: 13px;">loading...</span>
+                </div>
             </div>
         </header>
         <div id="content">
