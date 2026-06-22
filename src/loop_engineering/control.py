@@ -44,15 +44,31 @@ def read_heartbeat(project_root):
         return None
 
 
-def is_loop_running(project_root, threshold_minutes=5):
+def is_loop_running(project_root, threshold_minutes=None):
     """判断 loop 是否在运行。
 
-    条件：心跳在过去 threshold_minutes 分钟内。
+    如果未指定 threshold_minutes，自动取 throttle 的 2 倍（至少 3 分钟）。
     """
     hb = read_heartbeat(project_root)
     if hb is None:
         return False
+    if threshold_minutes is None:
+        throttle = get_throttle(project_root, "2m")
+        threshold_minutes = _parse_duration_minutes(throttle) * 2
+        threshold_minutes = max(threshold_minutes, 3)
     return datetime.now(timezone.utc) - hb < timedelta(minutes=threshold_minutes)
+
+
+def _parse_duration_minutes(s):
+    """解析 "2m", "30s", "1h" 为分钟数."""
+    s = s.strip().lower()
+    if s.endswith("s"):
+        return max(int(s[:-1]) / 60, 0.5)
+    if s.endswith("h"):
+        return int(s[:-1]) * 60
+    if s.endswith("m"):
+        return int(s[:-1])
+    return 2  # default
 
 
 # ── pause ──

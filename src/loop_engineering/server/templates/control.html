@@ -27,7 +27,7 @@
 
         <div class="controls" style="margin-bottom: 16px;">
             {% if is_running %}
-            <button class="btn btn-warn" style="background: var(--red);"
+            <button class="btn btn-danger"
                     hx-post="/api/control/stop"
                     hx-target="closest div[hx-get]"
                     hx-swap="outerHTML">
@@ -85,11 +85,11 @@
             <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-family: monospace;">
                 <div style="display: flex; justify-content: space-between;">
                     <span>control/heartbeat</span>
-                    <span style="color: {{ '#22c55e' if is_running else '#64748b' }}">{{ status.heartbeat or 'absent' }}</span>
+                    <span style="color: {{ 'var(--pass)' if is_running else '#64748b' }}">{{ status.heartbeat or 'absent' }}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between;">
                     <span>control/pause</span>
-                    <span style="color: {{ '#f59e0b' if status.paused else '#64748b' }}">{{ 'ON' if status.paused else 'off' }}</span>
+                    <span style="color: {{ 'var(--active)' if status.paused else '#64748b' }}">{{ 'ON' if status.paused else 'off' }}</span>
                 </div>
                 <div style="display: flex; justify-content: space-between;">
                     <span>control/throttle</span>

@@ -4,15 +4,15 @@
     <!-- Stats row -->
     <div class="grid grid-3" style="margin-bottom: 20px;">
         <div class="card stat">
-            <div class="stat-value green">{{ pass_rate.rate }}%</div>
+            <div class="stat-value pass">{{ pass_rate.rate }}%</div>
             <div class="stat-label">PASS Rate (7d)</div>
         </div>
         <div class="card stat">
-            <div class="stat-value blue">{{ pass_rate.passed }}</div>
+            <div class="stat-value pending">{{ pass_rate.passed }}</div>
             <div class="stat-label">Passed</div>
         </div>
         <div class="card stat">
-            <div class="stat-value red">{{ pass_rate.total - pass_rate.passed }}</div>
+            <div class="stat-value fail">{{ pass_rate.total - pass_rate.passed }}</div>
             <div class="stat-label">Failed</div>
         </div>
     </div>
@@ -37,7 +37,7 @@
                         datasets: [{
                             data: recent.map(function(r) { return r.result === 'PASS' ? 1 : 0; }),
                             backgroundColor: recent.map(function(r) {
-                                return r.result === 'PASS' ? '#22c55e' : '#ef4444';
+                                return r.result === 'PASS' ? '#3b82f6' : '#f97316';
                             }),
                             borderRadius: 2,
                         }]
@@ -125,7 +125,7 @@
                 </div>
                 {% endif %}
                 {% if r.fail_reason %}
-                <div style="margin-top: 8px; padding: 10px; background: var(--red-bg); border-radius: 6px; color: var(--red); font-size: 13px;">
+                <div style="margin-top: 8px; padding: 10px; background: var(--fail-bg); border-radius: 6px; color: var(--fail); font-size: 13px;">
                     {{ r.fail_reason }}
                 </div>
                 {% endif %}

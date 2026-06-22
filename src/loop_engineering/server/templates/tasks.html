@@ -29,7 +29,7 @@
             <span style="color: var(--muted); font-size: 13px;">{{ done }}/{{ total }} done</span>
         </div>
         <div class="progress-bar" style="height: 8px;">
-            <div class="progress-fill green" style="width: {{ (done / total * 100) | round(1) }}%"></div>
+            <div class="progress-fill pass" style="width: {{ (done / total * 100) | round(1) }}%"></div>
         </div>
         <div style="display: flex; gap: 16px; margin-top: 8px; font-size: 12px; color: var(--dim);">
             <span class="badge badge-pending">{{ pending }} pending</span>
