@@ -43,6 +43,15 @@
             {% endif %}
 
             {% if is_running %}
+            <button class="btn btn-sm"
+                    hx-post="/api/control/focus"
+                    hx-swap="none"
+                    style="background: var(--surface2); color: var(--text); border: 1px solid var(--border);">
+                🔍 聚焦窗口
+            </button>
+            {% endif %}
+
+            {% if is_running %}
             {% if status.paused %}
             <button class="btn btn-primary"
                     hx-delete="/api/control/pause"

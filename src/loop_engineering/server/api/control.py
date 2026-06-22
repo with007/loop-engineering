@@ -84,3 +84,30 @@ def stop(project: str = Query(None)):
     from loop_engineering.control import stop_loop
     result = stop_loop(_project_root(project))
     return Response(status_code=200, headers={"HX-Refresh": "true"})
+
+
+@router.post("/focus")
+def focus_window(project: str = Query(None)):
+    """激活 Loop 终端窗口."""
+    import platform
+    if platform.system() != "Windows":
+        return Response(status_code=200, content="Not Windows", media_type="text/plain")
+
+    pr = _project_root(project)
+    project_name = os.path.basename(pr)
+    title = f"Loop: {project_name}"
+
+    import subprocess
+    ps = (
+        f'$ws = New-Object -ComObject WScript.Shell;'
+        f'$ws.AppActivate(\'{title}\');'
+        f'if (-not $?) {{ exit 1 }}'
+    )
+    code = subprocess.run(
+        ["powershell", "-NoProfile", "-Command", ps],
+        capture_output=True, timeout=10
+    ).returncode
+
+    if code != 0:
+        return Response(status_code=200, content=f"Window '{title}' not found", media_type="text/plain")
+    return Response(status_code=200, content="OK", media_type="text/plain")
