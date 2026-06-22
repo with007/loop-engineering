@@ -530,6 +530,7 @@ def run_setup(config, force=False):
     clean_config = {k: v for k, v in config.items() if not k.startswith("_")}
     config_path = cfg.write_config(config["project"]["root"], clean_config)
     _ensure_gitignore(config["project"]["root"], "loop-config.yaml")
+    _ensure_gitignore(config["project"]["root"], ".loop-engineering/")
 
     # 自动提交 setup 产生的文件
     _commit_setup_files(config)

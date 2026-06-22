@@ -6,3 +6,5 @@ __pycache__/
 loop-config.yaml
 
 ProjectSettings/McpProjectConfig.json
+
+.loop-engineering/
