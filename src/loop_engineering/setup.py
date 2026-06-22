@@ -52,20 +52,18 @@ def create_worktrees(config):
 
 
 def _default_branch(repo_path):
-    """获取默认分支引用，优先远程，回退到本地。"""
-    # 1. 尝试远程 HEAD
-    code, stdout, _ = _run("git symbolic-ref refs/remotes/origin/HEAD --short", cwd=repo_path)
-    if code == 0 and stdout:
-        return stdout
-    # 2. 尝试常见远程分支
-    for branch in ["origin/main", "origin/master"]:
+    """获取默认分支引用。优先级: local master > local main > origin/master > origin/main."""
+    # 按优先级依次尝试
+    candidates = [
+        "master",        # local master
+        "main",          # local main
+        "origin/master", # remote master
+        "origin/main",   # remote main
+    ]
+    for branch in candidates:
         code, _, _ = _run(f"git rev-parse --verify {branch}", cwd=repo_path)
         if code == 0:
             return branch
-    # 3. 没有远程，用本地当前分支
-    code, stdout, _ = _run("git rev-parse --abbrev-ref HEAD", cwd=repo_path)
-    if code == 0 and stdout and stdout != "HEAD":
-        return stdout
     return "master"  # last resort
 
 
