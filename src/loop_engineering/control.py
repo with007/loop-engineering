@@ -152,18 +152,19 @@ def start_loop(project_root):
     project_name = os.path.basename(project_root)
 
     if platform.system() == "Windows":
-        # VBS：打开 cmd 窗口启动 claude，SendKeys 输入 /runloop 并回车
-        title = f"Loop: {project_name}"
-        vbs = (
-            f'Set WshShell = CreateObject("WScript.Shell")\r\n'
-            f'WshShell.Run "cmd /c start \\"{title}\\" cmd /k \\"cd /d {project_root} && claude --dangerously-skip-permissions\\"", 1\r\n'
-            f'WScript.Sleep 5000\r\n'
-            f'WshShell.AppActivate "{title}"\r\n'
-            f'WScript.Sleep 500\r\n'
-            f'WshShell.SendKeys "/runloop"\r\n'
-            f'WScript.Sleep 300\r\n'
-            f'WshShell.SendKeys "~"\r\n'
+        loop_bat = (
+            f'@echo off\r\n'
+            f'start "Loop: {project_name}" cmd /k "cd /d {project_root} && claude --dangerously-skip-permissions"\r\n'
+            f'timeout /t 5 /nobreak >nul\r\n'
+            f'powershell -NoProfile -Command "$ws=New-Object -ComObject WScript.Shell;'
+            f'$ws.AppActivate(\'Loop: {project_name}\');Start-Sleep -Milliseconds 500;'
+            f'$ws.SendKeys(\'/runloop~\')"\r\n'
         )
+        bat_path = os.path.join(_control_dir(project_root), "loop.bat")
+        os.makedirs(os.path.dirname(bat_path), exist_ok=True)
+        with open(bat_path, "w") as f:
+            f.write(loop_bat)
+        cmd = bat_path
         vbs_path = os.path.join(_control_dir(project_root), "loop.vbs")
         os.makedirs(os.path.dirname(vbs_path), exist_ok=True)
         with open(vbs_path, "w") as f:
