@@ -257,27 +257,43 @@ async def browse_dirs(path: str = ""):
 
 @app.get("/api/setup/pickfolder")
 async def pick_folder():
-    """打开操作系统原生文件夹选择器，返回选中的绝对路径."""
+    """打开操作系统原生文件夹选择器."""
     import platform as _plat
     if _plat.system() != "Windows":
         return {"path": ""}
 
-    ps_script = """
-Add-Type -AssemblyName System.Windows.Forms
-$f = New-Object System.Windows.Forms.FolderBrowserDialog
-$f.Description = "选择目录"
-$f.ShowNewFolderButton = $true
-if ($f.ShowDialog() -eq 'OK') { $f.SelectedPath } else { '' }
-"""
+    # 用 tkinter（Windows Python 自带）+ 临时脚本文件，确保有独立窗口
+    import tempfile
+    tmp = tempfile.mktemp(suffix=".py")
+    out = tempfile.mktemp(suffix=".txt")
+    with open(tmp, "w") as f:
+        f.write("""
+import tkinter.filedialog, tkinter
+root = tkinter.Tk()
+root.withdraw()
+path = tkinter.filedialog.askdirectory(title="Select Folder")
+with open(__import__('sys').argv[1], "w") as f:
+    f.write(path or "")
+""")
     try:
-        r = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", ps_script],
-            capture_output=True, text=True, timeout=120
+        subprocess.run(
+            f'start "Picker" /WAIT python "{tmp}" "{out}"',
+            shell=True, timeout=120
         )
-        path = r.stdout.strip()
-        return {"path": path if path else ""}
+        if os.path.exists(out):
+            with open(out) as f:
+                path = f.read().strip()
+            os.remove(out)
+        else:
+            path = ""
     except Exception:
-        return {"path": ""}
+        path = ""
+    finally:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+    return {"path": path}
 
 
 # ── Startup ──
