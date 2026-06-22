@@ -155,7 +155,7 @@ def start_loop(project_root):
         loop_bat = (
             f'@echo off\r\n'
             f'start "Loop: {project_name}" cmd /k "cd /d {project_root} && claude --dangerously-skip-permissions"\r\n'
-            f'timeout /t 10 /nobreak >nul\r\n'
+            f'timeout /t 3 /nobreak >nul\r\n'
             f'powershell -NoProfile -Command "$ws=New-Object -ComObject WScript.Shell;'
             f'$ws.AppActivate(\'Loop: {project_name}\');Start-Sleep -Seconds 1;'
             f'$ws.SendKeys(\'/runloop\');Start-Sleep -Milliseconds 300;'
