@@ -9,56 +9,21 @@
     {% endif %}
 
     <div class="grid grid-2" style="margin-bottom: 24px;">
-        <!-- Project root picker -->
         <div class="card">
             <h3>项目根目录</h3>
-            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-                <input type="text" x-model="projectRoot" id="project_root_input" name="project_root"
-                       placeholder="选择或输入目录路径" style="flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px 14px; border-radius: 7px; font-size: 14px;">
-                <button class="btn btn-sm btn-primary" @click="browse('project')">浏览</button>
+            <div style="display: flex; gap: 8px;">
+                <input type="text" x-model="projectRoot" placeholder="d:/work_pvp/myproject"
+                       style="flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px 14px; border-radius: 7px; font-size: 14px;">
+                <button class="btn btn-sm btn-primary" @click="pickFolder('project')">选择</button>
             </div>
-            <template x-if="showBrowser === 'project'">
-                <div class="card" style="padding: 12px; max-height: 300px; overflow-y: auto; background: var(--bg);">
-                    <div style="margin-bottom: 8px; font-size: 13px; color: var(--muted);">
-                        <a href="#" @click.prevent="navigate('project', browseParent)" style="color: var(--pass);">..</a>
-                        <span style="margin-left: 8px;" x-text="browsePath"></span>
-                    </div>
-                    <template x-for="e in browseEntries" :key="e.path">
-                        <div @click="navigate('project', e.path)"
-                             style="padding: 6px 8px; cursor: pointer; border-radius: 4px; font-size: 13px; color: var(--pass);"
-                             @mouseover="$el.style.background='var(--surface2)'"
-                             @mouseout="$el.style.background='transparent'">
-                            📁 <span x-text="e.name"></span>
-                        </div>
-                    </template>
-                </div>
-            </template>
         </div>
-
-        <!-- Agent workspace picker -->
         <div class="card">
             <h3>Agent 工作区目录</h3>
-            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-                <input type="text" x-model="agentWorkspace" name="agent_workspace"
-                       placeholder="自动检测，或手动输入" style="flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px 14px; border-radius: 7px; font-size: 14px;">
-                <button class="btn btn-sm btn-primary" @click="browse('agent')">浏览</button>
+            <div style="display: flex; gap: 8px;">
+                <input type="text" x-model="agentWorkspace" placeholder="自动检测，或手动选择"
+                       style="flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px 14px; border-radius: 7px; font-size: 14px;">
+                <button class="btn btn-sm btn-primary" @click="pickFolder('agent')">选择</button>
             </div>
-            <template x-if="showBrowser === 'agent'">
-                <div class="card" style="padding: 12px; max-height: 300px; overflow-y: auto; background: var(--bg);">
-                    <div style="margin-bottom: 8px; font-size: 13px; color: var(--muted);">
-                        <a href="#" @click.prevent="navigate('agent', browseParent)" style="color: var(--pass);">..</a>
-                        <span style="margin-left: 8px;" x-text="browsePath"></span>
-                    </div>
-                    <template x-for="e in browseEntries" :key="e.path">
-                        <div @click="navigate('agent', e.path)"
-                             style="padding: 6px 8px; cursor: pointer; border-radius: 4px; font-size: 13px; color: var(--pass);"
-                             @mouseover="$el.style.background='var(--surface2)'"
-                             @mouseout="$el.style.background='transparent'">
-                            📁 <span x-text="e.name"></span>
-                        </div>
-                    </template>
-                </div>
-            </template>
         </div>
     </div>
 
@@ -80,8 +45,7 @@
         </div>
     </div>
 
-    <form hx-post="/setup/run" hx-target="closest div" hx-swap="outerHTML"
-          x-on:submit="prepareSubmit($event)">
+    <form hx-post="/setup/run" hx-target="closest div" hx-swap="outerHTML">
         <input type="hidden" name="project_root" :value="projectRoot">
         <input type="hidden" name="agent_workspace" :value="agentWorkspace">
         <button type="submit" class="btn btn-primary">运行 Setup</button>
@@ -93,33 +57,13 @@
         return {
             projectRoot: '',
             agentWorkspace: '',
-            showBrowser: null,
-            browsePath: '',
-            browseParent: '',
-            browseEntries: [],
-            browse(target) {
-                this.showBrowser = target;
-                this.loadDir('');
-            },
-            navigate(target, path) {
-                this.loadDir(path);
-                if (target === 'project') this.projectRoot = path;
-                else this.agentWorkspace = path;
-            },
-            async loadDir(path) {
-                var url = '/api/setup/browse';
-                if (path) url += '?path=' + encodeURIComponent(path);
-                var resp = await fetch(url);
+            async pickFolder(target) {
+                var resp = await fetch('/api/setup/pickfolder');
                 var data = await resp.json();
-                this.browsePath = data.path || '/';
-                this.browseParent = data.parent || '';
-                this.browseEntries = data.entries || [];
-            },
-            prepareSubmit(evt) {
-                // Sync Alpine model values to hidden inputs
-                var form = evt.target;
-                form.querySelector('[name="project_root"]').value = this.projectRoot;
-                form.querySelector('[name="agent_workspace"]').value = this.agentWorkspace;
+                if (data.path) {
+                    if (target === 'project') this.projectRoot = data.path;
+                    else this.agentWorkspace = data.path;
+                }
             }
         }
     }

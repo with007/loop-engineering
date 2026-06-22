@@ -252,31 +252,32 @@ async def setup_run(request: Request, project_root: str = Form(...), agent_name:
 
 @app.get("/api/setup/browse")
 async def browse_dirs(path: str = ""):
-    """浏览目录结构，用于 setup 表单的可视化目录选择."""
+    """浏览目录结构."""
+
+
+@app.get("/api/setup/pickfolder")
+async def pick_folder():
+    """打开操作系统原生文件夹选择器，返回选中的绝对路径."""
     import platform as _plat
-    if not path or not os.path.exists(path):
-        if _plat.system() == "Windows":
-            import string
-            drives = []
-            for d in string.ascii_uppercase:
-                dp = f"{d}:/"
-                if os.path.exists(dp):
-                    drives.append({"name": dp, "path": dp, "is_drive": True})
-            return {"path": "", "entries": drives}
-        else:
-            path = "/"
-    entries = []
+    if _plat.system() != "Windows":
+        return {"path": ""}
+
+    ps_script = """
+Add-Type -AssemblyName System.Windows.Forms
+$f = New-Object System.Windows.Forms.FolderBrowserDialog
+$f.Description = "选择目录"
+$f.ShowNewFolderButton = $true
+if ($f.ShowDialog() -eq 'OK') { $f.SelectedPath } else { '' }
+"""
     try:
-        for name in sorted(os.listdir(path)):
-            full = os.path.join(path, name)
-            if os.path.isdir(full) and not name.startswith("."):
-                entries.append({"name": name, "path": full.replace("\\", "/"), "is_dir": True})
-    except PermissionError:
-        pass
-    parent = os.path.dirname(path).replace("\\", "/")
-    if parent == path:
-        parent = ""
-    return {"path": path.replace("\\", "/"), "parent": parent, "entries": entries}
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_script],
+            capture_output=True, text=True, timeout=120
+        )
+        path = r.stdout.strip()
+        return {"path": path if path else ""}
+    except Exception:
+        return {"path": ""}
 
 
 # ── Startup ──
