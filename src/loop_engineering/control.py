@@ -152,12 +152,17 @@ def start_loop(project_root):
     project_name = os.path.basename(project_root)
 
     if platform.system() == "Windows":
-        # VBS 脚本：打开 cmd 窗口启动 claude，然后 SendKeys 输入 /runloop
+        # VBS：打开 cmd 窗口启动 claude，SendKeys 输入 /runloop 并回车
+        title = f"Loop: {project_name}"
         vbs = (
             f'Set WshShell = CreateObject("WScript.Shell")\r\n'
-            f'WshShell.Run "cmd /k cd /d {project_root} && claude --dangerously-skip-permissions", 1\r\n'
-            f'WScript.Sleep 4000\r\n'
-            f'WshShell.SendKeys "/runloop{{ENTER}}"\r\n'
+            f'WshShell.Run "cmd /c start \\"{title}\\" cmd /k \\"cd /d {project_root} && claude --dangerously-skip-permissions\\"", 1\r\n'
+            f'WScript.Sleep 5000\r\n'
+            f'WshShell.AppActivate "{title}"\r\n'
+            f'WScript.Sleep 500\r\n'
+            f'WshShell.SendKeys "/runloop"\r\n'
+            f'WScript.Sleep 300\r\n'
+            f'WshShell.SendKeys "~"\r\n'
         )
         vbs_path = os.path.join(_control_dir(project_root), "loop.vbs")
         os.makedirs(os.path.dirname(vbs_path), exist_ok=True)
