@@ -135,17 +135,34 @@ def get_status(project_root):
     return {
         "paused": is_paused(project_root),
         "throttle": get_throttle(project_root),
-        "running": running and pid is not None and _pid_alive(pid),
+        "running": _loop_window_alive(project_root),
         "heartbeat": hb.isoformat() if hb else None,
         "pid": pid,
     }
+
+
+def _loop_window_alive(project_root):
+    """检查 loop 终端窗口是否存在。非 Windows 退回 PID 检测."""
+    if platform.system() == "Windows":
+        try:
+            project_name = os.path.basename(project_root)
+            title = f"Loop: {project_name}"
+            code, stdout, _ = _run(
+                f'powershell -NoProfile -Command '
+                f'"if (Get-Process cmd | Where-Object {{$_.MainWindowTitle -like \'*{title}*\'}}) {{ exit 0 }} else {{ exit 1 }}"',
+                cwd=project_root
+            )
+            return code == 0
+        except Exception:
+            return False
+    return _pid_alive(_read_pid(project_root))
 
 
 # ── loop process management ──
 
 def start_loop(project_root):
     """启动 loop 终端窗口."""
-    if is_loop_running(project_root) and _pid_alive(_read_pid(project_root)):
+    if _loop_window_alive(project_root):
         return {"started": False, "reason": "already running"}
 
     _ensure_dir(project_root)
