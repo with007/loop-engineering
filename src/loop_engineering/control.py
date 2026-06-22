@@ -165,11 +165,6 @@ def start_loop(project_root):
         with open(bat_path, "w") as f:
             f.write(loop_bat)
         cmd = bat_path
-        vbs_path = os.path.join(_control_dir(project_root), "loop.vbs")
-        os.makedirs(os.path.dirname(vbs_path), exist_ok=True)
-        with open(vbs_path, "w") as f:
-            f.write(vbs)
-        cmd = f'cscript //Nologo "{vbs_path}"'
     else:
         cmd = (
             f'osascript -e \'tell app "Terminal" to do script '
