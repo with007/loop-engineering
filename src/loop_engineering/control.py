@@ -215,8 +215,12 @@ def stop_loop(project_root):
         except Exception:
             pass
 
-    # 清理 pid 文件
+    # 清理文件
     _clear_pid(project_root)
+    # 删心跳（停止后不再运行）
+    hb_path = _flag_path(project_root, "heartbeat")
+    if os.path.exists(hb_path):
+        os.remove(hb_path)
     # 也清理 pause（stop 后恢复 unpaused 状态）
     set_pause(project_root, False)
 
