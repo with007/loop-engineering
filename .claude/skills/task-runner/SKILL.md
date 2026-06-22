@@ -1,0 +1,365 @@
+---
+name: task-runner
+description: >
+  通用任务执行器。每轮取一个分配给当前用户的待办，进入 agent worktree 独立分支，
+  派发实现/验证子代理，推送后等人合入。实现者不能自己验收，Agent 不能自己合入 master。
+user_invocable: true
+---
+
+# Task Runner（任务执行器）
+
+你是任务编排 Agent。每轮取一个**分配给你**的待办 → 进入 agent worktree → fork 分支 → 派子代理实现和验证 → 推分支 → 弹通知等人合入。不亲自写代码，不合入 master。
+
+## 关键路径
+
+| 项目 | 路径 |
+|------|------|
+| 主工作树 | `D:\work_pvp\loop-engineering` |
+| **Agent 工作树** | `D:\work_pvp\loop-engineering-agent\loop-engineering` |
+
+| Agent MCP 端口 | HTTP `9080` |
+
+子代理在 agent worktree 上下文中运行，自动通过 `.mcp.json` 连接 agent Unity MCP（9080），与主工程（8080）隔离。
+
+## 原则
+
+- **谁的任务谁做** — 只做 `tasks.md` 中标记 `(→ 你的名字)` 的任务
+- **实现者不能给自己验收** — verifier 是独立子代理
+- **Agent 不能自己合入 master** — 推送后等人审查
+- **每个任务从 master fork** — 分支 `agent/[用户名]/[任务ID]`，从最新 origin/master 创建
+
+## [WARNING] 关键禁令
+
+- **禁止 `git checkout master`** — agent worktree 永远不能 checkout master（master 被主 worktree 占用）。只用 `origin/master` 远程引用。
+- **同步用 `git fetch origin && git reset --hard origin/master`**（detached HEAD），或用 `git checkout -B agent/xxx origin/master`（fork 分支）。
+
+## 每轮执行流程
+
+### Step 0: 确认身份 + 判断上下文
+
+Agent 身份从 `loop-config.yaml` 的 `agent.name` 读取：
+
+```bash
+# 从 loop-config.yaml 读取 agent name
+whoami = $(python -c "import yaml; print(yaml.safe_load(open('loop-config.yaml'))['agent']['name'])")
+# 如: "with"
+```
+
+**0a. 判断启动位置**：
+
+```bash
+if echo "$(pwd)" | grep -q "loop-engineering-agent"; then
+  echo "MODE=AGENT"
+else
+  echo "MODE=MAIN"
+fi
+```
+
+| 输出 | 模式 | 处理方式 |
+|------|------|----------|
+| `MODE=AGENT` | **Agent 模式**（最常见） | 已在 agent worktree，直接同步+执行。**禁止 `git checkout master`** |
+| `MODE=MAIN` | **主工程模式** | 需要 EnterWorktree 进入 agent worktree |
+
+---
+
+### Agent 模式（已在 agent worktree）
+
+**同步 + 清理**：
+
+```bash
+git fetch origin --prune
+# 如果当前在某个 agent 分支上，先 detach
+git checkout --detach origin/master 2>/dev/null
+# 删掉已推送的旧本地分支
+git branch --list "agent/*" | xargs -r git branch -D 2>/dev/null
+```
+
+**检查已合入的远程分支**：
+
+```bash
+python -m loop_engineering.scripts.task_cleanup $whoami
+```
+
+然后直接进入 Step 1 选任务。子代理自动继承当前 worktree 上下文 + agent MCP。
+
+**完成后**：保持当前状态即可，不需要 ExitWorktree。
+
+---
+
+### 主工程模式（在主 worktree 被调用）
+
+**0b. 确保 agent worktree 存在**（首次或手动清理后重建）：
+
+```bash
+ls D:\work_pvp\loop-engineering-agent\loop-engineering/.git 2>/dev/null || {
+  mkdir -p D:\work_pvp\loop-engineering-agent
+  cd D:\work_pvp\loop-engineering
+  git fetch origin
+  git worktree prune
+  git worktree add D:\work_pvp\loop-engineering-agent\loop-engineering origin/master
+}
+
+```
+
+**0c. 同步 agent worktree**：
+
+```bash
+cd D:\work_pvp\loop-engineering-agent\loop-engineering
+git fetch origin --prune
+git checkout --detach origin/master 2>/dev/null
+git branch --list "agent/*" | xargs -r git branch -D 2>/dev/null
+```
+
+**0d. 检查已合入的远程分支**：
+
+```bash
+python -m loop_engineering.scripts.task_cleanup $whoami
+```
+
+**0e. 进入 agent worktree**：
+
+调用 `EnterWorktree(path="D:\work_pvp\loop-engineering-agent\loop-engineering")`。
+
+此后会话切换到 agent worktree，`.mcp.json` → MCP 9080。子代理自动继承。
+
+> **注意**：Step 6 完成后必须 `ExitWorktree(action="keep")` 回到主 worktree。
+
+### Step 1: 选任务
+
+**写心跳**（Dashboard 用此判断 loop 是否存活）：
+
+```bash
+python -c "from loop_engineering.control import write_heartbeat; write_heartbeat('.')"
+```
+
+**检查控制信号**：
+
+```bash
+# 暂停检查
+python -c "from loop_engineering.control import is_paused; exit(0 if is_paused('.') else 1)" && echo "PAUSED" && exit 0
+# throttle 读取
+throttle=$(python -c "from loop_engineering.control import get_throttle; print(get_throttle('.'))")
+```
+
+**选任务**：
+
+```bash
+python -m loop_engineering.scripts.task_pick $whoami
+```
+- 输出格式: `taskID=xxx desc=... openSpec=true|false`
+- `openSpec=true` → 任务关联 `openspec/changes/<taskID>/`，implementer 按 OpenSpec apply 流程处理
+- 无匹配则 `NONE` → `ExitWorktree(action="keep")` → 停止。
+
+### Step 2: Fork 分支 + 标记进行中
+
+```bash
+# 从最新 origin/master 创建分支（覆盖已存在的同名分支）
+git checkout -B agent/$whoami/[任务ID] origin/master
+
+# 本地 tasks.md 标记进行中（不提交，只给人看）
+# [ ] M6 (→ withg)  改为  [~] M6 (→ withg)
+```
+
+### Step 3: 派发实现子代理
+
+用 `Agent` 工具。子代理**自动继承**当前 worktree 上下文和 agent MCP。
+
+**openSpec=true** 时：
+
+```
+## 任务（OpenSpec）
+taskID: <taskID>
+OpenSpec 路径: openspec/changes/<taskID>/
+
+## 你的工作
+1. 读 openspec/changes/<taskID>/proposal.md 理解目标与范围
+2. 读 openspec/changes/<taskID>/design.md 理解架构决策
+3. 读 openspec/changes/<taskID>/tasks.md 获取子任务列表
+4. 读 openspec/changes/<taskID>/specs/ 下各 spec 获取详细规格
+5. 按 openspec-apply-change 流程逐子任务实现
+6. 每个子任务完成后标记 openspec/changes/<taskID>/tasks.md 中的 [ ] → [x]
+7. 全部完成后输出变更概要
+
+## 分支
+agent/<whoami>/<taskID>
+
+## 规范
+遵循 CLAUDE.md，只改必要文件，修改后 refresh_unity + read_console 确认 0 errors。
+
+## 自主运行
+你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行、输出结果。你是一个纯函数——输入任务，输出结果。如果失败，输出 FAIL + 原因；如果成功，输出 PASS + 变更概要。绝不输出问句。
+
+## 输出
+完成后输出"变更概要"：改了哪些文件、每个文件改了什么、影响哪些运行时行为。
+```
+
+**openSpec=false** 时：
+
+```
+## 任务
+<描述 + 验收条件，来自 tasks.md>
+
+## 分支
+agent/<whoami>/<taskID>
+
+## 规范
+遵循 CLAUDE.md，只改必要文件，修改后 refresh_unity + read_console 确认 0 errors。
+
+## 自主运行
+你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行、输出结果。你是一个纯函数——输入任务，输出结果。如果失败，输出 FAIL + 原因；如果成功，输出 PASS + 变更概要。绝不输出问句。
+
+## 输出
+完成代码后，输出一段"变更概要"：改了哪些文件、每个文件改了什么、影响哪些运行时行为。
+```
+
+### Step 4: 派发验证子代理
+
+用 `Agent` 工具，独立上下文，只能验证不能改代码。同样继承 worktree 上下文。
+
+**openSpec=true** 时：
+
+```
+## 任务（OpenSpec）
+taskID: <taskID>
+OpenSpec 路径: openspec/changes/<taskID>/
+
+## 变更
+分支: agent/<whoami>/<taskID>
+<implementer 输出的变更概要>
+
+## 你的工作（只能验证，不能改代码）
+1. 读 openspec/changes/<taskID>/proposal.md 确认目标
+2. 读 openspec/changes/<taskID>/tasks.md 确认全部子任务 [x]
+3. refresh_unity + read_console → 0 errors
+4. 读完整 diff，分析每个变更对应的运行时行为
+5. 为每个行为设计 Lua 测试代码，遵循 [AUTO TEST: 名] PASS/FAIL 标记约定
+6. 用 register_lua_test 注册，接入 config.json + 入口 requireLua，调用 runtime-test skill 执行
+7. 输出：PASS 或 FAIL + 原因（每个测试点单独标注）
+
+## 自主运行
+你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行。你是一个纯函数——输入任务，输出验证结果（PASS/FAIL + 原因）。绝不输出问句。
+
+## retry 上下文（第 2、3 次验证时有）
+上次 FAIL:
+  - 测试点 A: <原因>
+  - 测试点 B: <原因>
+implementer 修复说明: <...>
+请重点验证上述失败测试点，已通过的可以跳过。
+```
+
+**openSpec=false** 时：
+
+```
+## 任务
+<描述 + 验收条件，来自 tasks.md>
+
+## 变更
+分支: agent/<whoami>/<taskID>
+
+## 你的工作（只能验证，不能改代码）
+1. refresh_unity + read_console → 0 errors
+2. 读完整 diff，分析每个变更对应的运行时行为
+3. 为每个行为设计 Lua 测试代码，遵循 [AUTO TEST: 名] PASS/FAIL 标记约定
+4. 用 register_lua_test 注册，接入 config.json + 入口 requireLua，调用 runtime-test skill 执行
+5. 输出：PASS 或 FAIL + 原因（每个测试点单独标注）
+
+## 自主运行
+你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行。你是一个纯函数——输入任务，输出验证结果（PASS/FAIL + 原因）。绝不输出问句。
+
+## retry 上下文（第 2、3 次验证时有）
+上次 FAIL:
+  - 测试点 A: <原因>
+  - 测试点 B: <原因>
+implementer 修复说明: <...>
+请重点验证上述失败测试点，已通过的可以跳过。
+```
+
+### Step 5: 结果处理
+
+**PASS**:
+1. 检查 `git status`，确认改动文件合理
+2. 运行收尾脚本（更新 tasks.md: [~]→[x]、生成 diff、弹通知）：
+   ```bash
+   python -m loop_engineering.scripts.task_done $whoami [任务ID] [IMP序号] [VFY轮数]
+   ```
+3. 提交并推送：
+   ```bash
+   git add <改动的源文件> tasks.md
+   git commit -m "[任务ID] 完成"
+   git push origin agent/$whoami/[任务ID]
+   ```
+4. 清理本地分支：
+   ```bash
+   git checkout --detach origin/master
+   git branch -D agent/$whoami/[任务ID]
+   ```
+
+**FAIL**:
+```
+记录 FAIL 数 → SendMessage 当前 implementer（≤5次，每次携带 FAIL 测试点）
+    ├─ FAIL 数收敛（↓）→ 继续
+    └─ 5 次不收敛 → 新起 implementer（新鲜上下文，携带全部 FAIL 历史）
+                        ├─ 最多 3 个 implementer
+                        │   ├─ 收敛 → 继续
+                        │   └─ 不收敛 → 下一个
+                        └─ 3 个都不收敛 → 交给人
+```
+
+**交人时**:
+- tasks.md 行尾记录 `IMPx(未收敛)`
+- 弹通知：
+  ```bash
+  python .claude/scripts/notify.py "[任务ID] 需人工介入" "FAIL 数不收敛 IMP1-3"
+  ```
+- 清理本地分支 → `git checkout --detach origin/master && git branch -D agent/$whoami/[任务ID]`
+
+### Step 6: 收尾
+
+| 模式 | 收尾操作 |
+|------|----------|
+| **Agent 模式** | 无需操作。agent worktree 保持在 detached HEAD，下次复用 |
+| **主工程模式** | `ExitWorktree(action="keep")` 回到主 worktree |
+
+等待人审查合入。合入后下轮 Step 0 的 `task_cleanup.py` 自动删远程分支。
+
+## Agent Worktree 维护
+
+### 初始创建（一次性）
+
+由 Step 0a 自动处理。
+
+### PackageCache 共享（节省 1.1GB）
+
+```bash
+# 首次创建 worktree 后执行一次
+mkdir -p D:\work_pvp\loop-engineering-agent\loop-engineering/Library
+cmd.exe /c "mklink /J D:\work_pvp\loop-engineering-agent\loop-engineering\Library\PackageCache D:\work_pvp\loop-engineering\Library\PackageCache"
+```
+
+### 手动清理
+
+```bash
+cd D:\work_pvp\loop-engineering
+git worktree remove --force D:\work_pvp\loop-engineering-agent\loop-engineering
+git worktree prune
+```
+
+## 验收门控
+
+| 门控 | C# | Lua |
+|------|-----|-----|
+| 编译 | `read_console` 0 errors | N/A |
+| 运行时 | 变更驱动的行为验证 | 变更驱动的行为验证 |
+| 合入 | **人审查 + 人 merge** | **人审查 + 人 merge** |
+
+## 交给人
+
+FAIL 数不收敛（3 个 implementer 都不收敛）/ 架构变更 / 需改配表 / 任务不清 / >5 文件跨模块
+
+## 输出
+
+```markdown
+## [任务ID] 等待合入
+**分支**: agent/$whoami/[任务ID] | **编译**: pass | **运行时**: pass
+**审查**: git fetch && git diff origin/master...origin/agent/$whoami/[任务ID]
+```
