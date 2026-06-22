@@ -5,6 +5,10 @@
 """
 
 import os
+import time
+import subprocess
+import platform
+from datetime import datetime, timezone, timedelta
 
 
 def _control_dir(project_root):
@@ -17,6 +21,38 @@ def _ensure_dir(project_root):
 
 def _flag_path(project_root, name):
     return os.path.join(_control_dir(project_root), name)
+
+
+# ── heartbeat ──
+
+def write_heartbeat(project_root):
+    """写入心跳时间戳."""
+    _ensure_dir(project_root)
+    with open(_flag_path(project_root, "heartbeat"), "w") as f:
+        f.write(datetime.now(timezone.utc).isoformat())
+
+
+def read_heartbeat(project_root):
+    """读取最后心跳时间，返回 datetime 或 None."""
+    path = _flag_path(project_root, "heartbeat")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r") as f:
+            return datetime.fromisoformat(f.read().strip())
+    except Exception:
+        return None
+
+
+def is_loop_running(project_root, threshold_minutes=5):
+    """判断 loop 是否在运行。
+
+    条件：心跳在过去 threshold_minutes 分钟内。
+    """
+    hb = read_heartbeat(project_root)
+    if hb is None:
+        return False
+    return datetime.now(timezone.utc) - hb < timedelta(minutes=threshold_minutes)
 
 
 # ── pause ──
@@ -77,7 +113,109 @@ def set_throttle(project_root, interval):
 
 def get_status(project_root):
     """返回当前控制状态."""
+    hb = read_heartbeat(project_root)
+    running = is_loop_running(project_root)
+    pid = _read_pid(project_root)
     return {
         "paused": is_paused(project_root),
         "throttle": get_throttle(project_root),
+        "running": running and pid is not None and _pid_alive(pid),
+        "heartbeat": hb.isoformat() if hb else None,
+        "pid": pid,
     }
+
+
+# ── loop process management ──
+
+def start_loop(project_root):
+    """启动 loop 终端窗口."""
+    if is_loop_running(project_root) and _pid_alive(_read_pid(project_root)):
+        return {"started": False, "reason": "already running"}
+
+    _ensure_dir(project_root)
+    project_name = os.path.basename(project_root)
+
+    # 终端命令：新窗口运行 claude --dangerously-skip-permissions -p "/runloop"
+    if platform.system() == "Windows":
+        cmd = (
+            f'start "Loop: {project_name}" cmd /k '
+            f'"cd /d {project_root} && claude --dangerously-skip-permissions -p \'/runloop\'"'
+        )
+    else:
+        cmd = (
+            f'osascript -e \'tell app "Terminal" to do script '
+            f'"cd {project_root} && claude --dangerously-skip-permissions -p \'/runloop\'"\''
+        )
+
+    proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # 记下终端进程 PID（不是 claude 的 PID，但可以用来杀终端窗口）
+    _write_pid(project_root, proc.pid)
+
+    return {"started": True, "pid": proc.pid}
+
+
+def stop_loop(project_root):
+    """停止 loop 终端窗口."""
+    pid = _read_pid(project_root)
+    if not pid:
+        return {"stopped": False, "reason": "no pid recorded"}
+
+    killed = False
+    if _pid_alive(pid):
+        try:
+            if platform.system() == "Windows":
+                subprocess.run(f"taskkill /F /PID {pid}", shell=True,
+                               capture_output=True, timeout=10)
+            else:
+                os.kill(pid, 9)
+            killed = True
+        except Exception:
+            pass
+
+    # 清理 pid 文件
+    _clear_pid(project_root)
+    # 也清理 pause（stop 后恢复 unpaused 状态）
+    set_pause(project_root, False)
+
+    return {"stopped": killed, "pid": pid}
+
+
+def _pid_path(project_root):
+    return _flag_path(project_root, "loop.pid")
+
+
+def _write_pid(project_root, pid):
+    with open(_pid_path(project_root), "w") as f:
+        f.write(str(pid))
+
+
+def _read_pid(project_root):
+    path = _pid_path(project_root)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            return int(f.read().strip())
+    except Exception:
+        return None
+
+
+def _clear_pid(project_root):
+    path = _pid_path(project_root)
+    if os.path.exists(path):
+        os.remove(path)
+
+
+def _pid_alive(pid):
+    """检查进程是否存活."""
+    try:
+        if platform.system() == "Windows":
+            r = subprocess.run(f"tasklist /FI \"PID eq {pid}\" /NH",
+                               shell=True, capture_output=True, text=True, timeout=5)
+            return str(pid) in r.stdout
+        else:
+            os.kill(pid, 0)
+            return True
+    except Exception:
+        return False

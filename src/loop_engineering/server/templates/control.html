@@ -1,72 +1,136 @@
-<div hx-get="/control" hx-trigger="every 10s" hx-swap="outerHTML">
+<div hx-get="/control" hx-trigger="every 5s" hx-swap="outerHTML">
     <h1>Control</h1>
 
-    <!-- Status card -->
+    <!-- Loop status -->
+    {% set is_running = status.running %}
+    {% set hb_ago = '' %}
+    {% if status.heartbeat %}
+        {% set hb_ago = ((now | default(0)) - 0) %}  <!-- placeholder, will show raw time -->
+    {% endif %}
+
     <div class="card" style="margin-bottom: 20px;">
         <div class="status-indicator" style="margin-bottom: 16px;">
-            <span class="status-dot {% if status.paused %}paused{% else %}active{% endif %}"></span>
-            <span style="font-weight: 600; font-size: 16px;">
-                {{ 'Paused' if status.paused else 'Running' }}
+            <span class="status-dot {% if is_running %}active{% elif status.paused %}paused{% endif %}"></span>
+            <span style="font-weight: 600; font-size: 18px;">
+                {% if is_running %}Loop Running
+                {% elif status.paused %}Paused
+                {% else %}Idle{% endif %}
             </span>
             <span style="color: var(--dim); font-size: 13px; margin-left: auto;">
-                Tick: {{ status.throttle }}
+                {% if status.heartbeat %}
+                HB: <span id="hb-time" data-iso="{{ status.heartbeat }}">{{ status.heartbeat[:19] | replace('T', ' ') }}</span>
+                {% else %}
+                No heartbeat
+                {% endif %}
             </span>
         </div>
 
-        <div class="controls">
-            {% if status.paused %}
+        <div class="controls" style="margin-bottom: 16px;">
+            {% if is_running %}
+            <button class="btn btn-warn" style="background: var(--red);"
+                    hx-post="/api/control/stop"
+                    hx-target="closest div[hx-get]"
+                    hx-swap="outerHTML">
+                Stop Loop
+            </button>
+            {% else %}
             <button class="btn btn-success"
+                    hx-post="/api/control/start"
+                    hx-target="closest div[hx-get]"
+                    hx-swap="outerHTML">
+                Start Loop
+            </button>
+            {% endif %}
+
+            {% if is_running %}
+            {% if status.paused %}
+            <button class="btn btn-primary"
                     hx-delete="/api/control/pause"
                     hx-target="closest div[hx-get]"
                     hx-swap="outerHTML">
-                Resume Loop
+                Resume
             </button>
             {% else %}
             <button class="btn btn-warn"
                     hx-post="/api/control/pause"
                     hx-target="closest div[hx-get]"
                     hx-swap="outerHTML">
-                Pause Loop
+                Pause
             </button>
             {% endif %}
+            {% endif %}
 
+            {% if is_running %}
             <button class="btn btn-primary"
                     hx-post="/api/control/next"
                     hx-target="closest div[hx-get]"
                     hx-swap="outerHTML">
-                Run Next Cycle
+                Force Next
             </button>
+            {% endif %}
 
             <div style="display: flex; align-items: center; gap: 8px; margin-left: 12px;">
-                <span style="color: var(--muted); font-size: 13px;">Throttle:</span>
+                <span style="color: var(--muted); font-size: 13px;">Tick:</span>
                 <input type="text" id="throttle-input" value="{{ status.throttle }}"
                        style="background: var(--bg); color: var(--text); border: 1px solid var(--border);
                               padding: 6px 10px; border-radius: 6px; width: 70px; font-size: 13px; text-align: center;">
-                <button class="btn btn-sm btn-primary"
-                        onclick="set_throttle()">Set</button>
+                <button class="btn btn-sm btn-primary" onclick="set_throttle()">Set</button>
             </div>
         </div>
     </div>
 
-    <div class="card">
-        <h3>Signal Files</h3>
-        <p style="color: var(--muted); font-size: 13px;">
-            Task-runner checks these signal files at the start of each tick.<br>
-            Signals are file-based — Dashboard doesn't need to be running for them to work.
-        </p>
-        <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-family: monospace;">
-            <div style="display: flex; justify-content: space-between;">
-                <span>.loop-engineering/control/pause</span>
-                <span style="color: {{ '#f59e0b' if status.paused else '#64748b' }}">{{ 'EXISTS' if status.paused else 'absent' }}</span>
+    <div class="grid grid-2">
+        <div class="card">
+            <h3>Signal Files</h3>
+            <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-family: monospace;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span>control/heartbeat</span>
+                    <span style="color: {{ '#22c55e' if is_running else '#64748b' }}">{{ status.heartbeat or 'absent' }}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span>control/pause</span>
+                    <span style="color: {{ '#f59e0b' if status.paused else '#64748b' }}">{{ 'ON' if status.paused else 'off' }}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span>control/throttle</span>
+                    <span style="color: var(--dim);">{{ status.throttle }}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span>control/loop.pid</span>
+                    <span style="color: var(--dim);">{{ status.pid or 'none' }}</span>
+                </div>
             </div>
-            <div style="display: flex; justify-content: space-between;">
-                <span>.loop-engineering/control/throttle</span>
-                <span style="color: var(--dim);">{{ status.throttle }}</span>
-            </div>
+        </div>
+
+        <div class="card">
+            <h3>How it works</h3>
+            <p style="color: var(--muted); font-size: 13px; line-height: 1.6;">
+                <strong>Start</strong> opens a terminal window running<br>
+                <code style="color: var(--blue);">claude --dangerously-skip-permissions -p '/runloop'</code>
+            </p>
+            <p style="color: var(--muted); font-size: 13px; line-height: 1.6; margin-top: 8px;">
+                Dashboard detects loop status via:<br>
+                • Heartbeat file (updated each tick)<br>
+                • Process ID (terminal window alive)
+            </p>
         </div>
     </div>
 
     <script>
+        // Format heartbeat as relative time
+        (function() {
+            var el = document.getElementById('hb-time');
+            if (!el) return;
+            var iso = el.getAttribute('data-iso');
+            if (!iso) return;
+            var d = new Date(iso);
+            var now = new Date();
+            var sec = Math.floor((now - d) / 1000);
+            if (sec < 60) el.textContent = sec + 's ago';
+            else if (sec < 3600) el.textContent = Math.floor(sec/60) + 'm ago';
+            else el.textContent = Math.floor(sec/3600) + 'h ago';
+        })();
+
         function set_throttle() {
             var val = document.getElementById('throttle-input').value;
             fetch('/api/control/throttle', {

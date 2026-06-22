@@ -49,3 +49,15 @@ def set_throttle(req: ThrottleRequest):
     from loop_engineering.control import set_throttle as ctrl_set
     ctrl_set(_project_root(), req.interval)
     return {"throttle": req.interval}
+
+
+@router.post("/start")
+def start():
+    from loop_engineering.control import start_loop
+    return start_loop(_project_root())
+
+
+@router.post("/stop")
+def stop():
+    from loop_engineering.control import stop_loop
+    return stop_loop(_project_root())
