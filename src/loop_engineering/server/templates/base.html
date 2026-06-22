@@ -153,6 +153,16 @@
         </div>
     </div>
     <script>
+        // Update nav active state
+        function updateNav() {
+            var path = window.location.pathname;
+            document.querySelectorAll('nav a').forEach(function(a) {
+                a.classList.toggle('active', a.getAttribute('href') === path);
+            });
+        }
+        document.body.addEventListener('htmx:afterSettle', updateNav);
+        updateNav();  // initial call
+
         // Preserve ?project= param across all HTMX requests
         document.body.addEventListener('htmx:configRequest', function(evt) {
             var params = new URLSearchParams(window.location.search);
@@ -160,12 +170,6 @@
             if (proj && !evt.detail.path.includes('project=')) {
                 evt.detail.path += (evt.detail.path.includes('?') ? '&' : '?') + 'project=' + encodeURIComponent(proj);
             }
-        });
-        document.body.addEventListener('htmx:afterSettle', function(evt) {
-            var path = evt.detail.pathInfo?.requestPath || window.location.pathname;
-            document.querySelectorAll('nav a').forEach(function(a) {
-                a.classList.toggle('active', a.getAttribute('href') === path);
-            });
         });
     </script>
 </body>
