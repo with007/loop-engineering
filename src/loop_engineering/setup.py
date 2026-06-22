@@ -121,22 +121,30 @@ def generate_mcp_configs(config):
     _write_json_if_changed(os.path.join(agent_dir, ".mcp.json"), agent_mcp, "Agent .mcp.json")
 
     # Agent McpProjectConfig.json (Unity 特定)
-    unity_project_dir = os.path.join(agent_dir, "ProjectSettings")
-    if os.path.isdir(unity_project_dir):
-        mcp_project_config = {
-            "projectName": project_name,
-            "httpBaseUrl": f"http://127.0.0.1:{agent_port}",
-            "httpRemoteBaseUrl": "",
-            "httpTransportScope": "local",
-            "unitySocketPort": 6401,
-        }
-        _write_json_if_changed(
-            os.path.join(unity_project_dir, "McpProjectConfig.json"),
-            mcp_project_config,
-            "Agent McpProjectConfig.json",
-        )
-    else:
-        print("  (非 Unity 工程，跳过 McpProjectConfig.json)")
+    _write_mcp_project_config(agent_dir, project_name, agent_port, "Agent")
+
+    # 主工程 McpProjectConfig.json
+    _write_mcp_project_config(project_root, project_name, main_port, "主工程")
+
+
+def _write_mcp_project_config(worktree_dir, project_name, port, label):
+    """写入 McpProjectConfig.json（仅 Unity 工程）."""
+    ps_dir = os.path.join(worktree_dir, "ProjectSettings")
+    if not os.path.isdir(ps_dir):
+        print(f"  (非 Unity 工程，跳过 {label} McpProjectConfig.json)")
+        return
+    config = {
+        "projectName": project_name,
+        "httpBaseUrl": f"http://127.0.0.1:{port}",
+        "httpRemoteBaseUrl": "",
+        "httpTransportScope": "local",
+        "unitySocketPort": 6401,
+    }
+    _write_json_if_changed(
+        os.path.join(ps_dir, "McpProjectConfig.json"),
+        config,
+        f"{label} McpProjectConfig.json",
+    )
 
 
 def _write_json_if_changed(path, data, label):
