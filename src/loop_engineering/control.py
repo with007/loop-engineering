@@ -155,10 +155,11 @@ def start_loop(project_root):
         loop_bat = (
             f'@echo off\r\n'
             f'start "Loop: {project_name}" cmd /k "cd /d {project_root} && claude --dangerously-skip-permissions"\r\n'
-            f'timeout /t 5 /nobreak >nul\r\n'
+            f'timeout /t 6 /nobreak >nul\r\n'
             f'powershell -NoProfile -Command "$ws=New-Object -ComObject WScript.Shell;'
-            f'$ws.AppActivate(\'Loop: {project_name}\');Start-Sleep -Milliseconds 500;'
-            f'$ws.SendKeys(\'/runloop~\')"\r\n'
+            f'$ws.AppActivate(\'Loop: {project_name}\');Start-Sleep -Seconds 1;'
+            f'$ws.SendKeys(\'/runloop\');Start-Sleep -Milliseconds 500;'
+            f'$ws.SendKeys(\'{"{ENTER}"}\')"\r\n'
         )
         bat_path = os.path.join(_control_dir(project_root), "loop.bat")
         os.makedirs(os.path.dirname(bat_path), exist_ok=True)
