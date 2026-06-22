@@ -1,4 +1,4 @@
-<div x-data="setupForm()" x-init="$watch('projectRoot', val => { if (val) { var p = val.replace(/\\/g,'/').replace(/\/$/,''); var parent = p.substring(0, p.lastIndexOf('/')); var name = p.substring(p.lastIndexOf('/')+1); agentWorkspace = parent + '/' + name + '-agent'; } })">
+<div x-data="setupForm()">
     <h1>添加项目</h1>
     <p style="color: var(--muted); margin-bottom: 20px;">在新项目中运行 loop setup</p>
 
@@ -11,19 +11,66 @@
     <div class="grid grid-2" style="margin-bottom: 24px;">
         <div class="card">
             <h3>项目根目录</h3>
-            <div style="display: flex; gap: 8px;">
+            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
                 <input type="text" x-model="projectRoot" placeholder="d:/work_pvp/myproject"
                        style="flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px 14px; border-radius: 7px; font-size: 14px;">
-                <button class="btn btn-sm btn-primary" @click="pickFolder('project')">选择</button>
+                <button class="btn btn-sm" style="background: var(--surface2); color: var(--text);"
+                        @click="toggleBrowser('project')">浏览</button>
             </div>
+            <template x-if="showBrowser === 'project'">
+                <div class="card" style="padding: 8px; max-height: 260px; overflow-y: auto; background: var(--bg);">
+                    <template x-for="e in browseEntries" :key="e.path">
+                        <div @click="entryClick('project', e)"
+                             style="padding: 5px 8px; cursor: pointer; border-radius: 4px; font-size: 13px;"
+                             @mouseover="$el.style.background='var(--surface2)'"
+                             @mouseout="$el.style.background='transparent'">
+                            <span x-show="e.is_drive" style="color: var(--pass);">💾 </span>
+                            <span x-show="!e.is_drive" style="color: var(--pass);">📁 </span>
+                            <span x-text="e.name" style="color: var(--text);"></span>
+                        </div>
+                    </template>
+                    <div x-show="browseEntries.length === 0" style="color: var(--dim); font-size: 12px; padding: 8px;">
+                        空目录或无权访问
+                    </div>
+                    <div style="border-top: 1px solid var(--border); padding-top: 6px; margin-top: 6px;">
+                        <a href="#" @click.prevent="goUp('project')"
+                           style="color: var(--muted); font-size: 12px;">.. 上级目录</a>
+                        <span x-show="!browseEntries.is_drive" style="margin-left: 8px; font-size: 12px; color: var(--dim);" x-text="browsePath"></span>
+                    </div>
+                </div>
+            </template>
         </div>
+
         <div class="card">
             <h3>Agent 工作区目录</h3>
-            <div style="display: flex; gap: 8px;">
+            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
                 <input type="text" x-model="agentWorkspace" placeholder="自动检测，或手动选择"
                        style="flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px 14px; border-radius: 7px; font-size: 14px;">
-                <button class="btn btn-sm btn-primary" @click="pickFolder('agent')">选择</button>
+                <button class="btn btn-sm" style="background: var(--surface2); color: var(--text);"
+                        @click="toggleBrowser('agent')">浏览</button>
             </div>
+            <template x-if="showBrowser === 'agent'">
+                <div class="card" style="padding: 8px; max-height: 260px; overflow-y: auto; background: var(--bg);">
+                    <template x-for="e in browseEntries" :key="e.path">
+                        <div @click="entryClick('agent', e)"
+                             style="padding: 5px 8px; cursor: pointer; border-radius: 4px; font-size: 13px;"
+                             @mouseover="$el.style.background='var(--surface2)'"
+                             @mouseout="$el.style.background='transparent'">
+                            <span x-show="e.is_drive" style="color: var(--pass);">💾 </span>
+                            <span x-show="!e.is_drive" style="color: var(--pass);">📁 </span>
+                            <span x-text="e.name" style="color: var(--text);"></span>
+                        </div>
+                    </template>
+                    <div x-show="browseEntries.length === 0" style="color: var(--dim); font-size: 12px; padding: 8px;">
+                        空目录或无权访问
+                    </div>
+                    <div style="border-top: 1px solid var(--border); padding-top: 6px; margin-top: 6px;">
+                        <a href="#" @click.prevent="goUp('agent')"
+                           style="color: var(--muted); font-size: 12px;">.. 上级目录</a>
+                        <span style="margin-left: 8px; font-size: 12px; color: var(--dim);" x-text="browsePath"></span>
+                    </div>
+                </div>
+            </template>
         </div>
     </div>
 
@@ -57,12 +104,37 @@
         return {
             projectRoot: '',
             agentWorkspace: '',
-            async pickFolder(target) {
-                var resp = await fetch('/api/setup/pickfolder');
-                var data = await resp.json();
-                if (data.path) {
-                    if (target === 'project') this.projectRoot = data.path;
-                    else this.agentWorkspace = data.path;
+            showBrowser: null,
+            browsePath: '',
+            browseParent: '',
+            browseEntries: [],
+            toggleBrowser(target) {
+                this.showBrowser = this.showBrowser === target ? null : target;
+                if (this.showBrowser) this.loadDir('');
+            },
+            entryClick(target, e) {
+                if (e.is_drive) {
+                    this.loadDir(e.path);
+                } else {
+                    this.loadDir(e.path);
+                    if (target === 'project') this.projectRoot = e.path;
+                    else this.agentWorkspace = e.path;
+                }
+            },
+            goUp(target) {
+                if (this.browseParent) this.loadDir(this.browseParent);
+            },
+            async loadDir(path) {
+                var url = '/api/setup/browse';
+                if (path) url += '?path=' + encodeURIComponent(path);
+                try {
+                    var resp = await fetch(url);
+                    var data = await resp.json();
+                    this.browsePath = data.path || '';
+                    this.browseParent = data.parent || '';
+                    this.browseEntries = data.entries || [];
+                } catch(e) {
+                    this.browseEntries = [];
                 }
             }
         }

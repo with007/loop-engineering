@@ -297,56 +297,30 @@ async def setup_run(request: Request, project_root: str = Form(...), agent_name:
 @app.get("/api/setup/browse")
 async def browse_dirs(path: str = ""):
     """浏览目录结构."""
-
-
-@app.get("/api/setup/pickfolder")
-async def pick_folder():
-    """打开 Windows 原生文件夹选择器."""
     import platform as _plat
-    if _plat.system() != "Windows":
-        return {"path": ""}
-
-    import tempfile, time as _time
-    tmp = tempfile.mktemp(suffix=".py")
-    out = tempfile.mktemp(suffix=".txt")
-    with open(tmp, "w") as f:
-        f.write("""
-import tkinter.filedialog, tkinter, sys
-root = tkinter.Tk()
-root.withdraw()
-root.attributes('-topmost', True)
-root.focus_force()
-path = tkinter.filedialog.askdirectory(title="Select Folder")
-with open(sys.argv[1], "w") as f:
-    f.write(path or "")
-root.destroy()
-""")
+    if not path or not os.path.exists(path):
+        if _plat.system() == "Windows":
+            import string
+            drives = []
+            for d in string.ascii_uppercase:
+                dp = f"{d}:/"
+                if os.path.exists(dp):
+                    drives.append({"name": dp, "path": dp, "is_drive": True})
+            return {"path": "", "entries": drives}
+        else:
+            path = "/"
+    entries = []
     try:
-        # 使用 pythonw 避免控制台窗口一闪
-        subprocess.Popen(
-            ["pythonw", tmp, out],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-        # 轮询输出文件等待选择完成
-        for _ in range(120):
-            _time.sleep(1)
-            if os.path.exists(out) and os.path.getsize(out) > 0:
-                with open(out) as f:
-                    path = f.read().strip()
-                os.remove(out)
-                try:
-                    os.remove(tmp)
-                except Exception:
-                    pass
-                return {"path": path}
-        path = ""
-    except Exception:
-        path = ""
-    try:
-        os.remove(tmp)
-    except Exception:
+        for name in sorted(os.listdir(path)):
+            full = os.path.join(path, name)
+            if os.path.isdir(full) and not name.startswith("."):
+                entries.append({"name": name, "path": full.replace("\\", "/"), "is_dir": True})
+    except PermissionError:
         pass
-    return {"path": path}
+    parent = os.path.dirname(path).replace("\\", "/")
+    if parent == path:
+        parent = ""
+    return {"path": path.replace("\\", "/"), "parent": parent, "entries": entries}
 
 
 # ── Startup ──
