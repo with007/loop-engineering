@@ -56,6 +56,38 @@ def write_config(project_root, config):
     return config_path
 
 
+def merge_config(project_root, updates):
+    """深度合并 updates 到现有配置，返回 (new_config, changed_keys).
+
+    updates 中值为 None 表示删除该键。
+    changed_keys 是 dot-notation 路径集合，如 {"agent.mcp_port", "project.name"}。
+    """
+    old = read_config(project_root)
+
+    def _deep_merge(base, patch, prefix=""):
+        """递归合并 patch 到 base，原地修改 base。返回变化的 key 集合。"""
+        changed = set()
+        for k, v in patch.items():
+            full_key = f"{prefix}.{k}" if prefix else k
+            if v is None:
+                # None 表示删除
+                if k in base:
+                    del base[k]
+                    changed.add(full_key)
+            elif isinstance(v, dict) and isinstance(base.get(k), dict):
+                changed.update(_deep_merge(base[k], v, full_key))
+            else:
+                if base.get(k) != v:
+                    base[k] = v
+                    changed.add(full_key)
+        return changed
+
+    import copy
+    new_config = copy.deepcopy(old) if old else {}
+    changed = _deep_merge(new_config, updates)
+    return new_config, changed
+
+
 def detect_config(project_root):
     """自动检测项目设置，返回建议的配置 dict.
 

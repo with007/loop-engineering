@@ -129,12 +129,13 @@ def _build_projects_context(request: Request, current_pr: str):
 
 
 # ── API routes ──
-from .api import control, projects, tasks, runs, branches  # noqa: E402
+from .api import control, projects, tasks, runs, branches, config  # noqa: E402
 app.include_router(control.router, prefix="/api/control", tags=["control"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(runs.router, prefix="/api/runs", tags=["runs"])
 app.include_router(branches.router, prefix="/api/branches", tags=["branches"])
+app.include_router(config.router, prefix="/api/config", tags=["config"])
 
 
 @app.get("/api/projects/switcher")
@@ -156,7 +157,7 @@ async def project_switcher(request: Request, project: str = Query(None)):
     html += '''<script>
         function switchProject(root) {
             var url = window.location.pathname + '?project=' + encodeURIComponent(root);
-            htmx.ajax('GET', url, {target: '#content', swap: 'outerHTML'});
+            htmx.ajax('GET', url, {target: '#content', swap: 'innerHTML'});
             history.pushState({}, '', url);
         }
     </script>'''
@@ -248,6 +249,27 @@ async def control_page(request: Request, project: str = Query(None)):
         "request": request,
         "status": get_status(pr),
         "current_root": pr,
+    })
+
+
+@app.get("/settings")
+async def settings_page(request: Request, project: str = Query(None)):
+    from loop_engineering.config import read_config
+    from loop_engineering.presets import list_presets
+
+    pr = _project_root(request, q=project)
+    cfg_path = os.path.join(pr, "loop-config.yaml")
+    if not os.path.exists(cfg_path):
+        return RedirectResponse("/setup", status_code=303)
+
+    cfg = read_config(pr)
+    presets = [{"key": k, "name": n, "desc": d} for k, n, d in list_presets()]
+
+    return _render(request, "settings.html", {
+        "request": request,
+        "current_root": pr,
+        "config": cfg,
+        "presets": presets,
     })
 
 

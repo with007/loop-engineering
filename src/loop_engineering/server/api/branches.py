@@ -2,19 +2,21 @@
 
 import os
 import subprocess
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 router = APIRouter()
 
 
-def _project_root():
+def _project_root(project: str = None):
+    if project:
+        return project
     return os.environ.get("LOOP_PROJECT_ROOT", os.getcwd())
 
 
 @router.get("/list")
-def list_branches():
+def list_branches(project: str = Query(None)):
     """列出 agent 分支及其合入状态."""
-    pr = _project_root()
+    pr = _project_root(project)
 
     try:
         # 列出远程 agent 分支

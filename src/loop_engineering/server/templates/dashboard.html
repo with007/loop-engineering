@@ -1,4 +1,4 @@
-<div hx-get="/?project={{ current_root }}" hx-trigger="every 30s" hx-swap="outerHTML">
+<div hx-get="/" hx-trigger="every 30s" hx-swap="outerHTML">
     {% if not current %}
     <div class="card" style="text-align: center; padding: 60px 20px;">
         <h2>未找到项目</h2>
@@ -75,7 +75,6 @@
 
     {% set pending_br = proj.branches | selectattr('merged', 'equalto', false) | list %}
     {% set merged_br = proj.branches | selectattr('merged', 'equalto', true) | list %}
-    {% if proj.branches %}
     <div class="card">
         <h3>Agent 分支
             {% if pending_br %}
@@ -109,6 +108,5 @@
         <p style="color: var(--dim); font-size: 13px;">暂无 Agent 分支</p>
         {% endif %}
     </div>
-    {% endif %}
     {% endif %}
 </div>

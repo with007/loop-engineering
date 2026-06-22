@@ -2,13 +2,15 @@
 
 import os
 import re
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 router = APIRouter()
 
 
-def _project_root():
+def _project_root(project: str = None):
+    if project:
+        return project
     return os.environ.get("LOOP_PROJECT_ROOT", os.getcwd())
 
 
@@ -18,9 +20,9 @@ class AddTaskRequest(BaseModel):
 
 
 @router.get("/list")
-def list_tasks():
+def list_tasks(project: str = Query(None)):
     """解析 tasks.md 返回任务列表."""
-    pr = _project_root()
+    pr = _project_root(project)
     tasks_path = os.path.join(pr, "tasks.md")
     if not os.path.exists(tasks_path):
         return {"tasks": []}
@@ -48,9 +50,9 @@ def list_tasks():
 
 
 @router.post("/add")
-def add_task(req: AddTaskRequest):
+def add_task(req: AddTaskRequest, project: str = Query(None)):
     """添加任务到 tasks.md."""
-    pr = _project_root()
+    pr = _project_root(project)
     tasks_path = os.path.join(pr, "tasks.md")
 
     line = f"- [ ] {req.description} (→ {req.assignee})\n"

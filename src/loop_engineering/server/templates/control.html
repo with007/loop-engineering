@@ -133,7 +133,10 @@
 
         function set_throttle() {
             var val = document.getElementById('throttle-input').value;
-            fetch('/api/control/throttle', {
+            var params = new URLSearchParams(window.location.search);
+            var proj = params.get('project');
+            var url = '/api/control/throttle' + (proj ? '?project=' + encodeURIComponent(proj) : '');
+            fetch(url, {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({interval: val})

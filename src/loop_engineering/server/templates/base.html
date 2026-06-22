@@ -128,6 +128,9 @@
 
         .inline-form { display: flex; gap: 10px; align-items: flex-end; }
         .inline-form .form-group { flex: 1; margin-bottom: 0; }
+
+        .htmx-indicator { display: none; }
+        .htmx-request .htmx-indicator { display: flex; }
     </style>
 </head>
 <body>
@@ -140,6 +143,7 @@
                     <a href="/tasks" hx-get="/tasks" hx-target="#content" hx-push-url="true">任务</a>
                     <a href="/runs" hx-get="/runs" hx-target="#content" hx-push-url="true">历史</a>
                     <a href="/control" hx-get="/control" hx-target="#content" hx-push-url="true">控制</a>
+                    <a href="/settings" hx-get="/settings" hx-target="#content" hx-push-url="true">Settings</a>
                     <a href="/setup" hx-get="/setup" hx-target="#content" hx-push-url="true" style="color: var(--active);">+ Setup</a>
                 </nav>
                 <div id="project-switcher" style="margin-left: auto;"
@@ -162,6 +166,98 @@
         }
         document.body.addEventListener('htmx:afterSettle', updateNav);
         updateNav();  // initial call
+
+        // Settings form — defined globally so Alpine can reference it after htmx swaps
+        function settingsForm() {
+            return {
+                config: {project: {}, agent: {}, main: {}},
+                presets: [],
+                selectedType: '',
+                dataRepoPath: '',
+                showTeardown: false,
+                teardownConfirmText: '',
+                loading: true,
+                saving: false,
+                message: null,
+
+                async loadConfig() {
+                    try {
+                        var params = new URLSearchParams(window.location.search);
+                        var proj = params.get('project') || '';
+                        var url = '/api/config/current' + (proj ? '?project=' + encodeURIComponent(proj) : '');
+                        var resp = await fetch(url);
+                        var data = await resp.json();
+                        this.config = data.config || {project: {}, agent: {}, main: {}};
+                        this.presets = data.presets || [];
+                        this.selectedType = data.config.type || '';
+                        this.dataRepoPath = (data.config.data_repo && data.config.data_repo.path) || '';
+                        this.loading = false;
+                    } catch (e) {
+                        this.message = {type: 'error', text: 'Failed to load config: ' + e.message};
+                        this.loading = false;
+                    }
+                },
+
+                async saveConfig() {
+                    this.saving = true;
+                    this.message = null;
+                    try {
+                        var params = new URLSearchParams(window.location.search);
+                        var proj = params.get('project') || '';
+                        var url = '/api/config/update' + (proj ? '?project=' + encodeURIComponent(proj) : '');
+                        var body = {
+                            project: {name: this.config.project.name},
+                            agent: {
+                                name: this.config.agent.name,
+                                workspace: this.config.agent.workspace,
+                                mcp_port: parseInt(this.config.agent.mcp_port) || 9080
+                            },
+                            main: {mcp_port: parseInt(this.config.main.mcp_port) || 8080},
+                            type: this.selectedType || '',
+                            data_repo: this.dataRepoPath ? {path: this.dataRepoPath} : null
+                        };
+                        var resp = await fetch(url, {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify(body)
+                        });
+                        var data = await resp.json();
+                        if (resp.ok) {
+                            this.message = {type: 'success', text: 'Saved. ' + (data.actions || []).join('; ')};
+                            await this.loadConfig();
+                        } else {
+                            this.message = {type: 'error', text: data.detail || 'Save failed'};
+                        }
+                    } catch (e) {
+                        this.message = {type: 'error', text: 'Save failed: ' + e.message};
+                    }
+                    this.saving = false;
+                },
+
+                async executeTeardown() {
+                    if (this.teardownConfirmText !== this.config.project.name) return;
+                    try {
+                        var params = new URLSearchParams(window.location.search);
+                        var proj = params.get('project') || '';
+                        var url = '/api/config/teardown' + (proj ? '?project=' + encodeURIComponent(proj) : '');
+                        var resp = await fetch(url, {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({confirm_name: this.teardownConfirmText, force: true})
+                        });
+                        var data = await resp.json();
+                        if (resp.ok && data.removed) {
+                            this.message = {type: 'success', text: 'Removed. Redirecting...'};
+                            setTimeout(function() { window.location.href = '/'; }, 1500);
+                        } else {
+                            this.message = {type: 'error', text: data.detail || 'Teardown failed'};
+                        }
+                    } catch (e) {
+                        this.message = {type: 'error', text: 'Teardown failed: ' + e.message};
+                    }
+                }
+            };
+        }
 
         // Preserve ?project= param across all HTMX requests
         document.body.addEventListener('htmx:configRequest', function(evt) {

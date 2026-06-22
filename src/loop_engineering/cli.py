@@ -60,6 +60,22 @@ def main():
     ui_start.add_argument("--port", type=int, default=8765, help="端口（默认 8765）")
     ui_start.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
 
+    # loop config
+    config_parser = subparsers.add_parser("config", help="查看或修改项目配置")
+    config_sub = config_parser.add_subparsers(dest="config_command")
+    config_show = config_sub.add_parser("show", help="查看当前配置")
+    config_show.add_argument("--project-root", default=None, help="项目根目录")
+    config_set = config_sub.add_parser("set", help="修改配置项")
+    config_set.add_argument("pairs", nargs="+", metavar="KEY=VALUE",
+                            help="配置项，如 agent.name=foo main.mcp_port=8081")
+    config_set.add_argument("--project-root", default=None, help="项目根目录")
+
+    # loop teardown
+    teardown_parser = subparsers.add_parser("teardown", help="移除 loop-engineering（仅删 agent worktree + 注册表）")
+    teardown_parser.add_argument("--project-root", default=None, help="项目根目录")
+    teardown_parser.add_argument("--force", "-y", action="store_true", help="跳过确认")
+    teardown_parser.add_argument("--dry-run", action="store_true", help="仅显示将要删除的内容")
+
     args = parser.parse_args()
 
     if args.command == "setup":
@@ -68,6 +84,10 @@ def main():
         _cmd_init()
     elif args.command == "ui":
         _cmd_ui(args)
+    elif args.command == "config":
+        _cmd_config(args)
+    elif args.command == "teardown":
+        _cmd_teardown(args)
     else:
         parser.print_help()
         sys.exit(1)
@@ -219,6 +239,144 @@ def _cmd_init():
         sys.exit(0)
 
     setup.run_setup(config)
+
+
+def _find_project_root():
+    """从当前目录向上查找 loop-config.yaml，返回项目根目录路径."""
+    p = os.getcwd()
+    for _ in range(10):
+        if os.path.exists(os.path.join(p, "loop-config.yaml")):
+            return p
+        parent = os.path.dirname(p)
+        if parent == p:
+            break
+        p = parent
+    return None
+
+
+def _cmd_config(args):
+    """查看或修改项目配置."""
+    pr = args.project_root
+    if pr:
+        pr = os.path.abspath(pr)
+    else:
+        pr = _find_project_root()
+
+    if not pr:
+        print("错误: 未找到 loop-config.yaml，请指定 --project-root 或在项目目录下运行")
+        sys.exit(1)
+
+    if not os.path.exists(os.path.join(pr, "loop-config.yaml")):
+        print(f"错误: {pr} 下没有 loop-config.yaml，请先执行 setup")
+        sys.exit(1)
+
+    if args.config_command == "set":
+        # 解析 KEY=VALUE 对
+        updates = {}
+        for pair in args.pairs:
+            if "=" not in pair:
+                print(f"错误: 格式应为 KEY=VALUE，收到: {pair}")
+                sys.exit(1)
+            key, value = pair.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+
+            # 解析嵌套 key (如 agent.name → agent: {name: ...})
+            parts = key.split(".")
+            current = updates
+            for part in parts[:-1]:
+                if part not in current:
+                    current[part] = {}
+                current = current[part]
+            # 尝试类型转换
+            try:
+                value = int(value)
+            except ValueError:
+                pass
+            current[parts[-1]] = value
+
+        from loop_engineering.config import merge_config, write_config
+        new_config, changed = merge_config(pr, updates)
+        write_config(pr, new_config)
+        print(f"已更新 {len(changed)} 项: {', '.join(sorted(changed))}")
+
+        # 副作用
+        if changed & {"agent.mcp_port", "main.mcp_port"}:
+            from loop_engineering.setup import generate_mcp_configs, sync_to_agent
+            generate_mcp_configs(new_config)
+            sync_to_agent(new_config)
+            print("  → MCP 配置已重新生成并同步")
+        if changed & {"agent.name", "project.name"}:
+            from loop_engineering.setup import render_skill_md
+            render_skill_md(new_config)
+            print("  → task-runner SKILL.md 已重新渲染")
+    else:
+        # show (默认)
+        from loop_engineering.config import read_config
+        cfg = read_config(pr)
+        if not cfg:
+            print("(空配置)")
+        else:
+            _print_summary(cfg)
+            if cfg.get("type"):
+                print(f"  类型:     {cfg['type']}")
+            if cfg.get("verify"):
+                steps = cfg["verify"].get("steps", [])
+                if steps:
+                    print(f"  验证步骤: {len(steps)} 步")
+                    for s in steps:
+                        print(f"    - {s.get('type', '?')}: {s.get('id', '?')}")
+
+
+def _cmd_teardown(args):
+    """移除 loop-engineering（仅删 agent worktree + 注册表）."""
+    pr = args.project_root
+    if pr:
+        pr = os.path.abspath(pr)
+    else:
+        pr = _find_project_root()
+
+    if not pr:
+        print("错误: 未找到 loop-config.yaml，请指定 --project-root 或在项目目录下运行")
+        sys.exit(1)
+
+    from loop_engineering.config import read_config
+    cfg = read_config(pr)
+    if not cfg:
+        print("错误: loop-config.yaml 不存在或为空")
+        sys.exit(1)
+
+    project_name = cfg.get("project", {}).get("name", os.path.basename(pr))
+
+    if args.dry_run:
+        print(f"[Dry-run] 将移除以下内容:")
+        agent_ws = cfg.get("agent", {}).get("workspace", "")
+        if agent_ws:
+            print(f"  - Agent worktree: {os.path.join(agent_ws, project_name)}")
+            data_repo = cfg.get("data_repo", {}).get("path")
+            if data_repo:
+                print(f"  - Data worktree: {os.path.join(agent_ws, os.path.basename(data_repo))}")
+        print(f"  - loop-config.yaml: {pr}\\loop-config.yaml")
+        print(f"  - 从注册表移除: {project_name}")
+        return
+
+    if not args.force:
+        print(f"将移除 {project_name} 的 agent worktree 和注册表条目。")
+        print(f"主项目文件不受影响。")
+        print()
+        confirm = input(f"输入项目名 '{project_name}' 以确认: ").strip()
+        if confirm != project_name:
+            print("已取消")
+            sys.exit(0)
+
+    from loop_engineering.setup import run_teardown
+    result = run_teardown(pr, force=args.force, dry_run=False)
+    if result["removed"]:
+        print(f"\n✓ 已移除 {project_name}")
+    else:
+        print(f"\n✗ 移除失败")
+        for w in result.get("warnings", []):
+            print(f"  ! {w}")
 
 
 def _print_summary(config):
