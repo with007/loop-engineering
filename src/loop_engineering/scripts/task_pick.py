@@ -38,11 +38,17 @@ def slugify(desc):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: task_pick.py <username>")
+        print("Usage: task_pick.py <username> [--project-root <path>]")
         sys.exit(1)
 
     whoami = sys.argv[1]
-    project_root = _find_project_root()
+    project_root = None
+    for i, arg in enumerate(sys.argv):
+        if arg == "--project-root" and i + 1 < len(sys.argv):
+            project_root = sys.argv[i + 1]
+            break
+    if not project_root:
+        project_root = _find_project_root()
     tasks_path = os.path.join(project_root, "tasks.md")
 
     try:

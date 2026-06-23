@@ -70,7 +70,13 @@ def main():
     branch = f"agent/{whoami}/{task_id}"
     diff_file = f"agent-{whoami}-{task_id}.diff"
 
-    project_root = _find_project_root()
+    project_root = None
+    for i, arg in enumerate(sys.argv):
+        if arg == "--project-root" and i + 1 < len(sys.argv):
+            project_root = sys.argv[i + 1]
+            break
+    if not project_root:
+        project_root = _find_project_root()
 
     print(f"=== 任务完成: {task_id} ===")
 
