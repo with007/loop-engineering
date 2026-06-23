@@ -23,7 +23,7 @@ user_invocable: true
 
 ## 原则
 
-- **谁的任务谁做** — 只做 `tasks.md` 中标记 `(→ 你的名字)` 的任务
+- **谁的任务谁做** — 只做 `D:/work_pvp/loop-engineering/tasks.md` 中标记 `(→ 你的名字)` 的任务
 - **实现者不能给自己验收** — verifier 是独立子代理
 - **Agent 不能自己合入 master** — 推送后等人审查
 - **每个任务从 master fork** — 分支 `agent/[用户名]/[任务ID]`，从最新 master 创建
@@ -144,7 +144,7 @@ throttle=$(python -c "from loop_engineering.control import get_throttle; print(g
 **选任务**：
 
 ```bash
-python -m loop_engineering.scripts.task_pick $whoami
+python -m loop_engineering.scripts.task_pick $whoami --project-root D:\work_pvp\loop-engineering
 ```
 - 输出格式: `taskID=xxx desc=... openSpec=true|false`
 - `openSpec=true` → 任务关联 `openspec/changes/<taskID>/`，implementer 按 OpenSpec apply 流程处理
@@ -156,7 +156,7 @@ python -m loop_engineering.scripts.task_pick $whoami
 # 从最新 master 创建分支（覆盖已存在的同名分支）
 git checkout -B agent/$whoami/[任务ID] master
 
-# 本地 tasks.md 标记进行中（不提交，只给人看）
+# 主工程 tasks.md 标记进行中（不提交，只给人看）
 # [ ] M6 (→ withg)  改为  [~] M6 (→ withg)
 ```
 
@@ -278,9 +278,9 @@ implementer 修复说明: <...>
 
 **PASS**:
 1. 检查 `git status`，确认改动文件合理
-2. 运行收尾脚本（更新 tasks.md: [~]→[x]、生成 diff、弹通知）：
+2. 运行收尾脚本（更新主工程 tasks.md: [~]→[x]、生成 diff、弹通知）：
    ```bash
-   python -m loop_engineering.scripts.task_done $whoami [任务ID] [IMP序号] [VFY轮数]
+   python -m loop_engineering.scripts.task_done $whoami [任务ID] [IMP序号] [VFY轮数] --project-root D:\work_pvp\loop-engineering
    ```
 3. 提交并推送：
    ```bash
