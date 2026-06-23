@@ -58,7 +58,7 @@
                     {% endif %}
                 </div>
             </div>
-            <div>
+            <div style="display: flex; align-items: center; gap: 8px;">
                 {% if t.status == 'done' %}
                 <span class="badge badge-pass">已完成</span>
                 {% elif t.status == 'in_progress' %}
@@ -66,6 +66,14 @@
                 {% else %}
                 <span class="badge badge-待办">待办</span>
                 {% endif %}
+                <button class="btn btn-sm"
+                        hx-delete="/api/tasks/{{ t.task_id }}"
+                        hx-target="closest div[hx-get]"
+                        hx-swap="outerHTML"
+                        hx-confirm="删除任务「{{ t.description | truncate(40) }}」？对应的 agent 分支也会被删除。"
+                        style="background: transparent; color: var(--fail); border: 1px solid var(--fail); opacity: 0.6; font-size: 12px;">
+                    🗑
+                </button>
             </div>
         </div>
     </div>

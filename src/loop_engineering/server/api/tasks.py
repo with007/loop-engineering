@@ -66,3 +66,63 @@ def add_task(req: AddTaskRequest, project: str = Query(None)):
             f.write(line)
 
     return {"added": True, "description": req.description, "assignee": req.assignee}
+
+
+@router.delete("/{task_id}")
+def delete_task(task_id: str, project: str = Query(None)):
+    """删除任务及对应的 agent 分支."""
+    import subprocess, hashlib
+    pr = _project_root(project)
+
+    def _task_id_of(desc):
+        desc = re.split(r'\s+—\s+', desc.strip())[0].strip().replace(' ', '-').lower()
+        result = re.sub(r'[^a-z0-9-]', '', desc)
+        result = re.sub(r'^-+|-+$', '', result)
+        if len(result) < 3:
+            result = 'task-' + hashlib.md5(desc.encode('utf-8')).hexdigest()[:8]
+        return result[:40]
+
+    tasks_path = os.path.join(pr, "tasks.md")
+    if not os.path.exists(tasks_path):
+        raise HTTPException(404, "tasks.md not found")
+
+    # 读取并找到匹配行
+    deleted_line = None
+    lines = []
+    with open(tasks_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    new_lines = []
+    for line in lines:
+        m = re.match(r'^- \[(.)\]\s+(.+?)(\s+\(→\s*(\w+)\))?', line)
+        if m:
+            desc = m.group(2).strip()
+            if _task_id_of(desc) == task_id:
+                deleted_line = line
+                continue
+        new_lines.append(line)
+
+    if deleted_line is None:
+        raise HTTPException(404, f"Task '{task_id}' not found")
+
+    with open(tasks_path, "w", encoding="utf-8") as f:
+        f.writelines(new_lines)
+
+    # 删除对应的 agent 分支
+    branch_deleted = []
+    branch_msg = ""
+    try:
+        r = subprocess.run('git branch --list "agent/*"', shell=True, capture_output=True, text=True, cwd=pr, timeout=5)
+        for line in r.stdout.strip().split("\n"):
+            b = line.strip().lstrip("*+ ")
+            if b.endswith(f"/{task_id}"):
+                # detach 当前 worktree 再删分支
+                subprocess.run(f"git checkout --detach master 2>/dev/null", shell=True, cwd=pr, timeout=5)
+                subprocess.run(f"git branch -D {b}", shell=True, capture_output=True, cwd=pr, timeout=5)
+                branch_deleted.append(b)
+        if branch_deleted:
+            branch_msg = f", deleted branches: {', '.join(branch_deleted)}"
+    except Exception as e:
+        branch_msg = f", branch cleanup failed: {e}"
+
+    return {"deleted": True, "task_id": task_id, "message": f"Task '{task_id}' removed{branch_msg}"}

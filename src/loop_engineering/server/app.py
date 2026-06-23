@@ -28,6 +28,17 @@ def _project_root(request: Request = None, q: str = None):
     return os.environ.get("LOOP_PROJECT_ROOT", os.getcwd())
 
 
+def _task_id_of(description):
+    """从描述生成 task_id（与 task_pick.py slugify 逻辑一致）."""
+    import hashlib
+    desc = re.split(r'\s+—\s+', description.strip())[0].strip().replace(' ', '-').lower()
+    result = re.sub(r'[^a-z0-9-]', '', desc)
+    result = re.sub(r'^-+|-+$', '', result)
+    if len(result) < 3:
+        result = 'task-' + hashlib.md5(desc.encode('utf-8')).hexdigest()[:8]
+    return result[:40]
+
+
 def _read_tasks(pr):
     tp = os.path.join(pr, "tasks.md")
     if not os.path.exists(tp):
@@ -39,8 +50,10 @@ def _read_tasks(pr):
             if not m:
                 continue
             s = {" ": "pending", "~": "in_progress", "x": "done"}
+            desc = m.group(2).strip()
             result.append({
-                "description": m.group(2).strip(),
+                "description": desc,
+                "task_id": _task_id_of(desc),
                 "status": s.get(m.group(1), "pending"),
                 "assignee": m.group(4) or "",
                 "meta": m.group(6) or "",
@@ -96,15 +109,31 @@ def _build_projects_context(request: Request, current_pr: str):
         from loop_engineering.runlog import get_pass_rate
         passed, total, rate = get_pass_rate(pr, days=7)
 
-        # branches
+        # branches — 同时查本地和远程 agent 分支
         branches_list = []
+        seen = set()
         try:
-            r = subprocess.run("git branch -r", shell=True, capture_output=True, text=True, cwd=pr, timeout=5)
-            for line in r.stdout.strip().split("\n"):
+            # 本地 agent 分支
+            r_local = subprocess.run('git branch --list "agent/*"', shell=True, capture_output=True, text=True, cwd=pr, timeout=5)
+            for line in r_local.stdout.strip().split("\n"):
+                b = line.strip().lstrip("*+ ")
+                if not b:
+                    continue
+                seen.add(b)
+                # 检查是否已合入 {{ default_ref }}
+                r_merged = subprocess.run(
+                    f"git branch --merged master --list {b}", shell=True, capture_output=True, cwd=pr, timeout=5
+                )
+                branches_list.append({"name": b, "merged": r_merged.stdout.strip() != ""})
+            # 远程 agent 分支
+            r_remote = subprocess.run("git branch -r", shell=True, capture_output=True, text=True, cwd=pr, timeout=5)
+            for line in r_remote.stdout.strip().split("\n"):
                 line = line.strip()
                 if "agent/" not in line:
                     continue
                 b = line.replace("origin/", "")
+                if b in seen:
+                    continue
                 r2 = subprocess.run(
                     f"git merge-base --is-ancestor origin/{b} origin/master",
                     shell=True, capture_output=True, cwd=pr, timeout=5
