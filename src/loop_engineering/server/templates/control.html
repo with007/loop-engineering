@@ -135,14 +135,19 @@
         (function() {
             var el = document.getElementById('loop-log');
             if (!el) return;
+            el._lastRaw = '';
             function render() {
-                var text = el.textContent.trim();
-                if (text && text !== '加载中...') {
-                    try { el.innerHTML = marked.parse(text); } catch(e) {}
+                var raw = el.getAttribute('data-raw') || '';
+                if (raw && raw !== el._lastRaw) {
+                    el._lastRaw = raw;
+                    try { el.innerHTML = marked.parse(raw); } catch(e) {}
                 }
             }
-            el.addEventListener('htmx:afterSettle', render);
-            render();
+            el.addEventListener('htmx:afterSettle', function() {
+                // 保存 htmx 写入的原始 Markdown，再渲染
+                el.setAttribute('data-raw', el.textContent || '');
+                render();
+            });
         })();
     </script>
     {% endif %}
