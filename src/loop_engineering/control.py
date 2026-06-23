@@ -170,12 +170,13 @@ def start_loop(project_root):
             f'$ws.SendKeys(\'{"{ENTER}"}\');Start-Sleep -Milliseconds 300;'
             f'$ws.SendKeys(\'{"{ENTER}"}\');'
             # 后台持续写心跳，每 30 秒一次，直到窗口关闭
+            f'try{{'
             f'while(-not $p.HasExited){{'
             f'[System.IO.File]::WriteAllText(\'{hb_path}\', [DateTime]::UtcNow.ToString("o"));'
             f'Start-Sleep -Seconds 30'
-            f'}};'
-            f'Remove-Item \'{hb_path}\' -ErrorAction SilentlyContinue;'
-            f'Remove-Item \'{pid_path}\' -ErrorAction SilentlyContinue'
+            f'}}'
+            f'}}catch{{}};'
+            f'Remove-Item \'{hb_path}\' -ErrorAction SilentlyContinue'
         )
         ps_path = os.path.join(_control_dir(project_root), "loop.ps1")
         os.makedirs(os.path.dirname(ps_path), exist_ok=True)
