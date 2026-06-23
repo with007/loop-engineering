@@ -82,8 +82,16 @@ def get_log(project: str = Query(None), lines: int = Query(50)):
     import json, glob
     pr = _project_root(project).replace("\\", "/")
     claude_name = pr.replace(":/", "--").replace("/", "-").lower()
-    session_dir = os.path.join(os.path.expanduser("~"), ".claude", "projects", claude_name).replace("\\", "/")
-    if not os.path.isdir(session_dir):
+    base = os.path.join(os.path.expanduser("~"), ".claude", "projects")
+    if not os.path.isdir(base):
+        return Response(status_code=200, content="(no sessions)", media_type="text/plain")
+    # 用 listdir 找匹配的目录（避免大小写问题）
+    session_dir = None
+    for d in os.listdir(base):
+        if d.lower() == claude_name:
+            session_dir = os.path.join(base, d)
+            break
+    if not session_dir:
         return Response(status_code=200, content="(no sessions yet)", media_type="text/plain")
     # 找最新 session 文件
     files = sorted(glob.glob(os.path.join(session_dir, "*.jsonl")), key=os.path.getmtime, reverse=True)
