@@ -92,17 +92,20 @@ def focus_window(project: str = Query(None)):
     import subprocess
     ps = (
         f'Add-Type -Name WinAPI -Namespace Temp -MemberDefinition \''
+        f'[DllImport("kernel32.dll")]public static extern bool FreeConsole();'
+        f'[DllImport("kernel32.dll")]public static extern bool AttachConsole(uint dwProcessId);'
+        f'[DllImport("kernel32.dll")]public static extern IntPtr GetConsoleWindow();'
         f'[DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr hWnd);'
         f'[DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr hWnd,int nCmdShow);'
-        f'[DllImport("user32.dll")]public static extern IntPtr GetForegroundWindow();'
         f'\';'
-        f'$p = Get-Process -Id {pid} -ErrorAction Stop;'
-        f'$hwnd = $p.MainWindowHandle;'
-        f'if($hwnd -eq [IntPtr]::Zero){{'
-        f'  Write-Error "No window handle"; exit 1'
-        f'}};'
-        f'[Temp.WinAPI]::ShowWindow($hwnd, 9);'
-        f'[Temp.WinAPI]::SetForegroundWindow($hwnd)'
+        f'[Temp.WinAPI]::FreeConsole()|Out-Null;'
+        f'$ok=[Temp.WinAPI]::AttachConsole({pid});'
+        f'if(-not $ok){{Write-Error "AttachConsole failed";exit 1}};'
+        f'$hwnd=[Temp.WinAPI]::GetConsoleWindow();'
+        f'[Temp.WinAPI]::ShowWindow($hwnd,9)|Out-Null;'
+        f'[Temp.WinAPI]::SetForegroundWindow($hwnd)|Out-Null;'
+        f'[Temp.WinAPI]::FreeConsole()|Out-Null;'
+        f'[Temp.WinAPI]::AttachConsole(-1)|Out-Null'
     )
     code = subprocess.run(
         ["powershell", "-NoProfile", "-Command", ps],
