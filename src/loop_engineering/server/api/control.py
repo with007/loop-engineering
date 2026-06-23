@@ -105,7 +105,7 @@ def focus_window(project: str = Query(None)):
         f'[Temp.WinAPI]::ShowWindow($hwnd,9)|Out-Null;'
         f'[Temp.WinAPI]::SetForegroundWindow($hwnd)|Out-Null;'
         f'[Temp.WinAPI]::FreeConsole()|Out-Null;'
-        f'[Temp.WinAPI]::AttachConsole(-1)|Out-Null'
+        f'$null = [Temp.WinAPI]::AttachConsole(0xFFFFFFFF)'
     )
     code = subprocess.run(
         ["powershell", "-NoProfile", "-Command", ps],
