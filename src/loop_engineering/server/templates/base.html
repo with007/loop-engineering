@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Loop Engineering Dashboard</title>
+    <title>Loop Engineering 控制台</title>
     <script src="https://unpkg.com/htmx.org@1.9"></script>
     <script defer src="https://unpkg.com/alpinejs@3"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
@@ -143,8 +143,8 @@
                     <a href="/tasks" hx-get="/tasks" hx-target="#content" hx-push-url="true">任务</a>
                     <a href="/runs" hx-get="/runs" hx-target="#content" hx-push-url="true">历史</a>
                     <a href="/control" hx-get="/control" hx-target="#content" hx-push-url="true">控制</a>
-                    <a href="/settings" hx-get="/settings" hx-target="#content" hx-push-url="true">Settings</a>
-                    <a href="/setup" hx-get="/setup" hx-target="#content" hx-push-url="true" style="color: var(--active);">+ Setup</a>
+                    <a href="/settings" hx-get="/settings" hx-target="#content" hx-push-url="true">设置</a>
+                    <a href="/setup" hx-get="/setup" hx-target="#content" hx-push-url="true" style="color: var(--active);">+ 初始化</a>
                 </nav>
                 <div id="project-switcher" style="margin-left: auto;"
                      hx-get="/api/projects/switcher" hx-trigger="load, every 60s">
