@@ -142,8 +142,11 @@ def get_status(project_root):
 
 
 def _loop_window_alive(project_root):
-    """检查 loop 终端是否存活（有心跳文件即为有效）."""
-    return read_heartbeat(project_root) is not None
+    """检查 loop 终端是否存活（有心跳文件或 PID 存活即可）."""
+    if read_heartbeat(project_root) is not None:
+        return True
+    pid = _read_pid(project_root)
+    return pid is not None and _pid_alive(pid)
 
 
 # ── loop process management ──
