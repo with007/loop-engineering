@@ -157,6 +157,67 @@
         </div>
     </div>
     <script>
+        // ── Setup page: PRESETS & setupForm (defined globally so Alpine can find them
+        //     when HTMX inserts the setup form — HTMX defers <script> execution until
+        //     after DOM swap, but Alpine initializes during DOM swap via MutationObserver)
+        var PRESETS = {
+            'unity-tolua': [
+                {type:'unity_refresh', id:'compile'},
+                {type:'shell', id:'gen_lua_path', command:'python scripts/genLuaPath.py', condition:'lua_files_added'},
+                {type:'lua_test', id:'runtime_test'}
+            ],
+            'unity-basic': [{type:'unity_refresh', id:'compile'}],
+            'node-frontend': [{type:'npm_build', id:'build'}, {type:'npm_test', id:'test'}],
+            'go-backend': [{type:'go_build', id:'build'}, {type:'go_test', id:'test'}],
+            'generic': [{type:'shell', id:'build', command:'npm run build || echo skipped'}, {type:'shell', id:'test', command:'npm test || echo skipped'}]
+        };
+        function setupForm() {
+            return {
+                projectRoot: '',
+                agentWorkspace: '',
+                selectedType: '',
+                verifySteps: [],
+                mainPort: 8080,
+                agentPort: 9080,
+                get isUnity() { return this.selectedType.startsWith('unity'); },
+                init() {
+                    this.$watch('projectRoot', val => this.onProjectRootChange(val));
+                },
+                genWorkspace(root) {
+                    if (!root) return '';
+                    var p = root.replace(/\\/g, '/').replace(/\/$/, '');
+                    var parts = p.split('/');
+                    if (parts.length < 3) return '';
+                    var parentName = parts[parts.length - 2];
+                    parts.pop();
+                    parts.pop();
+                    return parts.join('/') + '/' + parentName + '-agent';
+                },
+                onProjectRootChange(val) {
+                    var ws = this.genWorkspace(val);
+                    if (ws) this.agentWorkspace = ws;
+                },
+                async pickFolder(target) {
+                    console.log('pickFolder called:', target);
+                    try {
+                        var resp = await fetch('/api/setup/pickfolder');
+                        var data = await resp.json();
+                        console.log('pickFolder result:', data);
+                        if (data.path) {
+                            if (target === 'project') {
+                                this.projectRoot = data.path;
+                                this.onProjectRootChange(this.projectRoot);
+                            }
+                            else this.agentWorkspace = data.path;
+                        }
+                    } catch(e) {
+                        console.error('pickFolder error:', e);
+                        alert('选择文件夹失败: ' + e.message);
+                    }
+                }
+            }
+        }
+
         // Update nav active state
         function updateNav() {
             var path = window.location.pathname;

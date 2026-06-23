@@ -90,12 +90,17 @@ def _is_htmx(request: Request):
 
 def _render(request: Request, template_name: str, context: dict):
     if _is_htmx(request):
-        return templates.TemplateResponse(request, template_name, context)
-    content_html = templates.get_template(template_name).render(context)
-    return templates.TemplateResponse(request, "base.html", {
-        "request": request,
-        "content": content_html,
-    })
+        resp = templates.TemplateResponse(request, template_name, context)
+    else:
+        content_html = templates.get_template(template_name).render(context)
+        resp = templates.TemplateResponse(request, "base.html", {
+            "request": request,
+            "content": content_html,
+        })
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 def _build_projects_context(request: Request, current_pr: str):
