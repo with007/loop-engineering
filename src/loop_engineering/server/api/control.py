@@ -82,13 +82,16 @@ def get_log(project: str = Query(None), lines: int = Query(50)):
     import json, glob
     pr = _project_root(project).replace("\\", "/")
     claude_name = pr.replace(":/", "--").replace("/", "-").lower()
+    # Claude 还会把 _ 等特殊字符也转成 -，用模糊匹配
     base = os.path.join(os.path.expanduser("~"), ".claude", "projects")
     if not os.path.isdir(base):
         return Response(status_code=200, content="(no sessions)", media_type="text/plain")
-    # 用 listdir 找匹配的目录（避免大小写问题）
     session_dir = None
     for d in os.listdir(base):
-        if d.lower() == claude_name:
+        dl = d.lower()
+        # 拆词匹配：目录名包含 project 路径的关键词
+        keywords = [w for w in claude_name.replace("-", " ").split() if len(w) > 1]
+        if all(kw in dl for kw in keywords):
             session_dir = os.path.join(base, d)
             break
     if not session_dir:
