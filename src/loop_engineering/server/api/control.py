@@ -79,11 +79,9 @@ def stop(project: str = Query(None)):
 @router.get("/log")
 def get_log(project: str = Query(None), lines: int = Query(50)):
     """返回 loop 最近输出（从 Claude session JSONL 读取）."""
-    import json, glob
+    import json, glob, re
+    lines = int(lines) if isinstance(lines, (int, str)) else 50
     pr = _project_root(project).replace("\\", "/")
-    # Claude 命名：D:/work_pvp/loop-engineering → d--work-pvp-loop-engineering
-    # 盘符 :/ → --，其余非字母数字 → -
-    import re
     claude_name = re.sub(r'^([a-z]):/', r'\1--', pr.lower())
     claude_name = re.sub(r'[^a-z0-9]', '-', claude_name)
     base = os.path.join(os.path.expanduser("~"), ".claude", "projects")
