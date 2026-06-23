@@ -133,7 +133,7 @@ def get_status(project_root):
     running = is_loop_running(project_root)
     pid = _read_pid(project_root)
     return {
-        "paused": is_paused(project_root),
+        "paused": running and pid is not None and _pid_alive(pid) and is_paused(project_root),
         "throttle": get_throttle(project_root),
         "running": running and pid is not None and _pid_alive(pid),
         "heartbeat": hb.isoformat() if hb else None,
