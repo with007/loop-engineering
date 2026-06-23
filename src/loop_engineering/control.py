@@ -151,7 +151,7 @@ def start_loop(project_root):
     if platform.system() == "Windows":
         pid_path = os.path.join(_control_dir(project_root), "loop.pid")
         hb_path = _flag_path(project_root, "heartbeat")
-        tee_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "server", "tee.py")
+        tee_path = os.path.join(os.path.dirname(__file__), "server", "tee.py")
         log_path = os.path.join(_control_dir(project_root), "loop.log")
         run_bat = (
             f"@echo off\r\n"
