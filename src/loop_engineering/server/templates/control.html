@@ -125,11 +125,28 @@
     {% if is_running %}
     <div class="card" style="margin-bottom: 20px;">
         <h3>Loop 输出</h3>
-        <pre id="loop-log" hx-get="/api/control/log" hx-trigger="every 5s"
+        <div id="loop-log" hx-get="/api/control/log" hx-trigger="every 5s"
              style="background: var(--bg); color: var(--text); padding: 12px; border-radius: 7px;
-                    max-height: 300px; overflow-y: auto; font-size: 12px; line-height: 1.5;
-                    white-space: pre-wrap; word-break: break-all; margin: 0;">加载中...</pre>
+                    max-height: 400px; overflow-y: auto; font-size: 13px; line-height: 1.6;">
+            加载中...</div>
     </div>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        (function() {
+            var el = document.getElementById('loop-log');
+            if (!el) return;
+            var observer = new MutationObserver(function() {
+                if (el.textContent.trim() && el.textContent !== '加载中...') {
+                    try { el.innerHTML = marked.parse(el.textContent); } catch(e) {}
+                }
+            });
+            observer.observe(el, {childList: true, characterData: true, subtree: true});
+            // initial render
+            if (el.textContent.trim() && el.textContent !== '加载中...') {
+                try { el.innerHTML = marked.parse(el.textContent); } catch(e) {}
+            }
+        })();
+    </script>
     {% endif %}
 
     <script>
