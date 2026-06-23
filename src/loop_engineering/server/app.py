@@ -43,18 +43,35 @@ def _read_tasks(pr):
     tp = os.path.join(pr, "tasks.md")
     if not os.path.exists(tp):
         return []
+    # 收集已有的 agent 分支名
+    agent_branches = set()
+    try:
+        r = subprocess.run('git branch --list "agent/*"', shell=True, capture_output=True, text=True, cwd=pr, timeout=5)
+        for line in r.stdout.strip().split("\n"):
+            b = line.strip().lstrip("*+ ")
+            if b:
+                agent_branches.add(b.split("/")[-1])  # 只取 task_id 部分
+    except Exception:
+        pass
+
     result = []
     with open(tp, "r", encoding="utf-8") as f:
         for line in f:
             m = re.match(r'^- \[(.)\]\s+(.+?)(\s+\(→\s*(\w+)\))?(\s+—\s+(.+))?$', line)
             if not m:
                 continue
-            s = {" ": "pending", "~": "in_progress", "x": "done"}
             desc = m.group(2).strip()
+            tid = _task_id_of(desc)
+            status_char = m.group(1)
+            if status_char == "x" and tid in agent_branches:
+                status = "pending_merge"
+            else:
+                s = {" ": "pending", "~": "in_progress", "x": "done"}
+                status = s.get(status_char, "pending")
             result.append({
                 "description": desc,
-                "task_id": _task_id_of(desc),
-                "status": s.get(m.group(1), "pending"),
+                "task_id": tid,
+                "status": status,
                 "assignee": m.group(4) or "",
                 "meta": m.group(6) or "",
             })
@@ -150,6 +167,7 @@ def _build_projects_context(request: Request, current_pr: str):
                 "pending": sum(1 for t in tasks if t["status"] == "pending"),
                 "in_progress": sum(1 for t in tasks if t["status"] == "in_progress"),
                 "done": sum(1 for t in tasks if t["status"] == "done"),
+                "pending_merge": sum(1 for t in tasks if t["status"] == "pending_merge"),
             },
             "pass_rate": {"passed": passed, "total": total, "rate": round(rate * 100, 1)},
             "branches": branches_list,
@@ -234,6 +252,17 @@ async def tasks_page(request: Request, project: str = Query(None)):
     })
 
 
+@app.get("/tasks/list")
+async def tasks_list(request: Request, project: str = Query(None)):
+    """返回仅任务列表的局部片段（供 polling 和表单提交后刷新）."""
+    pr = _project_root(request, q=project)
+    return templates.TemplateResponse(request, "_tasks_list.html", {
+        "request": request,
+        "tasks": _read_tasks(pr),
+        "agent_name": _agent_name(pr),
+    })
+
+
 @app.post("/tasks/add")
 async def tasks_add(request: Request, description: str = Form(...), assignee: str = Form(...), project: str = Form(None)):
     pr = _project_root(request, q=project)
@@ -246,11 +275,10 @@ async def tasks_add(request: Request, description: str = Form(...), assignee: st
         with open(tp, "w", encoding="utf-8") as f:
             f.write("# Tasks\n\n")
             f.write(line)
-    return _render(request, "tasks.html", {
+    return templates.TemplateResponse(request, "_tasks_list.html", {
         "request": request,
         "tasks": _read_tasks(pr),
         "agent_name": _agent_name(pr),
-        "current_root": pr,
     })
 
 
@@ -280,6 +308,120 @@ async def control_page(request: Request, project: str = Query(None)):
         "status": get_status(pr),
         "current_root": pr,
     })
+
+
+@app.get("/control/status-fragment")
+async def control_status_fragment(request: Request, project: str = Query(None)):
+    """Control 页的 Loop 状态 + 按钮片段（供 5s polling 刷新）."""
+    from loop_engineering.control import get_status
+    pr = _project_root(request, q=project)
+    status = get_status(pr)
+    is_running = status.get("running", False)
+    paused = status.get("paused", False)
+    html = f'''<div id="control-status" hx-get="/control/status-fragment" hx-trigger="every 5s" hx-swap="outerHTML">
+        <div class="card" style="margin-bottom: 20px;">
+            <div class="status-indicator" style="margin-bottom: 16px;">
+                <span class="status-dot {"active" if is_running else ("paused" if paused else "")}"></span>
+                <span style="font-weight: 600; font-size: 18px;">
+                    {"Loop 运行中" if is_running else ("已暂停" if paused else "空闲")}
+                </span>
+                <span style="color: var(--dim); font-size: 13px; margin-left: auto;">
+                    {f'HB: <span id="hb-time" data-iso="{status["heartbeat"]}">{status["heartbeat"][:19].replace("T", " ")}</span>' if status.get("heartbeat") else "无心跳"}
+                </span>
+            </div>
+            <div class="controls" style="margin-bottom: 16px;">'''
+    if is_running:
+        html += '''<button class="btn btn-danger"
+                        hx-post="/api/control/stop"
+                        hx-target="#control-status"
+                        hx-swap="outerHTML">停止 Loop</button>
+                <button class="btn btn-sm"
+                        hx-post="/api/control/focus"
+                        hx-swap="none"
+                        style="background: var(--surface2); color: var(--text); border: 1px solid var(--border);">🔍 聚焦窗口</button>'''
+        if paused:
+            html += '''<button class="btn btn-primary"
+                        hx-delete="/api/control/pause"
+                        hx-target="#control-status"
+                        hx-swap="outerHTML">恢复</button>'''
+        else:
+            html += '''<button class="btn btn-warn"
+                        hx-post="/api/control/pause"
+                        hx-target="#control-status"
+                        hx-swap="outerHTML">暂停</button>'''
+    else:
+        html += '''<button class="btn btn-success"
+                        hx-post="/api/control/start"
+                        hx-target="#control-status"
+                        hx-swap="outerHTML">启动 Loop</button>'''
+    html += '''</div></div></div>
+    <script>
+        (function() {
+            var el = document.getElementById('hb-time');
+            if (!el) return;
+            var iso = el.getAttribute('data-iso');
+            if (!iso) return;
+            var d = new Date(iso);
+            var now = new Date();
+            var sec = Math.floor((now - d) / 1000);
+            if (sec < 60) el.textContent = sec + 's ago';
+            else if (sec < 3600) el.textContent = Math.floor(sec/60) + 'm ago';
+            else el.textContent = Math.floor(sec/3600) + 'h ago';
+        })();
+    </script>'''
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(content=html)
+
+
+@app.get("/control/info-fragment")
+async def control_info_fragment(request: Request, project: str = Query(None)):
+    """Control 页的信号文件 + 工作原理片段（供 5s polling 刷新）."""
+    from loop_engineering.control import get_status
+    pr = _project_root(request, q=project)
+    status = get_status(pr)
+    is_running = status.get("running", False)
+    paused = status.get("paused", False)
+    hb_color = "var(--pass)" if is_running else "#64748b"
+    pause_color = "var(--active)" if paused else "#64748b"
+    html = f'''<div id="control-info" hx-get="/control/info-fragment" hx-trigger="every 5s" hx-swap="outerHTML">
+        <div class="grid grid-2">
+            <div class="card">
+                <h3>信号文件</h3>
+                <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-family: monospace;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>control/heartbeat</span>
+                        <span style="color: {hb_color}">{status.get("heartbeat") or "无"}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>control/pause</span>
+                        <span style="color: {pause_color}">{"ON" if paused else "关"}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>control/throttle</span>
+                        <span style="color: var(--dim);">{status.get("throttle", "")}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>control/loop.pid</span>
+                        <span style="color: var(--dim);">{status.get("pid") or "无"}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="card">
+                <h3>工作原理</h3>
+                <p style="color: var(--muted); font-size: 13px; line-height: 1.6;">
+                    <strong>Start</strong> 打开终端窗口运行<br>
+                    <code style="color: var(--blue);">claude --dangerously-skip-permissions -p '/runloop'</code>
+                </p>
+                <p style="color: var(--muted); font-size: 13px; line-height: 1.6; margin-top: 8px;">
+                    Dashboard 通过以下方式检测 Loop 状态：<br>
+                    • 心跳文件（每轮更新）<br>
+                    • 进程 ID（终端窗口存活）
+                </p>
+            </div>
+        </div>
+    </div>'''
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(content=html)
 
 
 @app.get("/settings")
