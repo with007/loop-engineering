@@ -81,8 +81,8 @@ def get_log(project: str = Query(None), lines: int = Query(50)):
     """返回 loop 最近输出（从 Claude session JSONL 读取）."""
     import json, glob
     pr = _project_root(project)
-    # Claude 项目目录命名：D:/work/pvp/loop-engineering → d--work-pvp-loop-engineering
-    claude_name = pr.replace(":", "").replace("\\", "-").replace("/", "-").lower()
+    # Claude 项目目录命名：D:\work\pvp → d--work-pvp (盘符后的 :\ 变成 --)
+    claude_name = pr.replace(":\\", "--").replace(":/", "--").replace("\\", "-").replace("/", "-").lower()
     session_dir = os.path.join(os.path.expanduser("~"), ".claude", "projects", claude_name)
     if not os.path.isdir(session_dir):
         return Response(status_code=200, content="(no sessions yet)", media_type="text/plain")
