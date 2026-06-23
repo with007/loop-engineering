@@ -78,20 +78,31 @@ def stop(project: str = Query(None)):
 
 @router.post("/focus")
 def focus_window(project: str = Query(None)):
-    """激活 Loop 终端窗口."""
+    """激活 Loop 终端窗口（通过 PID）."""
     import platform
     if platform.system() != "Windows":
         return Response(status_code=200, content="Not Windows", media_type="text/plain")
 
     pr = _project_root(project)
-    project_name = os.path.basename(pr)
-    title = f"Loop: {project_name}"
+    from loop_engineering.control import _read_pid, _pid_alive, _pid_path
+    pid = _read_pid(pr)
+    if not pid or not _pid_alive(pid):
+        return Response(status_code=200, content="Loop not running", media_type="text/plain")
 
     import subprocess
     ps = (
-        f'$ws = New-Object -ComObject WScript.Shell;'
-        f'$ws.AppActivate(\'{title}\');'
-        f'if (-not $?) {{ exit 1 }}'
+        f'Add-Type -Name WinAPI -Namespace Temp -MemberDefinition \''
+        f'[DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr hWnd);'
+        f'[DllImport("user32.dll")]public static extern bool ShowWindow(IntPtr hWnd,int nCmdShow);'
+        f'[DllImport("user32.dll")]public static extern IntPtr GetForegroundWindow();'
+        f'\';'
+        f'$p = Get-Process -Id {pid} -ErrorAction Stop;'
+        f'$hwnd = $p.MainWindowHandle;'
+        f'if($hwnd -eq [IntPtr]::Zero){{'
+        f'  Write-Error "No window handle"; exit 1'
+        f'}};'
+        f'[Temp.WinAPI]::ShowWindow($hwnd, 9);'
+        f'[Temp.WinAPI]::SetForegroundWindow($hwnd)'
     )
     code = subprocess.run(
         ["powershell", "-NoProfile", "-Command", ps],
@@ -99,5 +110,5 @@ def focus_window(project: str = Query(None)):
     ).returncode
 
     if code != 0:
-        return Response(status_code=200, content=f"Window '{title}' not found", media_type="text/plain")
+        return Response(status_code=200, content=f"Cannot focus PID {pid}", media_type="text/plain")
     return Response(status_code=200, content="OK", media_type="text/plain")
