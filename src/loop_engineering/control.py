@@ -151,12 +151,13 @@ def start_loop(project_root):
     if platform.system() == "Windows":
         pid_path = os.path.join(_control_dir(project_root), "loop.pid")
         hb_path = _flag_path(project_root, "heartbeat")
+        tee_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "server", "tee.py")
         log_path = os.path.join(_control_dir(project_root), "loop.log")
         run_bat = (
             f"@echo off\r\n"
             f"title Loop: {project_name}\r\n"
             f"cd /d {project_root}\r\n"
-            f"claude --dangerously-skip-permissions 2>\"{log_path}\"\r\n"
+            f"claude --dangerously-skip-permissions 2>&1 | python \"{tee_path}\" \"{log_path}\"\r\n"
         )
         bat_path = os.path.join(_control_dir(project_root), "run.bat")
         os.makedirs(os.path.dirname(bat_path), exist_ok=True)
