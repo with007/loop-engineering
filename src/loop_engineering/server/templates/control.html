@@ -1,120 +1,136 @@
-<div hx-get="/control" hx-trigger="every 5s" hx-swap="outerHTML">
+<div>
     <h1>Control</h1>
 
-    <!-- Loop status -->
     {% set is_running = status.running %}
-    {% set hb_ago = '' %}
-    {% if status.heartbeat %}
-        {% set hb_ago = ((now | default(0)) - 0) %}  <!-- placeholder, will show raw time -->
-    {% endif %}
 
-    <div class="card" style="margin-bottom: 20px;">
-        <div class="status-indicator" style="margin-bottom: 16px;">
-            <span class="status-dot {% if is_running %}active{% elif status.paused %}paused{% endif %}"></span>
-            <span style="font-weight: 600; font-size: 18px;">
-                {% if is_running %}Loop 运行中
-                {% elif status.paused %}已暂停
-                {% else %}空闲{% endif %}
-            </span>
-            <span style="color: var(--dim); font-size: 13px; margin-left: auto;">
-                {% if status.heartbeat %}
-                HB: <span id="hb-time" data-iso="{{ status.heartbeat }}">{{ status.heartbeat[:19] | replace('T', ' ') }}</span>
+    <!-- Loop status — auto-refreshed every 5s -->
+    <div id="control-status" hx-get="/control/status-fragment" hx-trigger="every 5s" hx-swap="outerHTML">
+        <div class="card" style="margin-bottom: 20px;">
+            <div class="status-indicator" style="margin-bottom: 16px;">
+                <span class="status-dot {% if is_running %}active{% elif status.paused %}paused{% endif %}"></span>
+                <span style="font-weight: 600; font-size: 18px;">
+                    {% if is_running %}Loop 运行中
+                    {% elif status.paused %}已暂停
+                    {% else %}空闲{% endif %}
+                </span>
+                <span style="color: var(--dim); font-size: 13px; margin-left: auto;">
+                    {% if status.heartbeat %}
+                    HB: <span id="hb-time" data-iso="{{ status.heartbeat }}">{{ status.heartbeat[:19] | replace('T', ' ') }}</span>
+                    {% else %}
+                    无心跳
+                    {% endif %}
+                </span>
+            </div>
+
+            <div class="controls" style="margin-bottom: 16px;">
+                {% if is_running %}
+                <button class="btn btn-danger"
+                        hx-post="/api/control/stop"
+                        hx-target="#control-status"
+                        hx-swap="outerHTML">
+                    停止 Loop
+                </button>
                 {% else %}
-                无心跳
+                <button class="btn btn-success"
+                        hx-post="/api/control/start"
+                        hx-target="#control-status"
+                        hx-swap="outerHTML">
+                    启动 Loop
+                </button>
                 {% endif %}
-            </span>
-        </div>
 
-        <div class="controls" style="margin-bottom: 16px;">
-            {% if is_running %}
-            <button class="btn btn-danger"
-                    hx-post="/api/control/stop"
-                    hx-target="closest div[hx-get]"
-                    hx-swap="outerHTML">
-                停止 Loop
-            </button>
-            {% else %}
-            <button class="btn btn-success"
-                    hx-post="/api/control/start"
-                    hx-target="closest div[hx-get]"
-                    hx-swap="outerHTML">
-                启动 Loop
-            </button>
-            {% endif %}
+                {% if is_running %}
+                <button class="btn btn-sm"
+                        hx-post="/api/control/focus"
+                        hx-swap="none"
+                        style="background: var(--surface2); color: var(--text); border: 1px solid var(--border);">
+                    🔍 聚焦窗口
+                </button>
+                {% endif %}
 
-            {% if is_running %}
-            <button class="btn btn-sm"
-                    hx-post="/api/control/focus"
-                    hx-swap="none"
-                    style="background: var(--surface2); color: var(--text); border: 1px solid var(--border);">
-                🔍 聚焦窗口
-            </button>
-            {% endif %}
-
-            {% if is_running %}
-            {% if status.paused %}
-            <button class="btn btn-primary"
-                    hx-delete="/api/control/pause"
-                    hx-target="closest div[hx-get]"
-                    hx-swap="outerHTML">
-                恢复
-            </button>
-            {% else %}
-            <button class="btn btn-warn"
-                    hx-post="/api/control/pause"
-                    hx-target="closest div[hx-get]"
-                    hx-swap="outerHTML">
-                暂停
-            </button>
-            {% endif %}
-            {% endif %}
-
-            <div style="display: flex; align-items: center; gap: 8px; margin-left: 12px;">
-                <span style="color: var(--muted); font-size: 13px;">间隔：</span>
-                <input type="text" id="throttle-input" value="{{ status.throttle }}"
-                       style="background: var(--bg); color: var(--text); border: 1px solid var(--border);
-                              padding: 6px 10px; border-radius: 6px; width: 70px; font-size: 13px; text-align: center;">
-                <button class="btn btn-sm btn-primary" onclick="set_throttle()">设置</button>
+                {% if is_running %}
+                {% if status.paused %}
+                <button class="btn btn-primary"
+                        hx-delete="/api/control/pause"
+                        hx-target="#control-status"
+                        hx-swap="outerHTML">
+                    恢复
+                </button>
+                {% else %}
+                <button class="btn btn-warn"
+                        hx-post="/api/control/pause"
+                        hx-target="#control-status"
+                        hx-swap="outerHTML">
+                    暂停
+                </button>
+                {% endif %}
+                {% endif %}
             </div>
         </div>
     </div>
 
-    <div class="grid grid-2">
-        <div class="card">
-            <h3>信号文件</h3>
-            <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-family: monospace;">
-                <div style="display: flex; justify-content: space-between;">
-                    <span>control/heartbeat</span>
-                    <span style="color: {{ 'var(--pass)' if is_running else '#64748b' }}">{{ status.heartbeat or '无' }}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span>control/pause</span>
-                    <span style="color: {{ 'var(--active)' if status.paused else '#64748b' }}">{{ 'ON' if status.paused else '关' }}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span>control/throttle</span>
-                    <span style="color: var(--dim);">{{ status.throttle }}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span>control/loop.pid</span>
-                    <span style="color: var(--dim);">{{ status.pid or '无' }}</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="card">
-            <h3>工作原理</h3>
-            <p style="color: var(--muted); font-size: 13px; line-height: 1.6;">
-                <strong>Start</strong> 打开终端窗口运行<br>
-                <code style="color: var(--blue);">claude --dangerously-skip-permissions -p '/runloop'</code>
-            </p>
-            <p style="color: var(--muted); font-size: 13px; line-height: 1.6; margin-top: 8px;">
-                Dashboard 通过以下方式检测 Loop 状态：<br>
-                • 心跳文件（每轮更新）<br>
-                • 进程 ID（终端窗口存活）
-            </p>
+    <!-- Throttle control — outside auto-refresh so user edits are never cleared -->
+    <div class="card" style="margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="color: var(--muted); font-size: 14px; font-weight: 500;">Loop 间隔：</span>
+            <input type="text" id="throttle-input" value="{{ status.throttle }}"
+                   style="background: var(--bg); color: var(--text); border: 1px solid var(--border);
+                          padding: 6px 10px; border-radius: 6px; width: 70px; font-size: 13px; text-align: center;">
+            <button class="btn btn-sm btn-primary" onclick="set_throttle()">设置</button>
+            <span id="throttle-msg" style="font-size: 13px;"></span>
         </div>
     </div>
+
+    <!-- Signal files + working principle — auto-refreshed every 5s -->
+    <div id="control-info" hx-get="/control/info-fragment" hx-trigger="every 5s" hx-swap="outerHTML">
+        <div class="grid grid-2">
+            <div class="card">
+                <h3>信号文件</h3>
+                <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-family: monospace;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>control/heartbeat</span>
+                        <span style="color: {{ 'var(--pass)' if is_running else '#64748b' }}">{{ status.heartbeat or '无' }}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>control/pause</span>
+                        <span style="color: {{ 'var(--active)' if status.paused else '#64748b' }}">{{ 'ON' if status.paused else '关' }}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>control/throttle</span>
+                        <span style="color: var(--dim);">{{ status.throttle }}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>control/loop.pid</span>
+                        <span style="color: var(--dim);">{{ status.pid or '无' }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>工作原理</h3>
+                <p style="color: var(--muted); font-size: 13px; line-height: 1.6;">
+                    <strong>Start</strong> 打开终端窗口运行<br>
+                    <code style="color: var(--blue);">claude --dangerously-skip-permissions -p '/runloop'</code>
+                </p>
+                <p style="color: var(--muted); font-size: 13px; line-height: 1.6; margin-top: 8px;">
+                    Dashboard 通过以下方式检测 Loop 状态：<br>
+                    • 心跳文件（每轮更新）<br>
+                    • 进程 ID（终端窗口存活）
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loop 输出日志 -->
+    {% if is_running %}
+    <div class="card" style="margin-bottom: 20px;">
+        <h3>Loop 输出</h3>
+        <pre id="loop-log" hx-get="/api/control/log" hx-trigger="every 5s"
+             style="background: var(--bg); color: var(--text); padding: 12px; border-radius: 7px;
+                    max-height: 300px; overflow-y: auto; font-size: 12px; line-height: 1.5;
+                    white-space: pre-wrap; word-break: break-all; margin: 0;">加载中...</pre>
+    </div>
+    {% endif %}
 
     <script>
         // Format heartbeat as relative time
@@ -136,12 +152,22 @@
             var params = new URLSearchParams(window.location.search);
             var proj = params.get('project');
             var url = '/api/control/throttle' + (proj ? '?project=' + encodeURIComponent(proj) : '');
+            var msgEl = document.getElementById('throttle-msg');
+            msgEl.style.color = 'var(--dim)';
+            msgEl.textContent = '设置中...';
             fetch(url, {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({interval: val})
-            }).then(function() {
-                htmx.trigger(document.querySelector('[hx-get="/control"]'), 'htmx:trigger');
+            }).then(function(resp) {
+                return resp.text();
+            }).then(function(html) {
+                msgEl.innerHTML = html;
+                // Also refresh the signal display that shows current throttle
+                htmx.trigger('#control-info', 'htmx:trigger');
+            }).catch(function(e) {
+                msgEl.style.color = 'var(--fail)';
+                msgEl.textContent = '设置失败: ' + e.message;
             });
         }
     </script>

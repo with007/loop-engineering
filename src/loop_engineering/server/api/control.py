@@ -76,6 +76,24 @@ def stop(project: str = Query(None)):
     return Response(status_code=200, headers={"HX-Refresh": "true"})
 
 
+@router.get("/log")
+def get_log(project: str = Query(None), lines: int = Query(100)):
+    """返回最近 N 行 loop 输出日志."""
+    pr = _project_root(project)
+    log_path = os.path.join(pr, ".loop-engineering", "control", "loop.log")
+    if not os.path.exists(log_path):
+        return Response(status_code=200, content="(no log yet)", media_type="text/plain")
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+        # 取最后 N 行
+        all_lines = content.split("\n")
+        last = all_lines[-lines:] if len(all_lines) > lines else all_lines
+        return Response(status_code=200, content="\n".join(last), media_type="text/plain")
+    except Exception:
+        return Response(status_code=200, content="(log read error)", media_type="text/plain")
+
+
 @router.post("/focus")
 def focus_window(project: str = Query(None)):
     """激活 Loop 终端窗口（通过 PID）."""
