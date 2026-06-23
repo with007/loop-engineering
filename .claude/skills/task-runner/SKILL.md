@@ -15,7 +15,7 @@ user_invocable: true
 | 项目 | 路径 |
 |------|------|
 | 主工作树 | `D:\work_pvp\loop-engineering` |
-| **Agent 工作树** | `D:\work_pvp-agent\loop-engineering` |
+| **Agent 工作树** | `D:/work_pvp-agent\loop-engineering` |
 
 | Agent MCP 端口 | HTTP `9080` |
 
@@ -67,11 +67,11 @@ fi
 **同步 + 清理**：
 
 ```bash
-git fetch origin --prune
+git fetch origin --prune 2>/dev/null || true
 # 如果当前在某个 agent 分支上，先 detach
 git checkout --detach master 2>/dev/null
-# 删掉已推送的旧本地分支
-git branch --list "agent/*" | xargs -r git branch -D 2>/dev/null
+# 删掉已合入 master 的 agent 分支（不是全部删除）
+git branch --list "agent/*" --merged master | xargs -r git branch -d 2>/dev/null
 ```
 
 **检查已合入的远程分支**：
@@ -91,12 +91,12 @@ python -m loop_engineering.scripts.task_cleanup $whoami
 **0b. 确保 agent worktree 存在**（首次或手动清理后重建）：
 
 ```bash
-ls D:\work_pvp-agent\loop-engineering/.git 2>/dev/null || {
-  mkdir -p D:\work_pvp-agent
+ls D:/work_pvp-agent\loop-engineering/.git 2>/dev/null || {
+  mkdir -p D:/work_pvp-agent
   cd D:\work_pvp\loop-engineering
   git fetch origin
   git worktree prune
-  git worktree add D:\work_pvp-agent\loop-engineering master
+  git worktree add D:/work_pvp-agent\loop-engineering master
 }
 
 ```
@@ -104,7 +104,7 @@ ls D:\work_pvp-agent\loop-engineering/.git 2>/dev/null || {
 **0c. 同步 agent worktree**：
 
 ```bash
-cd D:\work_pvp-agent\loop-engineering
+cd D:/work_pvp-agent\loop-engineering
 git fetch origin --prune
 git checkout --detach master 2>/dev/null
 git branch --list "agent/*" | xargs -r git branch -D 2>/dev/null
@@ -118,7 +118,7 @@ python -m loop_engineering.scripts.task_cleanup $whoami
 
 **0e. 进入 agent worktree**：
 
-调用 `EnterWorktree(path="D:\work_pvp-agent\loop-engineering")`。
+调用 `EnterWorktree(path="D:/work_pvp-agent\loop-engineering")`。
 
 此后会话切换到 agent worktree，`.mcp.json` → MCP 9080。子代理自动继承。
 
@@ -284,14 +284,18 @@ implementer 修复说明: <...>
    ```
 3. 提交并推送：
    ```bash
-   git add <改动的源文件> tasks.md
+   git add <改动的源文件>
    git commit -m "[任务ID] 完成"
-   git push origin agent/$whoami/[任务ID]
+   git push origin agent/$whoami/[任务ID] 2>/dev/null || echo "无 remote，跳过推送，保留分支待合入"
    ```
-4. 清理本地分支：
+4. 清理本地分支（仅推送成功后才删）：
    ```bash
-   git checkout --detach master
-   git branch -D agent/$whoami/[任务ID]
+   if git remote -v | grep -q origin; then
+     git checkout --detach master
+     git branch -D agent/$whoami/[任务ID]
+   else
+     echo "无 remote，保留分支 agent/$whoami/[任务ID] 待手动合入 master"
+   fi
    ```
 
 **FAIL**:
@@ -332,15 +336,15 @@ implementer 修复说明: <...>
 
 ```bash
 # 首次创建 worktree 后执行一次
-mkdir -p D:\work_pvp-agent\loop-engineering/Library
-cmd.exe /c "mklink /J D:\work_pvp-agent\loop-engineering\Library\PackageCache D:\work_pvp\loop-engineering\Library\PackageCache"
+mkdir -p D:/work_pvp-agent\loop-engineering/Library
+cmd.exe /c "mklink /J D:/work_pvp-agent\loop-engineering\Library\PackageCache D:\work_pvp\loop-engineering\Library\PackageCache"
 ```
 
 ### 手动清理
 
 ```bash
 cd D:\work_pvp\loop-engineering
-git worktree remove --force D:\work_pvp-agent\loop-engineering
+git worktree remove --force D:/work_pvp-agent\loop-engineering
 git worktree prune
 ```
 
