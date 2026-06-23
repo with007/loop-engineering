@@ -129,11 +129,19 @@ def get_status(project_root):
 
 def start_loop(project_root):
     """启动 loop 终端窗口."""
-    if is_loop_running(project_root) and _pid_alive(_read_pid(project_root)):
+    pid = _read_pid(project_root)
+    # PID 存活 = 真的在运行，不允许重复启动
+    if is_loop_running(project_root) and pid is not None and _pid_alive(pid):
         return {"started": False, "reason": "already running"}
-    # 心跳仍有效时也不允许重复启动（PID 可能还在异步写入中）
-    if is_loop_running(project_root):
+    # 心跳有效但无 PID = 正在启动中，等 PS1 写入 PID
+    if is_loop_running(project_root) and pid is None:
         return {"started": False, "reason": "already starting"}
+    # 心跳有效但 PID 已死 = 残留状态，清理后继续
+    if is_loop_running(project_root):
+        _clear_pid(project_root)
+        hb_path = _flag_path(project_root, "heartbeat")
+        if os.path.exists(hb_path):
+            os.remove(hb_path)
 
     _ensure_dir(project_root)
     project_name = os.path.basename(project_root)
