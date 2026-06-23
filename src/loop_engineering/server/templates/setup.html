@@ -64,7 +64,7 @@
     <div class="card" style="max-width: 560px; margin-bottom: 16px;">
         <div class="form-group">
             <label>Agent 名称（留空自动检测 git config user.name）</label>
-            <input name="agent_name" placeholder="with">
+            <input name="agent_name" placeholder="{{ git_user or 'agent name' }}">
         </div>
 
         <!-- Verify steps preview -->

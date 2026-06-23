@@ -276,7 +276,14 @@ async def settings_page(request: Request, project: str = Query(None)):
 
 @app.get("/setup")
 async def setup_page(request: Request):
-    return _render(request, "setup.html", {"request": request})
+    import subprocess
+    git_user = ""
+    try:
+        r = subprocess.run("git config user.name", shell=True, capture_output=True, text=True, timeout=5)
+        git_user = r.stdout.strip()
+    except Exception:
+        pass
+    return _render(request, "setup.html", {"request": request, "git_user": git_user})
 
 
 @app.post("/setup/run")
