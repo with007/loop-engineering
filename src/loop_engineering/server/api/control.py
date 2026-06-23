@@ -77,21 +77,38 @@ def stop(project: str = Query(None)):
 
 
 @router.get("/log")
-def get_log(project: str = Query(None), lines: int = Query(100)):
-    """返回最近 N 行 loop 输出日志."""
+def get_log(project: str = Query(None), lines: int = Query(50)):
+    """返回 loop 最近输出（从 Claude session JSONL 读取）."""
+    import json, glob
     pr = _project_root(project)
-    log_path = os.path.join(pr, ".loop-engineering", "control", "loop.log")
-    if not os.path.exists(log_path):
-        return Response(status_code=200, content="(no log yet)", media_type="text/plain")
+    # Claude 项目目录命名：D:/work/pvp/loop-engineering → d--work-pvp-loop-engineering
+    claude_name = pr.replace(":", "").replace("\\", "-").replace("/", "-").lower()
+    session_dir = os.path.join(os.path.expanduser("~"), ".claude", "projects", claude_name)
+    if not os.path.isdir(session_dir):
+        return Response(status_code=200, content="(no sessions yet)", media_type="text/plain")
+    # 找最新 session 文件
+    files = sorted(glob.glob(os.path.join(session_dir, "*.jsonl")), key=os.path.getmtime, reverse=True)
+    if not files:
+        return Response(status_code=200, content="(no sessions yet)", media_type="text/plain")
     try:
-        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-            content = f.read()
-        # 取最后 N 行
-        all_lines = content.split("\n")
-        last = all_lines[-lines:] if len(all_lines) > lines else all_lines
-        return Response(status_code=200, content="\n".join(last), media_type="text/plain")
-    except Exception:
-        return Response(status_code=200, content="(log read error)", media_type="text/plain")
+        with open(files[0], "r", encoding="utf-8") as f:
+            all_lines = f.readlines()
+        # 取最近的 assistant 文本消息
+        output = []
+        for line in all_lines[-lines * 5:]:  # 多读一些，因为不是每行都是文本
+            try:
+                msg = json.loads(line)
+                content = msg.get("message", {}).get("content", [])
+                role = msg.get("message", {}).get("role", "")
+                if role == "assistant":
+                    for c in content if isinstance(content, list) else [content]:
+                        if isinstance(c, dict) and c.get("type") == "text":
+                            output.append(c.get("text", ""))
+            except Exception:
+                pass
+        return Response(status_code=200, content="\n".join(output[-lines:]), media_type="text/plain")
+    except Exception as e:
+        return Response(status_code=200, content=f"(error: {e})", media_type="text/plain")
 
 
 @router.post("/focus")
