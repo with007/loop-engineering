@@ -163,14 +163,16 @@ def start_loop(project_root):
             f'$p = Start-Process cmd -ArgumentList \'/k title Loop: {project_name} && cd /d {project_root} && claude --dangerously-skip-permissions\' '
             f'-WindowStyle Normal -PassThru;'
             f'[System.IO.File]::WriteAllText(\'{pid_path}\', $p.Id.ToString());'
-            # SendKeys 先执行
+            # 立即写心跳（不等 while 循环的 30s 间隔）
+            f'[System.IO.File]::WriteAllText(\'{hb_path}\', [DateTime]::UtcNow.ToString("o"));'
+            # SendKeys
             f'Start-Sleep -Seconds 2;'
             f'$ws = New-Object -ComObject WScript.Shell;'
             f'$ws.AppActivate(\'Loop: {project_name}\');Start-Sleep -Seconds 1;'
             f'$ws.SendKeys(\'/runloop\');Start-Sleep -Milliseconds 300;'
             f'$ws.SendKeys(\'{"{ENTER}"}\');Start-Sleep -Milliseconds 300;'
             f'$ws.SendKeys(\'{"{ENTER}"}\');'
-            # 然后后台持续写心跳，每 30 秒一次，直到窗口关闭
+            # 后台持续写心跳，每 30 秒一次，直到窗口关闭
             f'while(-not $p.HasExited){{'
             f'[System.IO.File]::WriteAllText(\'{hb_path}\', [DateTime]::UtcNow.ToString("o"));'
             f'Start-Sleep -Seconds 30'
