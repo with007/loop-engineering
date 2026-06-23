@@ -155,7 +155,7 @@ def start_loop(project_root):
             f"@echo off\r\n"
             f"title Loop: {project_name}\r\n"
             f"cd /d {project_root}\r\n"
-            f"claude --dangerously-skip-permissions 2>\"{log_path}\"\r\n"
+            f"claude --dangerously-skip-permissions\r\n"
         )
         bat_path = os.path.join(_control_dir(project_root), "run.bat")
         os.makedirs(os.path.dirname(bat_path), exist_ok=True)
