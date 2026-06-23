@@ -81,20 +81,16 @@ def get_log(project: str = Query(None), lines: int = Query(50)):
     """返回 loop 最近输出（从 Claude session JSONL 读取）."""
     import json, glob
     pr = _project_root(project).replace("\\", "/")
-    claude_name = pr.replace(":/", "--").replace("/", "-").lower()
-    # Claude 还会把 _ 等特殊字符也转成 -，用模糊匹配
+    # Claude 命名：D:/work_pvp/loop-engineering → d--work-pvp-loop-engineering
+    # 盘符 :/ → --，其余非字母数字 → -
+    import re
+    claude_name = re.sub(r'^([a-z]):/', r'\1--', pr.lower())
+    claude_name = re.sub(r'[^a-z0-9]', '-', claude_name)
     base = os.path.join(os.path.expanduser("~"), ".claude", "projects")
     if not os.path.isdir(base):
         return Response(status_code=200, content="(no sessions)", media_type="text/plain")
-    session_dir = None
-    for d in os.listdir(base):
-        dl = d.lower()
-        # 拆词匹配：目录名包含 project 路径的关键词
-        keywords = [w for w in claude_name.replace("-", " ").split() if len(w) > 1]
-        if all(kw in dl for kw in keywords):
-            session_dir = os.path.join(base, d)
-            break
-    if not session_dir:
+    session_dir = os.path.join(base, claude_name)
+    if not os.path.isdir(session_dir):
         return Response(status_code=200, content="(no sessions yet)", media_type="text/plain")
     # 找最新 session 文件
     files = sorted(glob.glob(os.path.join(session_dir, "*.jsonl")), key=os.path.getmtime, reverse=True)
