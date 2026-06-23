@@ -180,8 +180,9 @@
             }
         });
 
-        // Refresh project switcher after any content navigation
-        document.body.addEventListener('htmx:afterSettle', function() {
+        // Refresh project switcher after content navigation (not from switcher itself)
+        document.body.addEventListener('htmx:afterSettle', function(evt) {
+            if (evt.target.id === 'project-switcher') return;
             htmx.trigger('#project-switcher', 'refreshProjectSwitcher');
         });
 
