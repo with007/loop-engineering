@@ -80,8 +80,8 @@ def main():
 
     print(f"=== 任务完成: {task_id} ===")
 
-    # 生成 diff（用 origin/ 远程引用，避免本地分支状态异常导致空 diff）
-    run(f"git diff -U10 origin/master...origin/{branch} > {diff_file}")
+    # 生成 diff（本地分支 vs origin/master，push 前也能用）
+    run(f"git diff -U10 origin/master...{branch} > {diff_file}")
     print(f"Diff: {diff_file}")
 
     # 更新 tasks.md
