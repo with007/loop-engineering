@@ -119,11 +119,18 @@
             agentPort: 9080,
             get isUnity() { return this.selectedType.startsWith('unity'); },
             async pickFolder(target) {
-                var resp = await fetch('/api/setup/pickfolder');
-                var data = await resp.json();
-                if (data.path) {
-                    if (target === 'project') this.projectRoot = data.path;
-                    else this.agentWorkspace = data.path;
+                console.log('pickFolder called:', target);
+                try {
+                    var resp = await fetch('/api/setup/pickfolder');
+                    var data = await resp.json();
+                    console.log('pickFolder result:', data);
+                    if (data.path) {
+                        if (target === 'project') this.projectRoot = data.path;
+                        else this.agentWorkspace = data.path;
+                    }
+                } catch(e) {
+                    console.error('pickFolder error:', e);
+                    alert('选择文件夹失败: ' + e.message);
                 }
             }
         }
