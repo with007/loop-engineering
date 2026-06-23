@@ -43,7 +43,8 @@ user_invocable: true
 用户说"新建 change 和 task"。
 
 1. 调用 `openspec-new-change` skill，和用户交互梳理需求 → 生成完整的 change（包含 spec、design、tasks.md）
-2. change 生成后，去重检查通过后，在当天日期分组末尾追加：
+2. **确保已提交**：change 文件生成后必须 commit（含 proposal.md、design.md、specs/、tasks.md），否则 agent worktree 读不到这些文件。不要求 push，但至少本地 commit。
+3. change 生成并提交后，去重检查通过后，在当天日期分组末尾追加：
    ```markdown
    - [ ] <change-name> (→ <user>)
    ```
@@ -54,7 +55,8 @@ user_invocable: true
 用户说"把 xxx change 加到我的任务"。
 
 1. 确认 `openspec/changes/<name>/` 存在
-2. **OpenSpec 状态检查**：读 `openspec/changes/<name>/tasks.md`，统计 `[ ]` 和 `[x]` 数量：
+2. **确保已提交**：检查 change 文件是否已 commit（`git status` 确认 `openspec/changes/<name>/` 不在 untracked/modified 中）。未提交则先 commit 再继续。不要求 push，但至少本地 commit。
+3. **OpenSpec 状态检查**：读 `openspec/changes/<name>/tasks.md`，统计 `[ ]` 和 `[x]` 数量：
    - **全完成**（0 个 `[ ]`）→ 警告用户"该 change 所有子任务已完成，无需添加"，询问是否仍要添加
    - **部分完成**（有 `[ ]` 有 `[x]`）→ 正常添加，输出中标注进度
    - **全未开始**（全部 `[ ]`）→ 正常添加
