@@ -135,7 +135,7 @@ def get_status(project_root):
     return {
         "paused": running and pid is not None and _pid_alive(pid) and is_paused(project_root),
         "throttle": get_throttle(project_root),
-        "running": running and pid is not None and _pid_alive(pid),
+        "running": running and (pid is None or _pid_alive(pid)),
         "heartbeat": hb.isoformat() if hb else None,
         "pid": pid,
     }
@@ -147,11 +147,14 @@ def start_loop(project_root):
     """启动 loop 终端窗口."""
     if is_loop_running(project_root) and _pid_alive(_read_pid(project_root)):
         return {"started": False, "reason": "already running"}
+    # 心跳仍有效时也不允许重复启动（PID 可能还在异步写入中）
+    if is_loop_running(project_root):
+        return {"started": False, "reason": "already starting"}
 
     _ensure_dir(project_root)
     project_name = os.path.basename(project_root)
-    # 启动时清除暂停状态
     set_pause(project_root, False)
+    write_heartbeat(project_root)
 
     if platform.system() == "Windows":
         pid_path = os.path.join(_control_dir(project_root), "loop.pid")
