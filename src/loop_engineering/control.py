@@ -207,14 +207,21 @@ def stop_loop(project_root):
             if platform.system() == "Windows":
                 subprocess.run(f"taskkill /F /PID {pid}", shell=True,
                                capture_output=True, timeout=10)
+                # 确认进程是否真的被杀掉了
+                import time
+                time.sleep(1)
+                if not _pid_alive(pid):
+                    killed = True
             else:
                 os.kill(pid, 9)
-            killed = True
+                killed = True
         except Exception:
             pass
 
-    # 清理文件（无论 PID 是否存在都清理）
-    _clear_pid(project_root)
+    # 只在确认杀死后才清理 PID 文件
+    if killed:
+        _clear_pid(project_root)
+    # 心跳总是清理（停止后不应继续）
     hb_path = _flag_path(project_root, "heartbeat")
     if os.path.exists(hb_path):
         os.remove(hb_path)
