@@ -110,7 +110,11 @@ def get_log(project: str = Query(None), lines: int = Query(50)):
                             output.append(c.get("text", ""))
             except Exception:
                 pass
-        return Response(status_code=200, content="\n".join(output[-lines:]), media_type="text/plain")
+        import markdown as md
+        html = md.markdown("\n\n---\n\n".join(output[-lines:]), extensions=['fenced_code', 'tables'])
+        # 注入 dashboard 样式
+        html = f"<style>pre{{background:var(--surface2);padding:8px 12px;border-radius:6px;overflow-x:auto}}code{{font-size:12px}}table{{width:100%;border-collapse:collapse}}th,td{{padding:4px 8px;border:1px solid var(--border);text-align:left}}h1,h2,h3{{color:var(--text);margin:8px 0}}p{{margin:4px 0}}ul,ol{{padding-left:20px}}blockquote{{border-left:3px solid var(--pass);padding-left:12px;color:var(--muted)}}</style>{html}"
+        return Response(status_code=200, content=html, media_type="text/html")
     except Exception as e:
         return Response(status_code=200, content=f"(error: {e})", media_type="text/plain")
 
