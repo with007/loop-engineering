@@ -1,9 +1,9 @@
-<div hx-get="/tasks" hx-trigger="every 30s" hx-swap="outerHTML">
+<div>
     <h1>任务</h1>
 
-    <!-- Add task form -->
+    <!-- Add task form — static, never cleared by polling -->
     <div class="card" style="margin-bottom: 20px;">
-        <form hx-post="/tasks/add" hx-target="closest div[hx-get]" hx-swap="outerHTML"
+        <form hx-post="/tasks/add" hx-target="#tasks-list-wrap" hx-swap="outerHTML"
               hx-on::after-request="this.reset()">
             <div class="inline-form">
                 <div class="form-group">
@@ -17,71 +17,5 @@
         </form>
     </div>
 
-    <!-- 进度 bar -->
-    {% set total = tasks | length %}
-    {% if total > 0 %}
-    {% set done = tasks | selectattr('status', 'equalto', 'done') | list | length %}
-    {% set active = tasks | selectattr('status', 'equalto', 'in_progress') | list | length %}
-    {% set pending = tasks | selectattr('status', 'equalto', 'pending') | list | length %}
-    <div class="card" style="margin-bottom: 20px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <span style="font-weight: 600;">进度</span>
-            <span style="color: var(--muted); font-size: 13px;">{{ done }}/{{ total }} 完成</span>
-        </div>
-        <div class="progress-bar" style="height: 8px;">
-            <div class="progress-fill pass" style="width: {{ (done / total * 100) | round(1) }}%"></div>
-        </div>
-        <div style="display: flex; gap: 16px; margin-top: 8px; font-size: 12px; color: var(--dim);">
-            <span class="badge badge-待办">{{ pending }} 待办</span>
-            <span class="badge badge-active">{{ active }} 进行中</span>
-            <span class="badge badge-pass">{{ done }} 完成</span>
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- Task list -->
-    {% if tasks %}
-    {% for t in tasks %}
-    <div class="card" style="padding: 16px 20px; margin-bottom: 8px;">
-        <div style="display: flex; align-items: flex-start; gap: 14px;">
-            <div class="status-icon {% if t.status == 'done' %}status-done{% elif t.status == 'in_progress' %}status-active-label{% else %}status-pending-label{% endif %}">
-                {% if t.status == 'done' %}&#x2713;{% elif t.status == 'in_progress' %}&#x223C;{% else %}&#x2014;{% endif %}
-            </div>
-            <div style="flex: 1;">
-                <div style="font-size: 15px; font-weight: 500;">{{ t.description | truncate(120) }}</div>
-                <div style="display: flex; gap: 12px; margin-top: 6px; font-size: 12px; color: var(--dim);">
-                    {% if t.assignee %}
-                    <span>分配给： <strong style="color: var(--text);">{{ t.assignee }}</strong></span>
-                    {% endif %}
-                    {% if t.meta %}
-                    <span>{{ t.meta }}</span>
-                    {% endif %}
-                </div>
-            </div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-                {% if t.status == 'done' %}
-                <span class="badge badge-pass">已完成</span>
-                {% elif t.status == 'in_progress' %}
-                <span class="badge badge-active">进行中</span>
-                {% else %}
-                <span class="badge badge-待办">待办</span>
-                {% endif %}
-                <button class="btn btn-sm"
-                        hx-delete="/api/tasks/{{ t.task_id }}?task_desc={{ t.description | urlencode }}"
-                        hx-target="closest div[hx-get]"
-                        hx-swap="outerHTML"
-                        hx-confirm="删除任务「{{ t.description | truncate(40) }}」？对应的 agent 分支也会被删除。"
-                        style="background: transparent; color: var(--fail); border: 1px solid var(--fail); opacity: 0.6; font-size: 12px;">
-                    🗑
-                </button>
-            </div>
-        </div>
-    </div>
-    {% endfor %}
-    {% else %}
-    <div class="card" style="text-align: center; padding: 60px 20px; color: var(--dim);">
-        <p style="font-size: 16px;">暂无任务</p>
-        <p style="margin-top: 4px;">在上方添加第一个任务</p>
-    </div>
-    {% endif %}
+    {% include "_tasks_list.html" %}
 </div>

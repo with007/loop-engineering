@@ -132,4 +132,44 @@
     </div>
     
     {% endif %}
+
+    <script>
+        // Format heartbeat as relative time
+        (function() {
+            var el = document.getElementById('hb-time');
+            if (!el) return;
+            var iso = el.getAttribute('data-iso');
+            if (!iso) return;
+            var d = new Date(iso);
+            var now = new Date();
+            var sec = Math.floor((now - d) / 1000);
+            if (sec < 60) el.textContent = sec + 's ago';
+            else if (sec < 3600) el.textContent = Math.floor(sec/60) + 'm ago';
+            else el.textContent = Math.floor(sec/3600) + 'h ago';
+        })();
+
+        function set_throttle() {
+            var val = document.getElementById('throttle-input').value;
+            var params = new URLSearchParams(window.location.search);
+            var proj = params.get('project');
+            var url = '/api/control/throttle' + (proj ? '?project=' + encodeURIComponent(proj) : '');
+            var msgEl = document.getElementById('throttle-msg');
+            msgEl.style.color = 'var(--dim)';
+            msgEl.textContent = '设置中...';
+            fetch(url, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({interval: val})
+            }).then(function(resp) {
+                return resp.text();
+            }).then(function(html) {
+                msgEl.innerHTML = html;
+                // Also refresh the signal display that shows current throttle
+                htmx.trigger('#control-info', 'htmx:trigger');
+            }).catch(function(e) {
+                msgEl.style.color = 'var(--fail)';
+                msgEl.textContent = '设置失败: ' + e.message;
+            });
+        }
+    </script>
 </div>
