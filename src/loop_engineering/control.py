@@ -150,6 +150,8 @@ def start_loop(project_root):
 
     _ensure_dir(project_root)
     project_name = os.path.basename(project_root)
+    # 启动时清除暂停状态
+    set_pause(project_root, False)
 
     if platform.system() == "Windows":
         pid_path = os.path.join(_control_dir(project_root), "loop.pid")
