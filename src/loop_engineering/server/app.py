@@ -57,12 +57,29 @@ def _read_tasks(pr):
     result = []
     with open(tp, "r", encoding="utf-8") as f:
         for line in f:
-            m = re.match(r'^- \[(.)\]\s+(.+?)(\s+\(→\s*(\w+)\))?(\s+—\s+(.+))?$', line)
+            # 先匹配 checkbox
+            m = re.match(r'^- \[(.)\]\s+(.+)', line)
             if not m:
                 continue
-            desc = m.group(2).strip()
-            tid = _task_id_of(desc)
             status_char = m.group(1)
+            rest = m.group(2).strip()
+
+            # 提取 (→ assignee) — 可能在 meta 前或后
+            assignee = ""
+            m_assignee = re.search(r'\(→\s*(\w+)\)', rest)
+            if m_assignee:
+                assignee = m_assignee.group(1)
+                rest = (rest[:m_assignee.start()] + rest[m_assignee.end():]).strip()
+
+            # 提取 — meta
+            meta = ""
+            m_meta = re.search(r'\s+—\s+(.+)$', rest)
+            if m_meta:
+                meta = m_meta.group(1).strip()
+                rest = rest[:m_meta.start()].strip()
+
+            desc = rest
+            tid = _task_id_of(desc)
             if status_char == "x" and tid in agent_branches:
                 status = "pending_merge"
             else:
@@ -72,8 +89,8 @@ def _read_tasks(pr):
                 "description": desc,
                 "task_id": tid,
                 "status": status,
-                "assignee": m.group(4) or "",
-                "meta": m.group(6) or "",
+                "assignee": assignee,
+                "meta": meta,
             })
     return result
 
@@ -247,29 +264,37 @@ async def dashboard(request: Request, project: str = Query(None)):
 
 
 @app.get("/tasks")
-async def tasks_page(request: Request, project: str = Query(None)):
+async def tasks_page(request: Request, project: str = Query(None), order: str = Query("asc")):
     pr = _project_root(request, q=project)
+    tasks = _read_tasks(pr)
+    if order == "desc":
+        tasks = list(reversed(tasks))
     return _render(request, "tasks.html", {
         "request": request,
-        "tasks": _read_tasks(pr),
+        "tasks": tasks,
         "agent_name": _agent_name(pr),
         "current_root": pr,
+        "order": order,
     })
 
 
 @app.get("/tasks/list")
-async def tasks_list(request: Request, project: str = Query(None)):
+async def tasks_list(request: Request, project: str = Query(None), order: str = Query("asc")):
     """返回仅任务列表的局部片段（供 polling 和表单提交后刷新）."""
     pr = _project_root(request, q=project)
+    tasks = _read_tasks(pr)
+    if order == "desc":
+        tasks = list(reversed(tasks))
     return templates.TemplateResponse(request, "_tasks_list.html", {
         "request": request,
-        "tasks": _read_tasks(pr),
+        "tasks": tasks,
         "agent_name": _agent_name(pr),
+        "order": order,
     })
 
 
 @app.post("/tasks/add")
-async def tasks_add(request: Request, description: str = Form(...), assignee: str = Form(...), project: str = Form(None)):
+async def tasks_add(request: Request, description: str = Form(...), assignee: str = Form(...), project: str = Form(None), order: str = Form("asc")):
     pr = _project_root(request, q=project)
     tp = os.path.join(pr, "tasks.md")
     line = f"- [ ] {description} (→ {assignee})\n"
@@ -280,10 +305,14 @@ async def tasks_add(request: Request, description: str = Form(...), assignee: st
         with open(tp, "w", encoding="utf-8") as f:
             f.write("# Tasks\n\n")
             f.write(line)
+    tasks = _read_tasks(pr)
+    if order == "desc":
+        tasks = list(reversed(tasks))
     return templates.TemplateResponse(request, "_tasks_list.html", {
         "request": request,
-        "tasks": _read_tasks(pr),
+        "tasks": tasks,
         "agent_name": _agent_name(pr),
+        "order": order,
     })
 
 
