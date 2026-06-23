@@ -29,7 +29,7 @@
             <h3>项目根目录</h3>
             <div style="display: flex; gap: 8px;">
                 <input type="text" x-model="projectRoot" placeholder="d:/work_pvp/myproject"
-                       @input="onProjectRootChange()"
+                       @input="onProjectRootChange($el.value)"
                        style="flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px 14px; border-radius: 7px; font-size: 14px;">
                 <button class="btn btn-sm" style="background: var(--surface2); color: var(--text);"
                         @click="pickFolder('project')">选择</button>
@@ -143,8 +143,8 @@
             mainPort: 8080,
             agentPort: 9080,
             get isUnity() { return this.selectedType.startsWith('unity'); },
-            onProjectRootChange() {
-                var ws = genWorkspace(this.projectRoot);
+            onProjectRootChange(val) {
+                var ws = genWorkspace(val);
                 if (ws) this.agentWorkspace = ws;
             },
             async pickFolder(target) {
@@ -156,7 +156,7 @@
                     if (data.path) {
                         if (target === 'project') {
                             this.projectRoot = data.path;
-                            this.onProjectRootChange();
+                            this.onProjectRootChange(this.projectRoot);
                         }
                         else this.agentWorkspace = data.path;
                     }
