@@ -7,7 +7,7 @@ from urllib.parse import quote
 import subprocess
 
 from fastapi import FastAPI, Request, Form, Query
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 app = FastAPI(title="Loop Engineering Dashboard")
@@ -499,7 +499,7 @@ async def setup_run(request: Request, project_root: str = Form(...), agent_name:
         from loop_engineering.setup import run_setup
         run_setup(config, force=True)
         register_project(project_root, config["project"]["name"])
-        return RedirectResponse(f"/?project={quote(project_root)}", status_code=303)
+        return Response(status_code=200, headers={"HX-Redirect": f"/?project={quote(project_root)}"})
     except Exception as e:
         return _render(request, "setup.html", {
             "request": request,

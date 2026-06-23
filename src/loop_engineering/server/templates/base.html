@@ -147,7 +147,7 @@
                     <a href="/setup" hx-get="/setup" hx-target="#content" hx-push-url="true" style="color: var(--active);">+ 初始化</a>
                 </nav>
                 <div id="project-switcher" style="margin-left: auto;"
-                     hx-get="/api/projects/switcher" hx-trigger="load, every 60s">
+                     hx-get="/api/projects/switcher" hx-trigger="load, every 60s, refreshProjectSwitcher from:body">
                     <span style="color: var(--dim); font-size: 13px;">loading...</span>
                 </div>
             </div>
@@ -166,6 +166,24 @@
         }
         document.body.addEventListener('htmx:afterSettle', updateNav);
         updateNav();  // initial call
+
+        // Preserve ?project= across all page navigations
+        var PAGE_ROUTES = ['/', '/tasks', '/runs', '/control', '/settings', '/setup'];
+        document.body.addEventListener('htmx:configRequest', function(evt) {
+            var path = evt.detail.path;
+            var route = path.split('?')[0];
+            if (PAGE_ROUTES.indexOf(route) === -1) return;
+            var params = new URLSearchParams(window.location.search);
+            var project = params.get('project');
+            if (project && path.indexOf('project=') === -1) {
+                evt.detail.path = path + (path.indexOf('?') > -1 ? '&' : '?') + 'project=' + encodeURIComponent(project);
+            }
+        });
+
+        // Refresh project switcher after any content navigation
+        document.body.addEventListener('htmx:afterSettle', function() {
+            htmx.trigger('#project-switcher', 'refreshProjectSwitcher');
+        });
 
         // Settings form — defined globally so Alpine can reference it after htmx swaps
         function settingsForm() {
