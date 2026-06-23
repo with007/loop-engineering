@@ -205,7 +205,7 @@ def stop_loop(project_root):
     if pid and _pid_alive(pid):
         try:
             if platform.system() == "Windows":
-                subprocess.run(f"taskkill /F /PID {pid}", shell=True,
+                subprocess.run(f"taskkill /F /T /PID {pid}", shell=True,
                                capture_output=True, timeout=10)
                 # 确认进程是否真的被杀掉了
                 import time
