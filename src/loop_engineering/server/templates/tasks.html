@@ -67,7 +67,7 @@
                 <span class="badge badge-待办">待办</span>
                 {% endif %}
                 <button class="btn btn-sm"
-                        hx-delete="/api/tasks/{{ t.task_id }}"
+                        hx-delete="/api/tasks/{{ t.task_id }}?task_desc={{ t.description | urlencode }}"
                         hx-target="closest div[hx-get]"
                         hx-swap="outerHTML"
                         hx-confirm="删除任务「{{ t.description | truncate(40) }}」？对应的 agent 分支也会被删除。"

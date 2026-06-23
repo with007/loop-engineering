@@ -8,6 +8,17 @@ from pydantic import BaseModel
 router = APIRouter()
 
 
+def _slugify(desc):
+    """与 task_pick.py 相同的 slugify 逻辑."""
+    import hashlib
+    desc = re.split(r'\s+—\s+', desc.strip())[0].strip().replace(' ', '-').lower()
+    result = re.sub(r'[^a-z0-9-]', '', desc)
+    result = re.sub(r'^-+|-+$', '', result)
+    if len(result) < 3:
+        result = 'task-' + hashlib.md5(desc.encode('utf-8')).hexdigest()[:8]
+    return result[:40]
+
+
 def _project_root(project: str = None):
     if project:
         return project
@@ -69,24 +80,15 @@ def add_task(req: AddTaskRequest, project: str = Query(None)):
 
 
 @router.delete("/{task_id}")
-def delete_task(task_id: str, project: str = Query(None)):
+def delete_task(task_id: str, project: str = Query(None), task_desc: str = Query("")):
     """删除任务及对应的 agent 分支."""
-    import subprocess, hashlib
+    import subprocess
     pr = _project_root(project)
-
-    def _task_id_of(desc):
-        desc = re.split(r'\s+—\s+', desc.strip())[0].strip().replace(' ', '-').lower()
-        result = re.sub(r'[^a-z0-9-]', '', desc)
-        result = re.sub(r'^-+|-+$', '', result)
-        if len(result) < 3:
-            result = 'task-' + hashlib.md5(desc.encode('utf-8')).hexdigest()[:8]
-        return result[:40]
-
     tasks_path = os.path.join(pr, "tasks.md")
     if not os.path.exists(tasks_path):
         raise HTTPException(404, "tasks.md not found")
 
-    # 读取并找到匹配行
+    # 读取并找到匹配行：比较 slugify(desc) == task_id
     deleted_line = None
     lines = []
     with open(tasks_path, "r", encoding="utf-8") as f:
@@ -94,10 +96,11 @@ def delete_task(task_id: str, project: str = Query(None)):
 
     new_lines = []
     for line in lines:
-        m = re.match(r'^- \[(.)\]\s+(.+?)(\s+\(→\s*(\w+)\))?', line)
+        m = re.match(r'^- \[(.)\]\s+(.+?)(\s+\([→>]\s*(\w+)\))?', line)
         if m:
-            desc = m.group(2).strip()
-            if _task_id_of(desc) == task_id:
+            raw_desc = m.group(2).strip()
+            # 同时匹配 slug 和原始描述
+            if _slugify(raw_desc) == task_id or raw_desc == task_desc:
                 deleted_line = line
                 continue
         new_lines.append(line)
