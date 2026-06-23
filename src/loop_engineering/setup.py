@@ -663,11 +663,11 @@ fi
 **同步 + 清理**：
 
 ```bash
-git fetch origin --prune
+git fetch origin --prune 2>/dev/null || true
 # 如果当前在某个 agent 分支上，先 detach
 git checkout --detach {{ default_ref }} 2>/dev/null
-# 删掉已推送的旧本地分支
-git branch --list "agent/*" | xargs -r git branch -D 2>/dev/null
+# 删掉已合入 {{ default_ref }} 的 agent 分支（不是全部删除）
+git branch --list "agent/*" --merged {{ default_ref }} | xargs -r git branch -d 2>/dev/null
 ```
 
 **检查已合入的远程分支**：
@@ -887,14 +887,18 @@ implementer 修复说明: <...>
    ```
 3. 提交并推送：
    ```bash
-   git add <改动的源文件> tasks.md
+   git add <改动的源文件>
    git commit -m "[任务ID] 完成"
-   git push origin agent/$whoami/[任务ID]
+   git push origin agent/$whoami/[任务ID] 2>/dev/null || echo "无 remote，跳过推送，保留分支待合入"
    ```
-4. 清理本地分支：
+4. 清理本地分支（仅推送成功后才删）：
    ```bash
-   git checkout --detach {{ default_ref }}
-   git branch -D agent/$whoami/[任务ID]
+   if git remote -v | grep -q origin; then
+     git checkout --detach {{ default_ref }}
+     git branch -D agent/$whoami/[任务ID]
+   else
+     echo "无 remote，保留分支 agent/$whoami/[任务ID] 待手动合入 {{ default_ref }}"
+   fi
    ```
 
 **FAIL**:
