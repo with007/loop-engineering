@@ -151,8 +151,19 @@ def start_loop(project_root):
     if platform.system() == "Windows":
         pid_path = os.path.join(_control_dir(project_root), "loop.pid")
         hb_path = _flag_path(project_root, "heartbeat")
+        log_path = os.path.join(_control_dir(project_root), "loop.log")
+        run_bat = (
+            f"@echo off\r\n"
+            f"title Loop: {project_name}\r\n"
+            f"cd /d {project_root}\r\n"
+            f"powershell -NoProfile -NoExit -Command \"claude --dangerously-skip-permissions 2>&1 | Tee-Object -FilePath '{log_path}'\"\r\n"
+        )
+        bat_path = os.path.join(_control_dir(project_root), "run.bat")
+        os.makedirs(os.path.dirname(bat_path), exist_ok=True)
+        with open(bat_path, "w") as f:
+            f.write(run_bat)
         ps_script = (
-            f'$p = Start-Process cmd -ArgumentList \'/k title Loop: {project_name} && cd /d {project_root} && claude --dangerously-skip-permissions\' '
+            f'$p = Start-Process cmd -ArgumentList \'/k \"{bat_path}\"\' '
             f'-WindowStyle Normal -PassThru;'
             f'[System.IO.File]::WriteAllText(\'{pid_path}\', $p.Id.ToString());'
             # 立即写心跳（不等 while 循环的 30s 间隔）
