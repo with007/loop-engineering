@@ -69,15 +69,6 @@
             {% endif %}
             {% endif %}
 
-            {% if is_running %}
-            <button class="btn btn-primary"
-                    hx-post="/api/control/next"
-                    hx-target="closest div[hx-get]"
-                    hx-swap="outerHTML">
-                立即执行
-            </button>
-            {% endif %}
-
             <div style="display: flex; align-items: center; gap: 8px; margin-left: 12px;">
                 <span style="color: var(--muted); font-size: 13px;">间隔：</span>
                 <input type="text" id="throttle-input" value="{{ status.throttle }}"

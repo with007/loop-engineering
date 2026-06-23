@@ -47,16 +47,6 @@ def resume(project: str = Query(None)):
     return Response(status_code=200, headers={"HX-Refresh": "true"})
 
 
-@router.post("/next")
-def next_cycle(project: str = Query(None)):
-    from loop_engineering.control import _ensure_dir, _flag_path
-    pr = _project_root(project)
-    path = _flag_path(pr, "next")
-    _ensure_dir(pr)
-    open(path, "w").close()
-    return Response(status_code=200, headers={"HX-Refresh": "true"})
-
-
 @router.put("/throttle")
 def set_throttle(req: ThrottleRequest, project: str = Query(None)):
     from loop_engineering.control import set_throttle as ctrl_set

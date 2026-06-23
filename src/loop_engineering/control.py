@@ -88,22 +88,6 @@ def set_pause(project_root, paused=True):
         os.remove(path)
 
 
-# ── next ──
-
-def has_next(project_root):
-    """检查是否强制触发下一轮."""
-    return os.path.exists(_flag_path(project_root, "next"))
-
-
-def consume_next(project_root):
-    """检查并消费 next 信号（原子操作：检查 + 删除）."""
-    path = _flag_path(project_root, "next")
-    if os.path.exists(path):
-        os.remove(path)
-        return True
-    return False
-
-
 # ── throttle ──
 
 def get_throttle(project_root, default="2m"):
