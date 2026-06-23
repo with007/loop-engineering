@@ -135,16 +135,14 @@
         (function() {
             var el = document.getElementById('loop-log');
             if (!el) return;
-            var observer = new MutationObserver(function() {
-                if (el.textContent.trim() && el.textContent !== '加载中...') {
-                    try { el.innerHTML = marked.parse(el.textContent); } catch(e) {}
+            function render() {
+                var text = el.textContent.trim();
+                if (text && text !== '加载中...') {
+                    try { el.innerHTML = marked.parse(text); } catch(e) {}
                 }
-            });
-            observer.observe(el, {childList: true, characterData: true, subtree: true});
-            // initial render
-            if (el.textContent.trim() && el.textContent !== '加载中...') {
-                try { el.innerHTML = marked.parse(el.textContent); } catch(e) {}
             }
+            el.addEventListener('htmx:afterSettle', render);
+            render();
         })();
     </script>
     {% endif %}
