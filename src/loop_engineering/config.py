@@ -180,23 +180,9 @@ def _detect_git_user(project_root):
 
 
 def _detect_data_repo(project_root, project_name):
-    """检测数据配表仓库.
-
-    尝试以下位置（按优先级）:
-    1. 项目同级目录 + Data: d:/work_pvp/pvp8/PVPProject8Data
-    2. 项目父级目录 + Data: d:/work_pvp/PVPProject8Data
-    """
-    parent = os.path.dirname(project_root)          # d:/work_pvp/pvp8
-    grandparent = os.path.dirname(parent)            # d:/work_pvp
-
-    # 模式1: 项目同级 sibling（最常见: pvp8/PVPProject8 旁边有 pvp8/PVPProject8Data）
+    """检测数据配表仓库——项目同级目录下的 <ProjectName>Data."""
+    parent = os.path.dirname(project_root)
     candidate = os.path.join(parent, project_name + "Data")
     if os.path.isdir(os.path.join(candidate, ".git")):
         return candidate
-
-    # 模式2: 项目父级（work_pvp/PVPProject8Data）
-    candidate2 = os.path.join(grandparent, project_name + "Data")
-    if os.path.isdir(os.path.join(candidate2, ".git")):
-        return candidate2
-
     return None
