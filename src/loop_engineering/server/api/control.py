@@ -79,7 +79,7 @@ def stop(project: str = Query(None)):
 @router.get("/log")
 def get_log(project: str = Query(None), lines: int = Query(50)):
     """返回 loop 最近输出（从 Claude session JSONL 读取）."""
-    import json, glob, re
+    import json, re
     lines = int(lines) if isinstance(lines, (int, str)) else 50
     pr = _project_root(project).replace("\\", "/")
     claude_name = re.sub(r'^([a-z]):/', r'\1--', pr.lower())
@@ -90,12 +90,13 @@ def get_log(project: str = Query(None), lines: int = Query(50)):
     session_dir = os.path.join(base, claude_name)
     if not os.path.isdir(session_dir):
         return Response(status_code=200, content="(no sessions yet)", media_type="text/plain")
-    # 找最新 session 文件
-    files = sorted(glob.glob(os.path.join(session_dir, "*.jsonl")), key=os.path.getmtime, reverse=True)
-    if not files:
+    # 找 loop cmd 启动的 session 文件（而非任意 Claude 窗口）
+    from loop_engineering.control import find_loop_session_file
+    session_file = find_loop_session_file(pr, session_dir)
+    if not session_file:
         return Response(status_code=200, content="(no sessions yet)", media_type="text/plain")
     try:
-        with open(files[0], "r", encoding="utf-8") as f:
+        with open(session_file, "r", encoding="utf-8") as f:
             all_lines = f.readlines()
         # 取最近的 assistant 文本消息
         output = []

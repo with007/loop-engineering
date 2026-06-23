@@ -147,6 +147,7 @@ def start_loop(project_root):
     project_name = os.path.basename(project_root)
     set_pause(project_root, False)
     write_heartbeat(project_root)
+    write_loop_started_at(project_root)
 
     if platform.system() == "Windows":
         pid_path = os.path.join(_control_dir(project_root), "loop.pid")
@@ -273,3 +274,84 @@ def _pid_alive(pid):
             return True
     except Exception:
         return False
+
+
+# ── loop started_at ──
+
+def write_loop_started_at(project_root):
+    """记录 loop 启动时间戳，用于过滤 session 文件."""
+    _ensure_dir(project_root)
+    with open(_flag_path(project_root, "loop_started_at"), "w") as f:
+        f.write(datetime.now(timezone.utc).isoformat())
+
+
+def read_loop_started_at(project_root):
+    """读取 loop 启动时间戳，返回 datetime 或 None."""
+    path = _flag_path(project_root, "loop_started_at")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r") as f:
+            return datetime.fromisoformat(f.read().strip())
+    except Exception:
+        return None
+
+
+# ── loop session file ──
+
+def find_loop_session_file(project_root, session_dir):
+    """找到 loop cmd 启动的 Claude 的 session 文件.
+
+    策略:
+    1. 优先找内容中包含 /runloop 命令的 session（最可靠）
+    2. 兜底取 loop 启动后最近修改的 session
+    3. 最后取最新的 session（兼容旧行为）
+    """
+    import glob as _glob
+    import json as _json
+
+    started = read_loop_started_at(project_root)
+    files = sorted(_glob.glob(os.path.join(session_dir, "*.jsonl")),
+                   key=os.path.getmtime, reverse=True)
+    if not files:
+        return None
+
+    # 策略 1: 在 loop 启动后更新的文件中找 /runloop
+    for f in files:
+        if started:
+            file_mtime = datetime.fromtimestamp(os.path.getmtime(f), tz=timezone.utc)
+            if file_mtime < started:
+                continue
+        try:
+            with open(f, "r", encoding="utf-8") as fh:
+                for i, line in enumerate(fh):
+                    if i > 200:  # /runloop 通常在开头
+                        break
+                    try:
+                        msg = _json.loads(line)
+                        if msg.get("message", {}).get("role") == "user":
+                            content = msg.get("message", {}).get("content", "")
+                            texts = []
+                            if isinstance(content, str):
+                                texts = [content]
+                            elif isinstance(content, list):
+                                for c in content:
+                                    if isinstance(c, dict) and c.get("type") == "text":
+                                        texts.append(c.get("text", ""))
+                            for t in texts:
+                                if "/runloop" in t:
+                                    return f
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    # 策略 2: loop 启动后最近修改的文件
+    if started:
+        for f in files:
+            file_mtime = datetime.fromtimestamp(os.path.getmtime(f), tz=timezone.utc)
+            if file_mtime >= started:
+                return f
+
+    # 策略 3: 最新文件（兜底，保持旧行为）
+    return files[0]
