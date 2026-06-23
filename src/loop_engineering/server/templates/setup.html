@@ -1,4 +1,4 @@
-<div x-data="setupForm()" x-init="$watch('projectRoot', val => { if (val) { var p = val.replace(/\\/g,'/').replace(/\/$/,''); var parts = p.split('/'); if (parts.length >= 3) { var parentName = parts[parts.length-2]; parts.pop(); parts.pop(); agentWorkspace = parts.join('/') + '/' + parentName + '-agent'; } } })">
+<div x-data="setupForm()">
     <h1>添加项目</h1>
     <p style="color: var(--muted); margin-bottom: 20px;">在新项目中运行 loop setup</p>
 
@@ -29,6 +29,7 @@
             <h3>项目根目录</h3>
             <div style="display: flex; gap: 8px;">
                 <input type="text" x-model="projectRoot" placeholder="d:/work_pvp/myproject"
+                       @input="onProjectRootChange()"
                        style="flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 10px 14px; border-radius: 7px; font-size: 14px;">
                 <button class="btn btn-sm" style="background: var(--surface2); color: var(--text);"
                         @click="pickFolder('project')">选择</button>
@@ -124,6 +125,16 @@
         'generic': [{type:'shell', id:'build', command:'npm run build || echo skipped'}, {type:'shell', id:'test', command:'npm test || echo skipped'}]
     };
     function setupForm() {
+        function genWorkspace(root) {
+            if (!root) return '';
+            var p = root.replace(/\\/g, '/').replace(/\/$/, '');
+            var parts = p.split('/');
+            if (parts.length < 3) return '';
+            var parentName = parts[parts.length - 2];
+            parts.pop();  // project name
+            parts.pop();  // parent dir
+            return parts.join('/') + '/' + parentName + '-agent';
+        }
         return {
             projectRoot: '',
             agentWorkspace: '',
@@ -132,6 +143,10 @@
             mainPort: 8080,
             agentPort: 9080,
             get isUnity() { return this.selectedType.startsWith('unity'); },
+            onProjectRootChange() {
+                var ws = genWorkspace(this.projectRoot);
+                if (ws) this.agentWorkspace = ws;
+            },
             async pickFolder(target) {
                 console.log('pickFolder called:', target);
                 try {
@@ -139,7 +154,10 @@
                     var data = await resp.json();
                     console.log('pickFolder result:', data);
                     if (data.path) {
-                        if (target === 'project') this.projectRoot = data.path;
+                        if (target === 'project') {
+                            this.projectRoot = data.path;
+                            this.onProjectRootChange();
+                        }
                         else this.agentWorkspace = data.path;
                     }
                 } catch(e) {
