@@ -80,15 +80,14 @@ def add_task(req: AddTaskRequest, project: str = Query(None)):
 
 
 @router.delete("/{task_id}")
-def delete_task(task_id: str, project: str = Query(None), task_desc: str = Query("")):
-    """删除任务及对应的 agent 分支."""
+def delete_task(task_id: str, project: str = Query(None)):
+    """删除任务及对应的 agent 分支。task_id 为 slugified description."""
     import subprocess
     pr = _project_root(project)
     tasks_path = os.path.join(pr, "tasks.md")
     if not os.path.exists(tasks_path):
         raise HTTPException(404, "tasks.md not found")
 
-    # 读取并找到匹配行：比较 slugify(desc) == task_id
     deleted_line = None
     lines = []
     with open(tasks_path, "r", encoding="utf-8") as f:
@@ -96,11 +95,12 @@ def delete_task(task_id: str, project: str = Query(None), task_desc: str = Query
 
     new_lines = []
     for line in lines:
-        m = re.match(r'^- \[(.)\]\s+(.+?)(\s+\([→>]\s*(\w+)\))?', line)
+        m = re.match(r'^- \[(.)\]\s+(.+)', line)
         if m:
-            raw_desc = m.group(2).strip()
-            # 同时匹配 slug 和原始描述
-            if _slugify(raw_desc) == task_id or raw_desc == task_desc:
+            rest = m.group(2).strip()
+            # 拆出描述（去掉 assignee 和 meta 部分）
+            desc = re.split(r'\s+[—(]', rest)[0].strip()
+            if _slugify(desc) == task_id:
                 deleted_line = line
                 continue
         new_lines.append(line)
