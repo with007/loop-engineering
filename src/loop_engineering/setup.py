@@ -330,6 +330,8 @@ def render_skill_md(config):
         has_data_repo=bool(data_repo_path),
         default_ref=_default_branch(project_root),
         tasks_path=os.path.join(project_root, "tasks.md").replace("\\", "/"),
+        is_unity=config.get("type", "").startswith("unity-"),
+        project_type=config.get("type", "generic"),
     )
 
     target_dir = os.path.join(project_root, ".claude", "skills", "task-runner")
@@ -787,7 +789,7 @@ OpenSpec 路径: openspec/changes/<taskID>/
 agent/<whoami>/<taskID>
 
 ## 规范
-遵循 CLAUDE.md，只改必要文件，修改后 refresh_unity + read_console 确认 0 errors。
+遵循 CLAUDE.md，只改必要文件。{% if is_unity %}修改后 refresh_unity + read_console 确认 0 errors。{% else %}修改后确认无语法错误。{% endif %}
 
 ## 自主运行
 你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行、输出结果。你是一个纯函数——输入任务，输出结果。如果失败，输出 FAIL + 原因；如果成功，输出 PASS + 变更概要。绝不输出问句。
@@ -806,7 +808,7 @@ agent/<whoami>/<taskID>
 agent/<whoami>/<taskID>
 
 ## 规范
-遵循 CLAUDE.md，只改必要文件，修改后 refresh_unity + read_console 确认 0 errors。
+遵循 CLAUDE.md，只改必要文件。{% if is_unity %}修改后 refresh_unity + read_console 确认 0 errors。{% else %}修改后确认无语法错误。{% endif %}
 
 ## 自主运行
 你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行、输出结果。你是一个纯函数——输入任务，输出结果。如果失败，输出 FAIL + 原因；如果成功，输出 PASS + 变更概要。绝不输出问句。
@@ -833,7 +835,17 @@ OpenSpec 路径: openspec/changes/<taskID>/
 ## 你的工作（只能验证，不能改代码）
 1. 读 openspec/changes/<taskID>/proposal.md 确认目标
 2. 读 openspec/changes/<taskID>/tasks.md 确认全部子任务 [x]
+{% if is_unity %}
 3. refresh_unity + read_console → 0 errors
+4. 读完整 diff，分析每个变更对应的运行时行为
+5. 为每个行为设计 Lua 测试代码
+6. 用 register_lua_test 注册，调用 runtime-test skill 执行
+7. 输出：PASS 或 FAIL + 原因
+{% else %}
+3. 读完整 diff，确认变更范围正确、无多余文件
+4. 模板变更则渲染检查关键字段；代码变更则确认逻辑正确
+5. 输出：PASS 或 FAIL + 原因
+{% endif %}
 4. 读完整 diff，分析每个变更对应的运行时行为
 5. 为每个行为设计 Lua 测试代码，遵循 [AUTO TEST: 名] PASS/FAIL 标记约定
 6. 用 register_lua_test 注册，接入 config.json + 入口 requireLua，调用 runtime-test skill 执行
@@ -860,7 +872,17 @@ implementer 修复说明: <...>
 分支: agent/<whoami>/<taskID>
 
 ## 你的工作（只能验证，不能改代码）
+{% if is_unity %}
 1. refresh_unity + read_console → 0 errors
+2. 读完整 diff，分析每个变更对应的运行时行为
+3. 为每个行为设计 Lua 测试代码
+4. 用 register_lua_test 注册，调用 runtime-test skill 执行
+5. 输出：PASS 或 FAIL + 原因
+{% else %}
+1. 读完整 diff，确认变更范围正确、无多余文件
+2. 模板变更则渲染检查关键字段；代码变更则确认逻辑正确
+3. 输出：PASS 或 FAIL + 原因
+{% endif %}
 2. 读完整 diff，分析每个变更对应的运行时行为
 3. 为每个行为设计 Lua 测试代码，遵循 [AUTO TEST: 名] PASS/FAIL 标记约定
 4. 用 register_lua_test 注册，接入 config.json + 入口 requireLua，调用 runtime-test skill 执行
