@@ -783,32 +783,6 @@ python -m loop_engineering.scripts.task_pick $whoami --project-root {{ project_r
 - 无匹配则 `NONE` → `ExitWorktree(action="keep")` → 停止。
 
 
-
-### Step 1.5: 防重入检查
-
-如果 agent 分支已存在且有改动（commit 或工作区），说明上一轮已在执行，**跳过 Step 2**：
-
-```bash
-if git branch --list "agent/$whoami/$taskID" | grep -q .; then
-  commits=$(git rev-list --count {{ default_ref }}..agent/$whoami/$taskID 2>/dev/null || echo 0)
-  if [ "$commits" -gt 0 ]; then
-    echo "TASK_IN_PROGRESS_COMMITS=$commits"
-    # 跳到 Step 4 验证
-  elif ! git diff --quiet {{ default_ref }}..agent/$whoami/$taskID 2>/dev/null; then
-    echo "TASK_IN_PROGRESS_DIRTY"
-    # implementer 还在改工作区，等待
-  else
-    echo "TASK_BRANCH_EMPTY"
-    # 分支空，implementer 刚启动，等待
-  fi
-  # 以上任一情况都跳过 fork，输出状态后结束本轮（等下一轮 cron 继续检查）
-  exit 0
-fi
-```
-
-- `TASK_IN_PROGRESS_COMMITS` → implementer 已完成，直接进入 Step 4（验证）
-- `TASK_IN_PROGRESS_DIRTY` / `TASK_BRANCH_EMPTY` → implementer 还在工作，等待下一轮 cron
-
 ### Step 2: Fork 分支 + 标记进行中
 
 ```bash
