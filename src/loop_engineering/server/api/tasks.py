@@ -129,3 +129,39 @@ def delete_task(task_id: str, project: str = Query(None)):
         branch_msg = f", branch cleanup failed: {e}"
 
     return {"deleted": True, "task_id": task_id, "message": f"Task '{task_id}' removed{branch_msg}"}
+
+
+@router.put("/{task_id}/reset")
+def reset_task(task_id: str, project: str = Query(None)):
+    """将进行中的任务 ([~]) 重置为待办 ([ ])，用于恢复被中断的任务."""
+    pr = _project_root(project)
+    tasks_path = os.path.join(pr, "tasks.md")
+    if not os.path.exists(tasks_path):
+        raise HTTPException(404, "tasks.md not found")
+
+    lines = []
+    with open(tasks_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    found = False
+    for i, line in enumerate(lines):
+        m = re.match(r'^- \[(.)\]\s+(.+)', line)
+        if not m:
+            continue
+        if m.group(1) != "~":
+            continue
+        rest = m.group(2).strip()
+        desc = re.split(r'\s+[—(]', rest)[0].strip()
+        if _slugify(desc) == task_id:
+            # 将 [~] 替换为 [ ]
+            lines[i] = line.replace("- [~] ", "- [ ] ", 1)
+            found = True
+            break
+
+    if not found:
+        raise HTTPException(404, f"In-progress task '{task_id}' not found")
+
+    with open(tasks_path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+    return {"reset": True, "task_id": task_id, "message": f"Task '{task_id}' reset to pending"}

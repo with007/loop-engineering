@@ -48,6 +48,15 @@
                 <span class="badge badge-active">已完成（分支待合入）</span>
                 {% elif t.status == 'in_progress' %}
                 <span class="badge badge-active">进行中</span>
+                <button class="btn btn-sm"
+                        hx-put="/api/tasks/{{ t.task_id }}/reset"
+                        hx-swap="none"
+                        hx-confirm="将「{{ t.description | truncate(40) }}」重置为待办？这会让 task-runner 重新实现此任务。"
+                        hx-on::after-request="htmx.trigger('#tasks-list-wrap', 'htmx:trigger')"
+                        style="background: transparent; color: var(--active); border: 1px solid var(--active); opacity: 0.6; font-size: 11px; padding: 2px 8px;"
+                        title="重置为待办">
+                    ↩
+                </button>
                 {% else %}
                 <span class="badge badge-待办">待办</span>
                 {% endif %}
