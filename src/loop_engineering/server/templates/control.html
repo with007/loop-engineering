@@ -39,7 +39,7 @@
                 </button>
                 {% endif %}
 
-                {% if is_running %}
+                {% if is_running or (status.pid and status.pid_alive) %}
                 <button class="btn btn-sm"
                         hx-post="/api/control/focus"
                         hx-swap="none"
