@@ -422,6 +422,11 @@ async def control_status_fragment(request: Request, project: str = Query(None)):
                         hx-post="/api/control/start"
                         hx-target="#control-status"
                         hx-swap="outerHTML">启动 Loop</button>'''
+        if status.get("pid") and status.get("pid_alive"):
+            html += '''<button class="btn btn-sm"
+                        hx-post="/api/control/focus"
+                        hx-swap="none"
+                        style="background: var(--surface2); color: var(--text); border: 1px solid var(--border); margin-left: 8px;">🔍 聚焦窗口</button>'''
     html += '''</div></div></div>
     <script>
         (function() {

@@ -122,6 +122,7 @@ def get_status(project_root):
         "running": running and (pid is None or _pid_alive(pid)),
         "heartbeat": hb.isoformat() if hb else None,
         "pid": pid,
+        "pid_alive": pid is not None and _pid_alive(pid),
     }
 
 
