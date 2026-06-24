@@ -4,6 +4,7 @@
 用法: python -m loop_engineering.scripts.task_cleanup <username>
 """
 import subprocess, sys, os
+from loop_engineering.task_id import extract_task_id_from_branch
 
 
 def run(cmd):
@@ -114,7 +115,7 @@ def main():
         return
 
     for short_name, info in merged:
-        task_id = short_name.replace(prefix, '')
+        task_id = extract_task_id_from_branch(short_name) or short_name.replace(prefix, '')
         print(f"清理: {short_name}")
 
         # 远程分支：先删远程再删本地

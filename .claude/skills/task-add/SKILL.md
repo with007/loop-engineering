@@ -24,6 +24,7 @@ user_invocable: true
    ```
 3. **去重检查**：grep `tasks.md` 中是否已存在相同描述的条目（忽略 `[ ]` / `[x]` 状态标记）。若存在则提示用户"任务已存在"并停止，不重复添加。
 4. **定位日期分组**：取当天日期，若 `## YYYY-MM-DD` 段落不存在则创建。
+5. **生成 task_id**：`python -c "from loop_engineering.task_id import generate_task_id; print(generate_task_id('<描述>'))"` 获取 md5 前 8 位。
 
 ## 模式 1: 直接添加
 
@@ -34,7 +35,7 @@ user_invocable: true
    - **怎么验证**：验收条件，如"编译 0 error"、"read_console 无异常"、"游戏内 X 功能正常"
 2. 在当天的日期分组末尾追加：
    ```markdown
-   - [ ] <描述> (→ <user>)
+   - [ ] <描述> (→ <user>) [<task_id>]
    ```
 3. 不 commit，留给用户自己提交
 
@@ -71,7 +72,7 @@ user_invocable: true
 
 ```markdown
 ## 已添加
-**条目**: `- [ ] <条目> (→ <user>)`
+**条目**: `- [ ] <条目> (→ <user>) [<task_id>]`
 **来源**: 直接添加 / OpenSpec 新建 / 已有 change
 **进度**: <change 已完成子任务数>/<总子任务数>（仅模式 3 有进度时显示）
 **队列**: 位置 N/M，前面还有 K 个待办任务

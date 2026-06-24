@@ -12,6 +12,9 @@
                 <div class="form-group" style="max-width: 160px;">
                     <input name="assignee" placeholder="负责人" required value="{{ agent_name }}">
                 </div>
+                <div class="form-group" style="max-width: 120px;">
+                    <input name="task_id" placeholder="task-id (可选)" pattern="[a-f0-9]{8}" title="8位十六进制">
+                </div>
                 <button type="submit" class="btn btn-primary">添加任务</button>
             </div>
         </form>

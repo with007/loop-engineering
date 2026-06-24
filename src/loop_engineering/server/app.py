@@ -9,6 +9,7 @@ import subprocess
 from fastapi import FastAPI, Request, Form, Query
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from loop_engineering.task_id import parse_task_id, extract_task_id_from_branch
 
 app = FastAPI(title="Loop Engineering Dashboard")
 
@@ -28,17 +29,6 @@ def _project_root(request: Request = None, q: str = None):
     return os.environ.get("LOOP_PROJECT_ROOT", os.getcwd())
 
 
-def _task_id_of(description):
-    """从描述生成 task_id（与 task_pick.py slugify 逻辑一致）."""
-    import hashlib
-    desc = re.split(r'\s+—\s+', description.strip())[0].strip().replace(' ', '-').lower()
-    result = re.sub(r'[^a-z0-9-]', '', desc)
-    result = re.sub(r'^-+|-+$', '', result)
-    if len(result) < 3:
-        result = 'task-' + hashlib.md5(desc.encode('utf-8')).hexdigest()[:8]
-    return result[:40]
-
-
 def _read_tasks(pr):
     tp = os.path.join(pr, "tasks.md")
     if not os.path.exists(tp):
@@ -50,7 +40,9 @@ def _read_tasks(pr):
         for line in r.stdout.strip().split("\n"):
             b = line.strip().lstrip("*+ ")
             if b:
-                agent_branches.add(b.split("/")[-1])  # 只取 task_id 部分
+                tid = extract_task_id_from_branch(b)
+                if tid:
+                    agent_branches.add(tid)
     except Exception:
         pass
 
@@ -79,8 +71,10 @@ def _read_tasks(pr):
                 rest = rest[:m_meta.start()].strip()
 
             desc = rest
-            tid = _task_id_of(desc)
-            if status_char == "x" and tid in agent_branches:
+            # 去掉 [task-id] 后缀（如果有），保持描述干净
+            desc = re.sub(r'\s+\[[a-f0-9]{8}\]\s*$', '', desc).strip()
+            tid = parse_task_id(line) or ""
+            if status_char == "x" and tid and tid in agent_branches:
                 status = "pending_merge"
             else:
                 s = {" ": "pending", "~": "in_progress", "x": "done"}
@@ -294,10 +288,12 @@ async def tasks_list(request: Request, project: str = Query(None), order: str = 
 
 
 @app.post("/tasks/add")
-async def tasks_add(request: Request, description: str = Form(...), assignee: str = Form(...), project: str = Form(None), order: str = Form("asc")):
+async def tasks_add(request: Request, description: str = Form(...), assignee: str = Form(...), task_id: str = Form(""), project: str = Form(None), order: str = Form("asc")):
     pr = _project_root(request, q=project)
     tp = os.path.join(pr, "tasks.md")
-    line = f"- [ ] {description} (→ {assignee})\n"
+    from loop_engineering.task_id import generate_task_id
+    tid = task_id if task_id and re.match(r'^[a-f0-9]{8}$', task_id) else generate_task_id(description)
+    line = f"- [ ] {description} (→ {assignee}) [{tid}]\n"
     if os.path.exists(tp):
         with open(tp, "a", encoding="utf-8") as f:
             f.write(line)

@@ -4,19 +4,14 @@ import os
 import re
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
+from loop_engineering.task_id import parse_task_id, extract_task_id_from_branch
 
 router = APIRouter()
 
 
-def _slugify(desc):
-    """与 task_pick.py 相同的 slugify 逻辑."""
-    import hashlib
-    desc = re.split(r'\s+—\s+', desc.strip())[0].strip().replace(' ', '-').lower()
-    result = re.sub(r'[^a-z0-9-]', '', desc)
-    result = re.sub(r'^-+|-+$', '', result)
-    if len(result) < 3:
-        result = 'task-' + hashlib.md5(desc.encode('utf-8')).hexdigest()[:8]
-    return result[:40]
+def _match_task_id(line, task_id):
+    """检查 tasks.md 行是否匹配给定 task_id."""
+    return parse_task_id(line) == task_id
 
 
 def _project_root(project: str = None):
@@ -98,9 +93,7 @@ def delete_task(task_id: str, project: str = Query(None)):
         m = re.match(r'^- \[(.)\]\s+(.+)', line)
         if m:
             rest = m.group(2).strip()
-            # 拆出描述（去掉 assignee 和 meta 部分）
-            desc = re.split(r'\s+[—(]', rest)[0].strip()
-            if _slugify(desc) == task_id:
+            if parse_task_id(line) == task_id:
                 deleted_line = line
                 continue
         new_lines.append(line)
@@ -118,7 +111,7 @@ def delete_task(task_id: str, project: str = Query(None)):
         r = subprocess.run('git branch --list "agent/*"', shell=True, capture_output=True, text=True, cwd=pr, timeout=5)
         for line in r.stdout.strip().split("\n"):
             b = line.strip().lstrip("*+ ")
-            if b.endswith(f"/{task_id}"):
+            if extract_task_id_from_branch(b) == task_id:
                 # detach 当前 worktree 再删分支
                 subprocess.run(f"git checkout --detach master 2>/dev/null", shell=True, cwd=pr, timeout=5)
                 subprocess.run(f"git branch -D {b}", shell=True, capture_output=True, cwd=pr, timeout=5)
@@ -150,9 +143,7 @@ def reset_task(task_id: str, project: str = Query(None)):
             continue
         if m.group(1) != "~":
             continue
-        rest = m.group(2).strip()
-        desc = re.split(r'\s+[—(]', rest)[0].strip()
-        if _slugify(desc) == task_id:
+        if parse_task_id(line) == task_id:
             # 将 [~] 替换为 [ ]
             lines[i] = line.replace("- [~] ", "- [ ] ", 1)
             found = True

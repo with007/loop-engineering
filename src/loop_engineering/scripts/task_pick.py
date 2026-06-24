@@ -2,11 +2,12 @@
 """
 从 tasks.md 选取下一个待办任务。
 用法: python -m loop_engineering.scripts.task_pick <username>
-输出: taskID=<id> desc=<描述> openSpec=<true|false>  或  NONE
+输出: taskID=<id> branch=<分支名> desc=<描述> openSpec=<true|false>  或  NONE
 
 从当前目录向上查找 loop-config.yaml 定位项目根目录。
 """
-import subprocess, sys, re, os, hashlib
+import subprocess, sys, re, os
+from loop_engineering.task_id import parse_task_id, make_branch_name
 
 
 def run(cmd):
@@ -24,16 +25,6 @@ def _find_project_root():
             break
         p = parent
     return os.getcwd()  # fallback
-
-
-def slugify(desc):
-    """从描述生成 task_id."""
-    desc = re.split(r'\s+—\s+', desc.strip())[0].strip().replace(' ', '-').lower()
-    result = re.sub(r'[^a-z0-9-]', '', desc)
-    result = re.sub(r'^-+|-+$', '', result)
-    if len(result) < 3:
-        result = 'task-' + hashlib.md5(desc.encode('utf-8')).hexdigest()[:8]
-    return result[:40]
 
 
 def main():
@@ -64,15 +55,17 @@ def main():
             continue
 
         desc = match.group(1).strip()
-        task_id = slugify(desc)
+        task_id = parse_task_id(line)
+        if not task_id:
+            continue  # 没有 [task-id] 的任务跳过
 
-        result = run(f"git ls-remote --heads origin agent/{whoami}/{task_id}")
-        if result.stdout.strip():
-            continue
+        # 检查是否已有同名 agent 分支（匹配 task_id 前缀）
+        result = run(f"git ls-remote --heads origin 'agent/{whoami}/{task_id}-*'")
 
         open_spec = "true" if os.path.isdir(os.path.join(project_root, f"openspec/changes/{task_id}")) else "false"
+        branch = make_branch_name(whoami, task_id, desc)
 
-        print(f"taskID={task_id} desc={desc} openSpec={open_spec}")
+        print(f"taskID={task_id} branch={branch} desc={desc} openSpec={open_spec}")
         return
 
     print("NONE")

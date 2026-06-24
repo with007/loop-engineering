@@ -4,8 +4,9 @@
 注意：不 commit、不 push、不 checkout —— 由调用方（SKILL.md Step 5）负责。
 用法: python -m loop_engineering.scripts.task_done <username> <taskID> [IMP序号] [VFY轮数]
 """
-import subprocess, sys, re, time, os, hashlib, json
+import subprocess, sys, re, time, os, json
 from datetime import datetime, timezone
+from loop_engineering.task_id import make_branch_name, parse_task_id
 
 
 def run(cmd):
@@ -32,15 +33,6 @@ def _default_branch():
     return "master"
 
 
-def slugify(desc):
-    desc = re.split(r'\s+—\s+', desc.strip())[0].strip().replace(' ', '-').lower()
-    result = re.sub(r'[^a-z0-9-]', '', desc)
-    result = re.sub(r'^-+|-+$', '', result)
-    if len(result) < 3:
-        result = 'task-' + hashlib.md5(desc.encode('utf-8')).hexdigest()[:8]
-    return result[:40]
-
-
 def update_tasks_md(task_id, whoami, imp_n, vfy_n, project_root):
     """更新 tasks.md: [ ]/[~] → [x] 并追加运行记录"""
     now = datetime.now().strftime("%H:%M")
@@ -54,7 +46,7 @@ def update_tasks_md(task_id, whoami, imp_n, vfy_n, project_root):
         with open(tasks_path, "w", encoding="utf-8") as f:
             for line in lines:
                 m = re.match(r'^(- \[[ ~]\]\s+)(.+?)(\s+\(→\s*' + re.escape(whoami) + r'\).*)$', line)
-                if m and slugify(m.group(2)) == task_id:
+                if m and parse_task_id(line) == task_id:
                     f.write(f"- [x] {m.group(2)}{m.group(3)}{record}\n")
                     updated = True
                 else:
@@ -75,7 +67,10 @@ def main():
     task_id = sys.argv[2]
     imp_n = sys.argv[3] if len(sys.argv) > 3 else "1"
     vfy_n = sys.argv[4] if len(sys.argv) > 4 else "1"
-    branch = f"agent/{whoami}/{task_id}"
+    # 查找实际分支名（agent/whoami/task_id-*）
+    r = run(f'git branch --list "agent/{whoami}/{task_id}-*"')
+    branches = [l.strip().replace('* ', '') for l in r.stdout.strip().split('\n') if l.strip()]
+    branch = branches[0] if branches else f"agent/{whoami}/{task_id}"
     diff_file = f"agent-{whoami}-{task_id}.diff"
 
     project_root = None

@@ -23,7 +23,7 @@ user_invocable: true
 
 根据用户输入判断：
 
-**情况 A: 用户给了完整分支名**（如 `agent/with/task-a35f86a5`）
+**情况 A: 用户给了完整分支名**（如 `agent/with/a1b2c3d4-翻译tab`）
 
 ```bash
 git branch -a | grep "<分支名>"
@@ -146,9 +146,9 @@ git status
 
 ```
 ## 合入完成 ✅
-**分支**: agent/with/task-a35f86a5
+**分支**: agent/with/a1b2c3d4-翻译tab
 **方式**: 直接 merge（工作区干净）
-**新增 commit**: ffac9d2 task-a35f86a5: 修复页面自动刷新导致输入被清空
+**新增 commit**: ffac9d2 a1b2c3d4: 翻译tab页标题为中文
 **当前状态**: master 已前进 2 个 commit，工作区干净
 ```
 
@@ -156,7 +156,7 @@ git status
 
 ```
 ## 合入完成 ✅
-**分支**: agent/with/task-a35f86a5
+**分支**: agent/with/a1b2c3d4-翻译tab
 **方式**: stash → merge（工作区改动与分支改动高度重叠，判断为同一件事）
 **新增 commit**: ffac9d2 task-a35f86a5: 修复页面自动刷新导致输入被清空
 **当前状态**: master 已前进 2 个 commit，工作区干净
@@ -166,9 +166,9 @@ git status
 
 ```
 ## 合入完成 ✅
-**分支**: agent/with/task-a35f86a5
+**分支**: agent/with/a1b2c3d4-翻译tab
 **方式**: commit 工作区 → merge（工作区改动与分支改动不重叠，判断为独立工作）
-**工作区备份**: commit abc1234 "WIP: 合入 agent/with/task-a35f86a5 前的本地改动"
+**工作区备份**: commit abc1234 "WIP: 合入 agent/with/a1b2c3d4-翻译tab 前的本地改动"
 **新增 commit**: ffac9d2 task-a35f86a5: 修复页面自动刷新导致输入被清空
 **当前状态**: master 已前进 2 个 commit，工作区干净
 ```
@@ -177,7 +177,7 @@ git status
 
 ```
 ## 合入遇到冲突 ⚠️
-**分支**: agent/with/task-a35f86a5
+**分支**: agent/with/a1b2c3d4-翻译tab
 **冲突文件**:
   - src/loop_engineering/server/templates/tasks.html
   - src/loop_engineering/server/templates/runs.html
