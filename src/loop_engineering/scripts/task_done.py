@@ -88,10 +88,11 @@ def main():
 
     print(f"=== 任务完成: {task_id} ===")
 
-    # 生成 diff（本地分支 vs 默认主分支）
+    # 生成 diff（写到主 worktree，方便人审查和 cleanup 清理）
     base = _default_branch()
-    run(f"git diff -U10 {base}...{branch} > {diff_file}")
-    print(f"Diff: {diff_file}")
+    diff_path = os.path.join(project_root, diff_file)
+    run(f"git diff -U10 {base}...{branch} > {diff_path}")
+    print(f"Diff: {diff_path}")
 
     # 更新 tasks.md
     update_tasks_md(task_id, whoami, imp_n, vfy_n, project_root)
@@ -99,11 +100,11 @@ def main():
     # 写 run log（结构化日志）
     _write_run_log(project_root, task_id, whoami, imp_n, vfy_n, branch)
 
-    # 弹通知（不用 shell=True，避免 cmd.exe 破坏含换行符的参数）
+    # 弹通知
     notify_path = os.path.join(project_root, ".claude", "scripts", "notify.py")
     subprocess.Popen(
         [sys.executable, notify_path, f"{branch} 合入",
-         f"编译/测试/审计通过\n点 OK 打开 {diff_file}", diff_file]
+         f"编译/测试/审计通过\n点 OK 打开 {diff_path}", diff_path]
     )
     time.sleep(2)
 
