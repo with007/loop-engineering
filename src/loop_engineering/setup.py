@@ -821,7 +821,7 @@ git checkout -B agent/$whoami/[任务ID] {{ default_ref }}
 
 ### Step 3: 派发实现子代理
 
-用 `Agent` 工具。子代理**自动继承**当前 worktree 上下文和 agent MCP。
+用 `Agent` 工具。子代理**不会自动继承** worktree CWD — 必须在 prompt 中显式 cd 到 `{{ agent_dir }}`。
 
 **openSpec=true** 时：
 
@@ -829,6 +829,15 @@ git checkout -B agent/$whoami/[任务ID] {{ default_ref }}
 ## 任务（OpenSpec）
 taskID: <taskID>
 OpenSpec 路径: openspec/changes/<taskID>/
+
+## 工作目录
+你必须在 agent worktree 工作：**{{ agent_dir }}**（不是主工程目录）。
+
+```bash
+cd {{ agent_dir }}
+git checkout agent/<whoami>/<taskID>
+pwd  # 必须输出 {{ agent_dir }}
+```
 
 ## 你的工作
 1. 读 openspec/changes/<taskID>/proposal.md 理解目标与范围
@@ -858,6 +867,15 @@ agent/<whoami>/<taskID>
 ## 任务
 <描述 + 验收条件，来自 tasks.md>
 
+## 工作目录
+你必须在 agent worktree 工作：**{{ agent_dir }}**（不是主工程目录）。
+
+```bash
+cd {{ agent_dir }}
+git checkout agent/<whoami>/<taskID>
+pwd  # 必须输出 {{ agent_dir }}
+```
+
 ## 分支
 agent/<whoami>/<taskID>
 
@@ -873,7 +891,7 @@ agent/<whoami>/<taskID>
 
 ### Step 4: 派发验证子代理
 
-用 `Agent` 工具，独立上下文，只能验证不能改代码。同样继承 worktree 上下文。
+用 `Agent` 工具，独立上下文，只能验证不能改代码。必须显式 cd 到 agent worktree。
 
 **openSpec=true** 时：
 
@@ -881,6 +899,15 @@ agent/<whoami>/<taskID>
 ## 任务（OpenSpec）
 taskID: <taskID>
 OpenSpec 路径: openspec/changes/<taskID>/
+
+## 工作目录
+你必须在 agent worktree 工作：**{{ agent_dir }}**（不是主工程目录）。
+
+```bash
+cd {{ agent_dir }}
+git log --oneline agent/<whoami>/<taskID> -5  # 确认分支存在
+pwd  # 必须输出 {{ agent_dir }}
+```
 
 ## 变更
 分支: agent/<whoami>/<taskID>
@@ -921,6 +948,15 @@ implementer 修复说明: <...>
 ```
 ## 任务
 <描述 + 验收条件，来自 tasks.md>
+
+## 工作目录
+你必须在 agent worktree 工作：**{{ agent_dir }}**（不是主工程目录）。
+
+```bash
+cd {{ agent_dir }}
+git log --oneline agent/<whoami>/<taskID> -5  # 确认分支存在
+pwd  # 必须输出 {{ agent_dir }}
+```
 
 ## 变更
 分支: agent/<whoami>/<taskID>
