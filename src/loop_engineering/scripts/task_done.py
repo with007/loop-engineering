@@ -81,7 +81,12 @@ def main():
     print(f"=== 任务完成: {task_id} ===")
 
     # 生成 diff（本地分支 vs origin/master，push 前也能用）
-    run(f"git diff -U10 origin/master...{branch} > {diff_file}")
+    # 检查 origin/master 是否存在，不存在则用 master
+    base_ref = "origin/master"
+    r = run("git rev-parse --verify origin/master")
+    if r.returncode != 0:
+        base_ref = "master"
+    run(f"git diff -U10 {base_ref}...{branch} > {diff_file}")
     print(f"Diff: {diff_file}")
 
     # 更新 tasks.md

@@ -1,1 +1,1 @@
-/loop 2m $task-runner
+调用 Skill("loop", args="2m $task-runner") 启动定时循环执行 task-runner。
