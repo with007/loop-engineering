@@ -88,17 +88,13 @@ python -m loop_engineering.scripts.task_cleanup $whoami
 
 ### 主工程模式（在主 worktree 被调用）
 
-**0b. 确保 agent worktree 存在**（首次或手动清理后重建）：
+**0b. 确认 agent worktree 存在**（由 `loop setup` 创建）：
 
 ```bash
 ls D:/work_pvp-agent/loop-engineering/.git 2>/dev/null || {
-  mkdir -p D:/work_pvp-agent
-  cd D:/work_pvp/loop-engineering
-  git fetch origin
-  git worktree prune
-  git worktree add D:/work_pvp-agent/loop-engineering master
+  echo "Agent worktree 不存在，请先运行: loop setup"
+  exit 1
 }
-
 ```
 
 **0c. 进入 agent worktree**：
@@ -311,17 +307,20 @@ implementer 修复说明: <...>
 
 **PASS**:
 1. 检查 `git status`，确认改动文件合理
-2. 运行收尾脚本（更新主工程 tasks.md: [~]→[x]、生成 diff、弹通知）：
-   ```bash
-   python -m loop_engineering.scripts.task_done $whoami [任务ID] [IMP序号] [VFY轮数] --project-root D:/work_pvp/loop-engineering
-   ```
-3. 提交并推送：
+2. 提交（先生成 commit，diff 才有内容）：
    ```bash
    git add <改动的源文件>
    git commit -m "[任务ID] 完成"
+   ```
+3. 运行收尾脚本（更新主工程 tasks.md: [~]→[x]、生成 diff、弹通知）：
+   ```bash
+   python -m loop_engineering.scripts.task_done $whoami [任务ID] [IMP序号] [VFY轮数] --project-root D:/work_pvp/loop-engineering
+   ```
+4. 推送：
+   ```bash
    git push origin agent/$whoami/[任务ID] 2>/dev/null || echo "无 remote，跳过推送，保留分支待合入"
    ```
-4. 清理本地分支（仅推送成功后才删）：
+5. 清理本地分支（仅推送成功后才删）：
    ```bash
    if git remote -v | grep -q origin; then
      git checkout --detach master
@@ -363,7 +362,7 @@ implementer 修复说明: <...>
 
 ### 初始创建（一次性）
 
-由 Step 0a 自动处理。
+由 `loop setup` 处理。
 
 ### PackageCache 共享（节省 1.1GB）
 
