@@ -12,7 +12,6 @@ import platform
 from pathlib import Path
 
 from . import config as cfg
-from . import git_utils
 
 
 def _run(cmd, cwd=None, check=False):
@@ -75,9 +74,10 @@ def _create_single_worktree(source_repo, target_dir, label):
         print(f"  [OK] {label} worktree 已存在: {target_dir}")
         # 同步
         try:
-            git_utils.fetch_with_retry(target_dir, "origin")
-            _run("git fetch origin --prune", cwd=target_dir)
-        except RuntimeError as e:
+            rc, _, _ = _run("git fetch origin --prune", cwd=target_dir)
+            if rc != 0:
+                raise RuntimeError("fetch failed")
+        except Exception as e:
             print(f"  [OFFLINE] fetch 失败，跳过同步: {str(e)[:120]}")
         return
 
@@ -86,8 +86,10 @@ def _create_single_worktree(source_repo, target_dir, label):
     # 尝试在线 fetch
     online = True
     try:
-        git_utils.fetch_with_retry(source_repo, "origin")
-    except RuntimeError as e:
+        rc, _, _ = _run("git fetch origin", cwd=source_repo)
+        if rc != 0:
+            raise RuntimeError("fetch failed")
+    except Exception as e:
         print(f"  [OFFLINE] git fetch 失败: {str(e)[:120]}")
         online = False
 
@@ -412,8 +414,10 @@ def sync_to_agent(config):
 
     # 同步前先 fetch 确保 agent worktree 有最新 refs
     try:
-        git_utils.fetch_with_retry(agent_dir, "origin")
-    except RuntimeError as e:
+        rc, _, _ = _run("git fetch origin", cwd=agent_dir)
+        if rc != 0:
+            raise RuntimeError("fetch failed")
+    except Exception as e:
         print(f"  [OFFLINE] fetch 失败，仍继续同步文件: {str(e)[:120]}")
 
     for fname in ["loop-config.yaml", ".mcp.json"]:
