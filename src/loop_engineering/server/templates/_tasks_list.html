@@ -52,7 +52,7 @@
                         hx-put="/api/tasks/{{ t.task_id }}/reset"
                         hx-swap="none"
                         hx-confirm="将「{{ t.description | truncate(40) }}」重置为待办？这会让 task-runner 重新实现此任务。"
-                        hx-on::after-request="htmx.trigger('#tasks-list-wrap', 'htmx:trigger')"
+                        hx-on::after-request="if(event.detail.successful) htmx.ajax('GET', '/tasks/list', {target: '#tasks-list-wrap'})"
                         style="background: transparent; color: var(--active); border: 1px solid var(--active); opacity: 0.6; font-size: 11px; padding: 2px 8px;"
                         title="重置为待办">
                     ↩
