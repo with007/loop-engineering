@@ -1,81 +1,79 @@
-<!-- Task list partial: progress bar + task list, with auto-refresh -->
-<div id="tasks-list-wrap" hx-get="/tasks/list" hx-trigger="every 30s" hx-swap="outerHTML">
-    <!-- 进度 bar -->
-    {% set total = tasks | length %}
-    {% if total > 0 %}
-    {% set done = tasks | selectattr('status', 'in', ['done', 'pending_merge']) | list | length %}
-    {% set active = tasks | selectattr('status', 'equalto', 'in_progress') | list | length %}
-    {% set pending = tasks | selectattr('status', 'equalto', 'pending') | list | length %}
-    <div class="card" style="margin-bottom: 20px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <span style="font-weight: 600;">进度</span>
-            <span style="color: var(--muted); font-size: 13px;">{{ done }}/{{ total }} 完成</span>
+<!-- Task list partial: filter controls + items area -->
+<div id="tasks-list-wrap">
+    <!-- 过滤 & 排序控件 — 不参与轮询 -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap;">
+        <div style="display: flex; gap: 6px; align-items: center;">
+            <span style="font-size: 12px; color: var(--dim); margin-right: 4px;">状态:</span>
+            {% set active_statuses = status.split(",") %}
+            {% for s in [("pending", "待办"), ("in_progress", "进行中"), ("done", "已完成")] %}
+            {% set skey = s[0] %}
+            {% set slabel = s[1] %}
+            {% set is_active = skey in active_statuses %}
+            <button class="status-chip{% if is_active %} chip-active{% endif %}"
+                    data-status="{{ skey }}"
+                    style="font-size: 12px; padding: 4px 12px; border-radius: 16px; cursor: pointer;
+                           {% if is_active %}
+                           background: var(--active); color: #fff; border: 1px solid var(--active);
+                           {% else %}
+                           background: transparent; color: var(--dim); border: 1px solid var(--border);
+                           {% endif %}
+                           transition: all 0.15s;">
+                {{ slabel }}
+            </button>
+            {% endfor %}
         </div>
-        <div class="progress-bar" style="height: 8px;">
-            <div class="progress-fill pass" style="width: {{ (done / total * 100) | round(1) }}%"></div>
-        </div>
-        <div style="display: flex; gap: 16px; margin-top: 8px; font-size: 12px; color: var(--dim);">
-            <span class="badge badge-待办">{{ pending }} 待办</span>
-            <span class="badge badge-active">{{ active }} 进行中</span>
-            <span class="badge badge-pass">{{ done }} 完成</span>
-        </div>
+        <button class="sort-btn"
+                style="font-size: 12px; padding: 4px 12px; border-radius: 16px; cursor: pointer;
+                       background: transparent; color: var(--dim); border: 1px solid var(--border);
+                       transition: all 0.15s;">
+            {% if order == "desc" %}↓ 新→旧{% else %}↑ 旧→新{% endif %}
+        </button>
     </div>
-    {% endif %}
 
-    <!-- Task list -->
-    {% if tasks %}
-    {% for t in tasks %}
-    <div class="card" style="padding: 16px 20px; margin-bottom: 8px;">
-        <div style="display: flex; align-items: flex-start; gap: 14px;">
-            <div class="status-icon {% if t.status in ('done', 'pending_merge') %}status-done{% elif t.status == 'in_progress' %}status-active-label{% else %}status-pending-label{% endif %}">
-                {% if t.status in ('done', 'pending_merge') %}&#x2713;{% elif t.status == 'in_progress' %}&#x223C;{% else %}&#x2014;{% endif %}
-            </div>
-            <div style="flex: 1;">
-                <div style="font-size: 15px; font-weight: 500;">{{ t.description | truncate(120) }}</div>
-                <div style="display: flex; gap: 12px; margin-top: 6px; font-size: 12px; color: var(--dim);">
-                    {% if t.assignee %}
-                    <span>分配给： <strong style="color: var(--text);">{{ t.assignee }}</strong></span>
-                    {% endif %}
-                    {% if t.meta %}
-                    <span>{{ t.meta }}</span>
-                    {% endif %}
-                </div>
-            </div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-                {% if t.status == 'done' %}
-                <span class="badge badge-pass">已完成</span>
-                {% elif t.status == 'pending_merge' %}
-                <span class="badge badge-active">已完成（分支待合入）</span>
-                {% elif t.status == 'in_progress' %}
-                <span class="badge badge-active">进行中</span>
-                <button class="btn btn-sm"
-                        hx-put="/api/tasks/{{ t.task_id }}/reset"
-                        hx-swap="none"
-                        hx-confirm="将「{{ t.description | truncate(40) }}」重置为待办？这会让 task-runner 重新实现此任务。"
-                        hx-on::after-request="if(event.detail.successful) htmx.ajax('GET', '/tasks/list', {target: '#tasks-list-wrap'})"
-                        style="background: transparent; color: var(--active); border: 1px solid var(--active); opacity: 0.6; font-size: 11px; padding: 2px 8px;"
-                        title="重置为待办">
-                    ↩
-                </button>
-                {% else %}
-                <span class="badge badge-待办">待办</span>
-                {% endif %}
-                <button class="btn btn-sm"
-                        hx-delete="/api/tasks/{{ t.task_id }}?task_desc={{ t.description | urlencode }}"
-                        hx-swap="none"
-                        hx-confirm="删除任务「{{ t.description | truncate(40) }}」？对应的 agent 分支也会被删除。"
-                        hx-on::after-request="if(event.detail.successful) htmx.ajax('GET', '/tasks/list', {target: '#tasks-list-wrap'})"
-                        style="background: transparent; color: var(--fail); border: 1px solid var(--fail); opacity: 0.6; font-size: 12px;">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                </button>
-            </div>
-        </div>
-    </div>
-    {% endfor %}
-    {% else %}
-    <div class="card" style="text-align: center; padding: 60px 20px; color: var(--dim);">
-        <p style="font-size: 16px;">暂无任务</p>
-        <p style="margin-top: 4px;">在上方添加第一个任务</p>
-    </div>
-    {% endif %}
+    {% include "_tasks_items.html" %}
 </div>
+
+{# Event delegation: bound once on document, survives all htmx DOM swaps #}
+<script>
+if (!window._tasksFilterBound) {
+    window._tasksFilterBound = true;
+    document.addEventListener('click', function(e) {
+        var wrap = document.getElementById('tasks-list-wrap');
+        if (!wrap) return;
+
+        // Read current state from #tasks-items hx-get URL (always up-to-date)
+        var items = document.getElementById('tasks-items');
+        if (!items) return;
+        var hxUrl = items.getAttribute('hx-get') || '';
+        var params = new URLSearchParams(hxUrl.split('?')[1] || '');
+        var currentOrder = params.get('order') || 'asc';
+        var currentStatus = params.get('status') || 'pending,in_progress';
+
+        // Status chip click
+        var chip = e.target.closest('.status-chip');
+        if (chip) {
+            var skey = chip.getAttribute('data-status');
+            var parts = currentStatus.split(',').filter(function(s) { return s; });
+            var idx = parts.indexOf(skey);
+            if (idx >= 0) {
+                if (parts.length <= 1) return; // keep at least one
+                parts.splice(idx, 1);
+            } else {
+                parts.push(skey);
+            }
+            var newStatus = parts.join(',');
+            htmx.ajax('GET', '/tasks/list?order=' + currentOrder + '&status=' + newStatus,
+                      {target: '#tasks-list-wrap'});
+            return;
+        }
+
+        // Sort button click
+        if (e.target.closest('.sort-btn')) {
+            var newOrder = (currentOrder === 'desc') ? 'asc' : 'desc';
+            htmx.ajax('GET', '/tasks/list?order=' + newOrder + '&status=' + currentStatus,
+                      {target: '#tasks-list-wrap'});
+            return;
+        }
+    });
+}
+</script>

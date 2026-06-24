@@ -15,6 +15,8 @@
                 <div class="form-group" style="max-width: 120px;">
                     <input name="task_id" placeholder="task-id (可选)" pattern="[a-f0-9]{8}" title="8位十六进制">
                 </div>
+                <input type="hidden" name="order" value="{{ order }}">
+                <input type="hidden" name="status" value="{{ status }}">
                 <button type="submit" class="btn btn-primary">添加任务</button>
             </div>
         </form>

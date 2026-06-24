@@ -258,9 +258,14 @@ async def dashboard(request: Request, project: str = Query(None)):
 
 
 @app.get("/tasks")
-async def tasks_page(request: Request, project: str = Query(None), order: str = Query("asc")):
+async def tasks_page(request: Request, project: str = Query(None), order: str = Query("asc"), status: str = Query("pending,in_progress")):
     pr = _project_root(request, q=project)
     tasks = _read_tasks(pr)
+    allowed = [s.strip() for s in status.split(",") if s.strip()]
+    # "done" filter also includes "pending_merge" (completed but branch not yet merged)
+    if "done" in allowed:
+        allowed.append("pending_merge")
+    tasks = [t for t in tasks if t["status"] in allowed]
     if order == "desc":
         tasks = list(reversed(tasks))
     return _render(request, "tasks.html", {
@@ -269,14 +274,20 @@ async def tasks_page(request: Request, project: str = Query(None), order: str = 
         "agent_name": _agent_name(pr),
         "current_root": pr,
         "order": order,
+        "status": status,
     })
 
 
 @app.get("/tasks/list")
-async def tasks_list(request: Request, project: str = Query(None), order: str = Query("asc")):
-    """返回仅任务列表的局部片段（供 polling 和表单提交后刷新）."""
+async def tasks_list(request: Request, project: str = Query(None), order: str = Query("asc"), status: str = Query("pending,in_progress")):
+    """返回完整任务区域（控件 + 列表），供控件操作后刷新."""
     pr = _project_root(request, q=project)
     tasks = _read_tasks(pr)
+    allowed = [s.strip() for s in status.split(",") if s.strip()]
+    # "done" filter also includes "pending_merge" (completed but branch not yet merged)
+    if "done" in allowed:
+        allowed.append("pending_merge")
+    tasks = [t for t in tasks if t["status"] in allowed]
     if order == "desc":
         tasks = list(reversed(tasks))
     return templates.TemplateResponse(request, "_tasks_list.html", {
@@ -284,11 +295,32 @@ async def tasks_list(request: Request, project: str = Query(None), order: str = 
         "tasks": tasks,
         "agent_name": _agent_name(pr),
         "order": order,
+        "status": status,
+    })
+
+
+@app.get("/tasks/list-items")
+async def tasks_list_items(request: Request, project: str = Query(None), order: str = Query("asc"), status: str = Query("pending,in_progress")):
+    """返回仅任务条目（进度条 + 卡片），供 30s 轮询刷新."""
+    pr = _project_root(request, q=project)
+    tasks = _read_tasks(pr)
+    allowed = [s.strip() for s in status.split(",") if s.strip()]
+    if "done" in allowed:
+        allowed.append("pending_merge")
+    tasks = [t for t in tasks if t["status"] in allowed]
+    if order == "desc":
+        tasks = list(reversed(tasks))
+    return templates.TemplateResponse(request, "_tasks_items.html", {
+        "request": request,
+        "tasks": tasks,
+        "agent_name": _agent_name(pr),
+        "order": order,
+        "status": status,
     })
 
 
 @app.post("/tasks/add")
-async def tasks_add(request: Request, description: str = Form(...), assignee: str = Form(...), task_id: str = Form(""), project: str = Form(None), order: str = Form("asc")):
+async def tasks_add(request: Request, description: str = Form(...), assignee: str = Form(...), task_id: str = Form(""), project: str = Form(None), order: str = Form("asc"), status: str = Form("pending,in_progress")):
     pr = _project_root(request, q=project)
     tp = os.path.join(pr, "tasks.md")
     from loop_engineering.task_id import generate_task_id
@@ -302,6 +334,11 @@ async def tasks_add(request: Request, description: str = Form(...), assignee: st
             f.write("# Tasks\n\n")
             f.write(line)
     tasks = _read_tasks(pr)
+    allowed = [s.strip() for s in status.split(",") if s.strip()]
+    # "done" filter also includes "pending_merge" (completed but branch not yet merged)
+    if "done" in allowed:
+        allowed.append("pending_merge")
+    tasks = [t for t in tasks if t["status"] in allowed]
     if order == "desc":
         tasks = list(reversed(tasks))
     return templates.TemplateResponse(request, "_tasks_list.html", {
@@ -309,6 +346,7 @@ async def tasks_add(request: Request, description: str = Form(...), assignee: st
         "tasks": tasks,
         "agent_name": _agent_name(pr),
         "order": order,
+        "status": status,
     })
 
 
