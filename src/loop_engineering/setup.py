@@ -12,6 +12,7 @@ import platform
 from pathlib import Path
 
 from . import config as cfg
+from . import git_utils
 
 
 def _run(cmd, cwd=None, check=False):
@@ -68,17 +69,38 @@ def _default_branch(repo_path):
 
 
 def _create_single_worktree(source_repo, target_dir, label):
-    """创建单个 git worktree."""
+    """创建单个 git worktree。"""
     # git worktree 中 .git 是文件（不是目录）
     if os.path.exists(os.path.join(target_dir, ".git")):
         print(f"  [OK] {label} worktree 已存在: {target_dir}")
         # 同步
-        _run("git fetch origin --prune", cwd=target_dir)
+        try:
+            git_utils.fetch_with_retry(target_dir, "origin")
+            _run("git fetch origin --prune", cwd=target_dir)
+        except RuntimeError as e:
+            print(f"  [OFFLINE] fetch 失败，跳过同步: {str(e)[:120]}")
         return
 
     print(f"  创建 {label} worktree ...")
-    _run("git fetch origin", cwd=source_repo)
+
+    # 尝试在线 fetch
+    online = True
+    try:
+        git_utils.fetch_with_retry(source_repo, "origin")
+    except RuntimeError as e:
+        print(f"  [OFFLINE] git fetch 失败: {str(e)[:120]}")
+        online = False
+
     default_ref = _default_branch(source_repo)
+
+    if not online:
+        # 离线模式：验证本地是否有可用 ref
+        code, _, _ = _run(f"git rev-parse --verify {default_ref}", cwd=source_repo)
+        if code != 0:
+            raise RuntimeError(
+                "无法连接远程且本地无可用分支 (master/main)。请检查网络后重试。"
+            )
+        print(f"  [OFFLINE] 使用本地分支: {default_ref}")
 
     # remote ref 可以直接用；local branch 需要 --detach（避免 already checked out）
     if default_ref.startswith("origin/"):
@@ -320,12 +342,12 @@ def render_skill_md(config):
 
     rendered = template.render(
         project_name=project_name,
-        project_root=project_root,
-        agent_workspace=agent_workspace,
-        agent_dir=agent_dir,
+        project_root=project_root.replace("\\", "/"),
+        agent_workspace=agent_workspace.replace("\\", "/"),
+        agent_dir=agent_dir.replace("\\", "/"),
         agent_port=agent_port,
         agent_name=agent_name,
-        data_repo_path=data_repo_path,
+        data_repo_path=data_repo_path.replace("\\", "/"),
         data_repo_name=data_repo_name,
         has_data_repo=bool(data_repo_path),
         default_ref=_default_branch(project_root),
@@ -387,6 +409,12 @@ def sync_to_agent(config):
     if not os.path.isdir(agent_dir):
         print(f"  [FAIL] Agent worktree 不存在: {agent_dir}")
         return
+
+    # 同步前先 fetch 确保 agent worktree 有最新 refs
+    try:
+        git_utils.fetch_with_retry(agent_dir, "origin")
+    except RuntimeError as e:
+        print(f"  [OFFLINE] fetch 失败，仍继续同步文件: {str(e)[:120]}")
 
     for fname in ["loop-config.yaml", ".mcp.json"]:
         src = os.path.join(project_root, fname)
@@ -646,7 +674,7 @@ whoami = $(python -c "import yaml; print(yaml.safe_load(open('loop-config.yaml')
 **0a. 判断启动位置**：
 
 ```bash
-if echo "$(pwd)" | grep -q "{{ project_name | lower }}-agent"; then
+if echo "$(pwd)" | grep -q "{{ agent_workspace.replace('\\', '/').rstrip('/').split('/')[-1] }}"; then
   echo "MODE=AGENT"
 else
   echo "MODE=MAIN"
@@ -706,26 +734,25 @@ ls {{ agent_workspace }}/{{ data_repo_name }}/.git 2>/dev/null || {
 {% endif %}
 ```
 
-**0c. 同步 agent worktree**：
+**0c. 进入 agent worktree**：
+
+调用 `EnterWorktree(path="{{ agent_dir }}")`。
+
+此后会话切换到 agent worktree，`.mcp.json` → MCP {{ agent_port }}。子代理自动继承。
+
+**0d. 同步 agent worktree**：
 
 ```bash
-cd {{ agent_dir }}
 git fetch origin --prune
 git checkout --detach {{ default_ref }} 2>/dev/null
 git branch --list "agent/*" | xargs -r git branch -D 2>/dev/null
 ```
 
-**0d. 检查已合入的远程分支**：
+**0e. 检查已合入的远程分支**：
 
 ```bash
 python -m loop_engineering.scripts.task_cleanup $whoami
 ```
-
-**0e. 进入 agent worktree**：
-
-调用 `EnterWorktree(path="{{ agent_dir }}")`。
-
-此后会话切换到 agent worktree，`.mcp.json` → MCP {{ agent_port }}。子代理自动继承。
 
 > **注意**：Step 6 完成后必须 `ExitWorktree(action="keep")` 回到主 worktree。
 
@@ -754,6 +781,33 @@ python -m loop_engineering.scripts.task_pick $whoami --project-root {{ project_r
 - 输出格式: `taskID=xxx desc=... openSpec=true|false`
 - `openSpec=true` → 任务关联 `openspec/changes/<taskID>/`，implementer 按 OpenSpec apply 流程处理
 - 无匹配则 `NONE` → `ExitWorktree(action="keep")` → 停止。
+
+
+
+### Step 1.5: 防重入检查
+
+如果 agent 分支已存在且有改动（commit 或工作区），说明上一轮已在执行，**跳过 Step 2**：
+
+```bash
+if git branch --list "agent/$whoami/$taskID" | grep -q .; then
+  commits=$(git rev-list --count {{ default_ref }}..agent/$whoami/$taskID 2>/dev/null || echo 0)
+  if [ "$commits" -gt 0 ]; then
+    echo "TASK_IN_PROGRESS_COMMITS=$commits"
+    # 跳到 Step 4 验证
+  elif ! git diff --quiet {{ default_ref }}..agent/$whoami/$taskID 2>/dev/null; then
+    echo "TASK_IN_PROGRESS_DIRTY"
+    # implementer 还在改工作区，等待
+  else
+    echo "TASK_BRANCH_EMPTY"
+    # 分支空，implementer 刚启动，等待
+  fi
+  # 以上任一情况都跳过 fork，输出状态后结束本轮（等下一轮 cron 继续检查）
+  exit 0
+fi
+```
+
+- `TASK_IN_PROGRESS_COMMITS` → implementer 已完成，直接进入 Step 4（验证）
+- `TASK_IN_PROGRESS_DIRTY` / `TASK_BRANCH_EMPTY` → implementer 还在工作，等待下一轮 cron
 
 ### Step 2: Fork 分支 + 标记进行中
 

@@ -14,8 +14,8 @@ user_invocable: true
 
 | 项目 | 路径 |
 |------|------|
-| 主工作树 | `D:\work_pvp\loop-engineering` |
-| **Agent 工作树** | `D:/work_pvp-agent\loop-engineering` |
+| 主工作树 | `D:/work_pvp/loop-engineering` |
+| **Agent 工作树** | `D:/work_pvp-agent/loop-engineering` |
 
 | Agent MCP 端口 | HTTP `9080` |
 
@@ -48,7 +48,7 @@ whoami = $(python -c "import yaml; print(yaml.safe_load(open('loop-config.yaml')
 **0a. 判断启动位置**：
 
 ```bash
-if echo "$(pwd)" | grep -q "loop-engineering-agent"; then
+if echo "$(pwd)" | grep -q "work_pvp-agent"; then
   echo "MODE=AGENT"
 else
   echo "MODE=MAIN"
@@ -91,36 +91,35 @@ python -m loop_engineering.scripts.task_cleanup $whoami
 **0b. 确保 agent worktree 存在**（首次或手动清理后重建）：
 
 ```bash
-ls D:/work_pvp-agent\loop-engineering/.git 2>/dev/null || {
+ls D:/work_pvp-agent/loop-engineering/.git 2>/dev/null || {
   mkdir -p D:/work_pvp-agent
-  cd D:\work_pvp\loop-engineering
+  cd D:/work_pvp/loop-engineering
   git fetch origin
   git worktree prune
-  git worktree add D:/work_pvp-agent\loop-engineering master
+  git worktree add D:/work_pvp-agent/loop-engineering master
 }
 
 ```
 
-**0c. 同步 agent worktree**：
+**0c. 进入 agent worktree**：
+
+调用 `EnterWorktree(path="D:/work_pvp-agent/loop-engineering")`。
+
+此后会话切换到 agent worktree，`.mcp.json` → MCP 9080。子代理自动继承。
+
+**0d. 同步 agent worktree**：
 
 ```bash
-cd D:/work_pvp-agent\loop-engineering
 git fetch origin --prune
 git checkout --detach master 2>/dev/null
 git branch --list "agent/*" | xargs -r git branch -D 2>/dev/null
 ```
 
-**0d. 检查已合入的远程分支**：
+**0e. 检查已合入的远程分支**：
 
 ```bash
 python -m loop_engineering.scripts.task_cleanup $whoami
 ```
-
-**0e. 进入 agent worktree**：
-
-调用 `EnterWorktree(path="D:/work_pvp-agent\loop-engineering")`。
-
-此后会话切换到 agent worktree，`.mcp.json` → MCP 9080。子代理自动继承。
 
 > **注意**：Step 6 完成后必须 `ExitWorktree(action="keep")` 回到主 worktree。
 
@@ -144,11 +143,37 @@ throttle=$(python -c "from loop_engineering.control import get_throttle; print(g
 **选任务**：
 
 ```bash
-python -m loop_engineering.scripts.task_pick $whoami --project-root D:\work_pvp\loop-engineering
+python -m loop_engineering.scripts.task_pick $whoami --project-root D:/work_pvp/loop-engineering
 ```
 - 输出格式: `taskID=xxx desc=... openSpec=true|false`
 - `openSpec=true` → 任务关联 `openspec/changes/<taskID>/`，implementer 按 OpenSpec apply 流程处理
 - 无匹配则 `NONE` → `ExitWorktree(action="keep")` → 停止。
+
+
+### Step 1.5: 防重入检查
+
+如果 agent 分支已存在且有改动（commit 或工作区），说明上一轮已在执行，**跳过 Step 2**：
+
+```bash
+if git branch --list "agent/$whoami/$taskID" | grep -q .; then
+  commits=$(git rev-list --count master..agent/$whoami/$taskID 2>/dev/null || echo 0)
+  if [ "$commits" -gt 0 ]; then
+    echo "TASK_IN_PROGRESS_COMMITS=$commits"
+    # 跳到 Step 4 验证
+  elif ! git diff --quiet master..agent/$whoami/$taskID 2>/dev/null; then
+    echo "TASK_IN_PROGRESS_DIRTY"
+    # implementer 还在改工作区，等待
+  else
+    echo "TASK_BRANCH_EMPTY"
+    # 分支空，implementer 刚启动，等待
+  fi
+  # 以上任一情况都跳过 fork，输出状态后结束本轮（等下一轮 cron 继续检查）
+  exit 0
+fi
+```
+
+- `TASK_IN_PROGRESS_COMMITS` → implementer 已完成，直接进入 Step 4（验证）
+- `TASK_IN_PROGRESS_DIRTY` / `TASK_BRANCH_EMPTY` → implementer 还在工作，等待下一轮 cron
 
 ### Step 2: Fork 分支 + 标记进行中
 
@@ -288,7 +313,7 @@ implementer 修复说明: <...>
 1. 检查 `git status`，确认改动文件合理
 2. 运行收尾脚本（更新主工程 tasks.md: [~]→[x]、生成 diff、弹通知）：
    ```bash
-   python -m loop_engineering.scripts.task_done $whoami [任务ID] [IMP序号] [VFY轮数] --project-root D:\work_pvp\loop-engineering
+   python -m loop_engineering.scripts.task_done $whoami [任务ID] [IMP序号] [VFY轮数] --project-root D:/work_pvp/loop-engineering
    ```
 3. 提交并推送：
    ```bash
@@ -344,15 +369,15 @@ implementer 修复说明: <...>
 
 ```bash
 # 首次创建 worktree 后执行一次
-mkdir -p D:/work_pvp-agent\loop-engineering/Library
-cmd.exe /c "mklink /J D:/work_pvp-agent\loop-engineering\Library\PackageCache D:\work_pvp\loop-engineering\Library\PackageCache"
+mkdir -p D:/work_pvp-agent/loop-engineering/Library
+cmd.exe /c "mklink /J D:/work_pvp-agent/loop-engineering\Library\PackageCache D:/work_pvp/loop-engineering\Library\PackageCache"
 ```
 
 ### 手动清理
 
 ```bash
-cd D:\work_pvp\loop-engineering
-git worktree remove --force D:/work_pvp-agent\loop-engineering
+cd D:/work_pvp/loop-engineering
+git worktree remove --force D:/work_pvp-agent/loop-engineering
 git worktree prune
 ```
 
