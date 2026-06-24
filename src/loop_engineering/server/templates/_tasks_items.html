@@ -46,8 +46,20 @@
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
                 {% if t.status == 'done' %}
+                <button class="btn btn-sm"
+                        onclick="viewReport('{{ t.task_id }}')"
+                        style="background: transparent; color: var(--text); border: 1px solid var(--border); opacity: 0.6; font-size: 11px; padding: 2px 8px;"
+                        title="查看报告">
+                    📋
+                </button>
                 <span class="badge badge-pass">已完成</span>
                 {% elif t.status == 'pending_merge' %}
+                <button class="btn btn-sm"
+                        onclick="viewReport('{{ t.task_id }}')"
+                        style="background: transparent; color: var(--text); border: 1px solid var(--border); opacity: 0.6; font-size: 11px; padding: 2px 8px;"
+                        title="查看报告">
+                    📋
+                </button>
                 <span class="badge badge-active">已完成（分支待合入）</span>
                 {% elif t.status == 'in_progress' %}
                 <span class="badge badge-active">进行中</span>
@@ -81,4 +93,27 @@
         <p style="margin-top: 4px;">尝试调整上方过滤条件</p>
     </div>
     {% endif %}
+</div>
+
+<!-- Report Modal -->
+<div x-data="{ open: false, title: '', body: '', loading: false }"
+     @open-report.window="open = true; title = $event.detail.title; body = ''; loading = true;
+                          fetch($event.detail.url).then(r => r.json()).then(d => { body = marked.parse(d.body || '*（无报告内容）*'); loading = false; }).catch(() => { body = '<p style=color:var(--fail)>加载失败</p>'; loading = false; })"
+     @keydown.escape.window="open = false">
+    <div x-show="open" class="modal-overlay" @click.self="open = false">
+        <div class="modal-panel">
+            <div class="modal-header">
+                <h3 x-text="title"></h3>
+                <button class="modal-close" @click="open = false">&times;</button>
+            </div>
+            <div class="modal-body" :class="{ loading: loading }">
+                <template x-if="loading">
+                    <span>加载中...</span>
+                </template>
+                <template x-if="!loading">
+                    <div class="report-md" x-html="body"></div>
+                </template>
+            </div>
+        </div>
+    </div>
 </div>

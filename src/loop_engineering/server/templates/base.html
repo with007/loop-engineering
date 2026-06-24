@@ -7,6 +7,7 @@
     <script src="https://unpkg.com/htmx.org@1.9"></script>
     <script defer src="https://unpkg.com/alpinejs@3"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         :root {
             --bg: #0b1120;
@@ -131,6 +132,47 @@
 
         .htmx-indicator { display: none; }
         .htmx-request .htmx-indicator { display: flex; }
+
+        /* Report Modal */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .modal-panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            width: 700px; max-width: 95vw; max-height: 80vh;
+            display: flex; flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+        .modal-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 16px 24px; border-bottom: 1px solid var(--border);
+        }
+        .modal-header h3 { margin: 0; font-size: 16px; color: var(--text); font-family: monospace; }
+        .modal-close {
+            background: none; border: none; color: var(--dim); font-size: 20px;
+            cursor: pointer; padding: 4px 8px; border-radius: 6px;
+        }
+        .modal-close:hover { color: var(--text); background: var(--surface2); }
+        .modal-body { padding: 24px; overflow-y: auto; flex: 1; }
+        .modal-body.loading { display: flex; align-items: center; justify-content: center; min-height: 120px; color: var(--dim); }
+
+        /* Markdown in report */
+        .report-md h2 { font-size: 17px; color: var(--text); margin: 20px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+        .report-md h2:first-child { margin-top: 0; }
+        .report-md h3 { font-size: 15px; color: var(--muted); margin: 14px 0 8px; }
+        .report-md p { color: var(--muted); line-height: 1.7; margin: 6px 0; }
+        .report-md ul, .report-md ol { margin: 8px 0; padding-left: 20px; }
+        .report-md li { color: var(--muted); line-height: 1.7; margin: 2px 0; }
+        .report-md strong { color: var(--text); }
+        .report-md code { background: var(--surface2); padding: 2px 6px; border-radius: 4px; font-size: 13px; color: var(--active); }
+        .report-md pre { background: var(--surface2); padding: 14px; border-radius: 8px; overflow-x: auto; }
+        .report-md pre code { background: none; padding: 0; font-size: 12px; }
+        .report-md hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+        .report-md em { color: var(--dim); }
     </style>
 </head>
 <body>
@@ -347,6 +389,17 @@
                 evt.detail.path += (evt.detail.path.includes('?') ? '&' : '?') + 'project=' + encodeURIComponent(proj);
             }
         });
+
+        // Report modal — dispatch event to Alpine
+        function viewReport(taskId) {
+            var params = new URLSearchParams(window.location.search);
+            var proj = params.get('project');
+            var url = '/api/tasks/' + taskId + '/report';
+            if (proj) url += '?project=' + encodeURIComponent(proj);
+            window.dispatchEvent(new CustomEvent('open-report', {
+                detail: { title: taskId, url: url }
+            }));
+        }
     </script>
 </body>
 </html>
