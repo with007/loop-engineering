@@ -816,7 +816,7 @@ pwd  # 必须输出 {{ agent_dir }}
 4. 读 openspec/changes/<taskID>/specs/ 下各 spec 获取详细规格
 5. 按 openspec-apply-change 流程逐子任务实现
 6. 每个子任务完成后标记 openspec/changes/<taskID>/tasks.md 中的 [ ] → [x]
-7. 全部完成后输出变更概要
+7. 全部完成后输出完整报告（见下方 ## 输出）
 
 ## 分支
 <BRANCH>
@@ -825,10 +825,27 @@ pwd  # 必须输出 {{ agent_dir }}
 遵循 CLAUDE.md，只改必要文件。{% if is_unity %}修改后 refresh_unity + read_console 确认 0 errors。{% else %}修改后确认无语法错误。{% endif %}
 
 ## 自主运行
-你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行、输出结果。你是一个纯函数——输入任务，输出结果。如果失败，输出 FAIL + 原因；如果成功，输出 PASS + 变更概要。绝不输出问句。
+你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行、输出结果。你是一个纯函数——输入任务，输出结果。如果失败，输出 FAIL + 原因；如果成功，输出 PASS + 完整报告。绝不输出问句。
 
 ## 输出
-完成后输出"变更概要"：改了哪些文件、每个文件改了什么、影响哪些运行时行为。
+
+完成后按以下格式输出（每节都会写入 git commit message，供人审查时理解全貌）：
+
+## 实现思路
+<为什么这样做、关键设计决策、考虑过的替代方案>
+
+## 实现过程
+<按步骤记录：先做什么、后做什么、遇到什么问题如何解决>
+
+## 变更概要
+**改动文件**:
+- path/to/file — 改了什么
+
+**运行时影响**:
+- 影响点
+
+## 向后兼容性
+<是否破坏已有功能、迁移注意事项；无影响则写"无破坏性变更">
 ```
 
 **openSpec=false** 时：
@@ -853,10 +870,27 @@ pwd  # 必须输出 {{ agent_dir }}
 遵循 CLAUDE.md，只改必要文件。{% if is_unity %}修改后 refresh_unity + read_console 确认 0 errors。{% else %}修改后确认无语法错误。{% endif %}
 
 ## 自主运行
-你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行、输出结果。你是一个纯函数——输入任务，输出结果。如果失败，输出 FAIL + 原因；如果成功，输出 PASS + 变更概要。绝不输出问句。
+你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行、输出结果。你是一个纯函数——输入任务，输出结果。如果失败，输出 FAIL + 原因；如果成功，输出 PASS + 完整报告。绝不输出问句。
 
 ## 输出
-完成代码后，输出一段"变更概要"：改了哪些文件、每个文件改了什么、影响哪些运行时行为。
+
+完成后按以下格式输出（每节都会写入 git commit message，供人审查时理解全貌）：
+
+## 实现思路
+<为什么这样做、关键设计决策、考虑过的替代方案>
+
+## 实现过程
+<按步骤记录：先做什么、后做什么、遇到什么问题如何解决>
+
+## 变更概要
+**改动文件**:
+- path/to/file — 改了什么
+
+**运行时影响**:
+- 影响点
+
+## 向后兼容性
+<是否破坏已有功能、迁移注意事项；无影响则写"无破坏性变更">
 ```
 
 ### Step 4: 派发验证子代理
@@ -881,25 +915,46 @@ pwd  # 必须输出 {{ agent_dir }}
 
 ## 变更
 分支: <BRANCH>
-<implementer 输出的变更概要>
+
+<implementer 输出的完整报告 — 包含实现思路、实现过程、变更概要、向后兼容性>
 
 ## 你的工作（只能验证，不能改代码）
 1. 读 openspec/changes/<taskID>/proposal.md 确认目标
 2. 读 openspec/changes/<taskID>/tasks.md 确认全部子任务 [x]
 {% if is_unity %}
 3. refresh_unity + read_console → 0 errors
-4. 读完整 diff，分析每个变更对应的运行时行为
-5. 为每个行为设计 Lua 测试代码
-6. 用 register_lua_test 注册，调用 runtime-test skill 执行
-7. 输出：PASS 或 FAIL + 原因
+4. 读完整 diff 和 implementer 报告，理解变更全貌
+5. **设计验证方案**：列出测试点、验证方法、覆盖场景
+6. 为每个行为设计 Lua 测试代码
+7. 用 register_lua_test 注册，调用 runtime-test skill 执行
+8. 识别已知局限：哪些场景未覆盖、哪些边界条件未测试
 {% else %}
-3. 读完整 diff，确认变更范围正确、无多余文件
-4. 模板变更则渲染检查关键字段；代码变更则确认逻辑正确
-5. 输出：PASS 或 FAIL + 原因
+3. 读完整 diff 和 implementer 报告，理解变更全貌
+4. 确认变更范围正确、无多余文件
+5. **设计验证方案**：列出测试点、验证方法、覆盖场景
+6. 按方案逐项验证：模板变更则渲染检查关键字段；代码变更则确认逻辑正确
+7. 识别已知局限：哪些场景未覆盖、哪些边界条件未测试
 {% endif %}
 
+## 输出
+
+按以下格式输出（每节都会写入 git commit message）：
+
+## 验证方案
+- 测试点 1: <验证方法>
+- 测试点 2: <验证方法>
+
+## 验证结果
+<所有测试点逐一结果>
+
+**最终**: PASS 或 FAIL + 原因
+
+## 已知局限
+- <未覆盖的场景>
+- <已知边界条件>
+
 ## 自主运行
-你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行。你是一个纯函数——输入任务，输出验证结果（PASS/FAIL + 原因）。绝不输出问句。
+你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行。你是一个纯函数——输入任务，输出验证结果。绝不输出问句。
 
 ## retry 上下文（第 2、3 次验证时有）
 上次 FAIL:
@@ -927,21 +982,43 @@ pwd  # 必须输出 {{ agent_dir }}
 ## 变更
 分支: <BRANCH>
 
+<implementer 输出的完整报告 — 包含实现思路、实现过程、变更概要、向后兼容性>
+
 ## 你的工作（只能验证，不能改代码）
 {% if is_unity %}
 1. refresh_unity + read_console → 0 errors
-2. 读完整 diff，分析每个变更对应的运行时行为
-3. 为每个行为设计 Lua 测试代码
-4. 用 register_lua_test 注册，调用 runtime-test skill 执行
-5. 输出：PASS 或 FAIL + 原因
+2. 读完整 diff 和 implementer 报告，理解变更全貌
+3. **设计验证方案**：列出测试点、验证方法、覆盖场景
+4. 为每个行为设计 Lua 测试代码
+5. 用 register_lua_test 注册，调用 runtime-test skill 执行
+6. 识别已知局限：哪些场景未覆盖、哪些边界条件未测试
 {% else %}
-1. 读完整 diff，确认变更范围正确、无多余文件
-2. 模板变更则渲染检查关键字段；代码变更则确认逻辑正确
-3. 输出：PASS 或 FAIL + 原因
+1. 读完整 diff 和 implementer 报告，理解变更全貌
+2. 确认变更范围正确、无多余文件
+3. **设计验证方案**：列出测试点、验证方法、覆盖场景
+4. 按方案逐项验证：模板变更则渲染检查关键字段；代码变更则确认逻辑正确
+5. 识别已知局限：哪些场景未覆盖、哪些边界条件未测试
 {% endif %}
 
+## 输出
+
+按以下格式输出（每节都会写入 git commit message）：
+
+## 验证方案
+- 测试点 1: <验证方法>
+- 测试点 2: <验证方法>
+
+## 验证结果
+<所有测试点逐一结果>
+
+**最终**: PASS 或 FAIL + 原因
+
+## 已知局限
+- <未覆盖的场景>
+- <已知边界条件>
+
 ## 自主运行
-你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行。你是一个纯函数——输入任务，输出验证结果（PASS/FAIL + 原因）。绝不输出问句。
+你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行。你是一个纯函数——输入任务，输出验证结果。绝不输出问句。
 
 ## retry 上下文（第 2、3 次验证时有）
 上次 FAIL:
@@ -955,17 +1032,34 @@ implementer 修复说明: <...>
 
 **PASS**:
 1. 检查 `git status`，确认改动文件合理
-2. 运行收尾脚本（更新主工程 tasks.md: [~]→[x]、生成 diff、弹通知）：
+2. 提交（先生成 commit，diff 才有内容）。将 implementer 和 verifier 的输出组装成 commit body：
+   ```bash
+   git add <改动的源文件>
+   git commit -F - <<'COMMIT_EOF'
+[<taskID>] <任务简述>
+
+<若有 OpenSpec 关联: **关联**: openspec/changes/<taskID>/>
+
+## 任务
+<任务描述 + 验收条件，来自 tasks.md>
+
+<implementer 输出的: 实现思路、实现过程、变更概要、向后兼容性>
+
+<verifier 输出的: 验证方案、验证结果、已知局限>
+
+---
+IMP<序号> VFY<轮数>
+COMMIT_EOF
+   ```
+3. 运行收尾脚本（更新主工程 tasks.md: [~]→[x]、生成 diff、弹通知）：
    ```bash
    python -m loop_engineering.scripts.task_done $whoami [任务ID] [IMP序号] [VFY轮数] --project-root {{ project_root }}
    ```
-3. 提交并推送：
+4. 推送：
    ```bash
-   git add <改动的源文件>
-   git commit -m "[任务ID] 完成"
    git push origin <BRANCH> 2>/dev/null || echo "无 remote，跳过推送，保留分支待合入"
    ```
-4. 清理本地分支（仅推送成功后才删）：
+5. 清理本地分支（仅推送成功后才删）：
    ```bash
    if git remote -v | grep -q origin; then
      git checkout --detach {{ default_ref }}
@@ -1038,6 +1132,8 @@ git worktree prune
 FAIL 数不收敛（3 个 implementer 都不收敛）/ 架构变更 / 需改配表 / 任务不清 / >5 文件跨模块
 
 ## 输出
+
+任务完成后输出等待合入摘要。完整报告（实现思路、实现过程、变更概要、向后兼容性、验证方案、验证结果、已知局限）已写入 commit message，可通过 `git log` 查看。
 
 ```markdown
 ## [任务ID] 等待合入
