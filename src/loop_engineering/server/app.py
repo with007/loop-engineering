@@ -36,7 +36,8 @@ def _read_tasks(pr):
     # 收集已有的 agent 分支名
     agent_branches = set()
     try:
-        r = subprocess.run('git branch --list "agent/*"', shell=True, capture_output=True, text=True, cwd=pr, timeout=5)
+        r = subprocess.run('git branch --list "agent/*"', shell=True, capture_output=True, text=True,
+                           encoding='utf-8', errors='replace', cwd=pr, timeout=5)
         for line in r.stdout.strip().split("\n"):
             b = line.strip().lstrip("*+ ")
             if b:
@@ -121,7 +122,7 @@ def _build_projects_context(request: Request, current_pr: str):
 
     # 自动注册当前项目（仅当 loop-config.yaml 存在时）
     cfg_path = os.path.join(current_pr, "loop-config.yaml")
-    if os.path.exists(cfg_path) and not any(p["root"] == current_pr for p in projects):
+    if os.path.exists(cfg_path) and not any(os.path.normcase(p["root"]) == os.path.normcase(current_pr) for p in projects):
         register_project(current_pr)
         projects = list_projects()
 
@@ -147,7 +148,8 @@ def _build_projects_context(request: Request, current_pr: str):
         seen = set()
         try:
             # 本地 agent 分支
-            r_local = subprocess.run('git branch --list "agent/*"', shell=True, capture_output=True, text=True, cwd=pr, timeout=5)
+            r_local = subprocess.run('git branch --list "agent/*"', shell=True, capture_output=True, text=True,
+                                      encoding='utf-8', errors='replace', cwd=pr, timeout=5)
             for line in r_local.stdout.strip().split("\n"):
                 b = line.strip().lstrip("*+ ")
                 if not b:
@@ -155,11 +157,13 @@ def _build_projects_context(request: Request, current_pr: str):
                 seen.add(b)
                 # 检查是否已合入 {{ default_ref }}
                 r_merged = subprocess.run(
-                    f"git branch --merged master --list {b}", shell=True, capture_output=True, cwd=pr, timeout=5
+                    f"git branch --merged master --list {b}", shell=True, capture_output=True,
+                    text=True, encoding='utf-8', errors='replace', cwd=pr, timeout=5
                 )
                 branches_list.append({"name": b, "merged": r_merged.stdout.strip() != ""})
             # 远程 agent 分支
-            r_remote = subprocess.run("git branch -r", shell=True, capture_output=True, text=True, cwd=pr, timeout=5)
+            r_remote = subprocess.run("git branch -r", shell=True, capture_output=True, text=True,
+                                       encoding='utf-8', errors='replace', cwd=pr, timeout=5)
             for line in r_remote.stdout.strip().split("\n"):
                 line = line.strip()
                 if "agent/" not in line:
@@ -523,7 +527,8 @@ async def setup_page(request: Request):
     import subprocess
     git_user = ""
     try:
-        r = subprocess.run("git config user.name", shell=True, capture_output=True, text=True, timeout=5)
+        r = subprocess.run("git config user.name", shell=True, capture_output=True, text=True,
+                           encoding='utf-8', errors='replace', timeout=5)
         git_user = r.stdout.strip()
     except Exception:
         pass
@@ -551,7 +556,8 @@ async def setup_run(request: Request, project_root: str = Form(...), agent_name:
     # 确定 agent name
     if not agent_name:
         try:
-            r = subprocess.run("git config user.name", shell=True, capture_output=True, text=True, cwd=project_root, timeout=5)
+            r = subprocess.run("git config user.name", shell=True, capture_output=True, text=True,
+                               encoding='utf-8', errors='replace', cwd=project_root, timeout=5)
             agent_name = r.stdout.strip()
         except Exception:
             agent_name = ""

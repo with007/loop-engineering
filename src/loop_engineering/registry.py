@@ -15,6 +15,11 @@ def _registry_path():
     return os.path.join(base, "projects.yaml")
 
 
+def _normpath(p):
+    """规范化路径用于比较（Windows 上大小写不敏感）。"""
+    return os.path.normcase(os.path.abspath(p))
+
+
 def list_projects():
     """列出所有已注册项目."""
     path = _registry_path()
@@ -27,8 +32,9 @@ def list_projects():
 
 def get_project(root):
     """获取单个项目."""
+    root = _normpath(root)
     for p in list_projects():
-        if p["root"] == root:
+        if _normpath(p["root"]) == root:
             return p
     return None
 
@@ -39,8 +45,9 @@ def register_project(root, name=None):
     name = name or os.path.basename(root)
 
     projects = list_projects()
-    # 去重
-    projects = [p for p in projects if p["root"] != root]
+    # 去重（Windows 上大小写不敏感）
+    norm = _normpath(root)
+    projects = [p for p in projects if _normpath(p["root"]) != norm]
     projects.append({"name": name, "root": root})
 
     _save(projects)
@@ -49,7 +56,8 @@ def register_project(root, name=None):
 
 def remove_project(root):
     """移除一个项目."""
-    projects = [p for p in list_projects() if p["root"] != root]
+    norm = _normpath(root)
+    projects = [p for p in list_projects() if _normpath(p["root"]) != norm]
     _save(projects)
 
 
