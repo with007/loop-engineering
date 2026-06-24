@@ -10,6 +10,46 @@ def run(cmd):
     return subprocess.run(cmd, shell=True, capture_output=True, text=True)
 
 
+def _default_branch():
+    """获取默认分支引用。优先级: local master > local main > origin/master > origin/main."""
+    for ref in ["master", "main", "origin/master", "origin/main"]:
+        if run(f"git rev-parse --verify {ref}").returncode == 0:
+            return ref
+    return "master"
+
+
+def is_merged(branch, is_remote=True):
+    """判断分支是否已合入默认主分支.
+
+    Args:
+        branch: 分支名（远程如 'origin/agent/with/task-xxx'，本地如 'agent/with/task-xxx'）
+        is_remote: True 表示远程分支，False 表示本地分支
+    """
+    base = _default_branch()
+    if is_remote:
+        r = run(f"git branch -r --merged origin/{base}")
+        if branch in [l.strip() for l in r.stdout.strip().split('\n')]:
+            return True
+        short = branch.replace('origin/', '')
+        r = run(f"git branch --merged {base}")
+        if short in [l.strip().replace('* ', '') for l in r.stdout.strip().split('\n')]:
+            return True
+        r = run(f"git merge-base --is-ancestor origin/{branch} origin/{base}")
+        if r.returncode == 0:
+            return True
+        r = run(f"git merge-base --is-ancestor origin/{branch} {base}")
+        if r.returncode == 0:
+            return True
+    else:
+        r = run(f"git branch --merged {base}")
+        if branch in [l.strip().replace('* ', '') for l in r.stdout.strip().split('\n')]:
+            return True
+        r = run(f"git merge-base --is-ancestor {branch} {base}")
+        if r.returncode == 0:
+            return True
+    return False
+
+
 def _find_project_root():
     p = os.getcwd()
     for _ in range(10):
@@ -20,38 +60,6 @@ def _find_project_root():
             break
         p = parent
     return os.getcwd()
-
-
-def is_merged(branch, is_remote=True):
-    """判断分支是否已合入 master.
-
-    Args:
-        branch: 分支名（远程如 'origin/agent/with/task-xxx'，本地如 'agent/with/task-xxx'）
-        is_remote: True 表示远程分支，False 表示本地分支
-    """
-    if is_remote:
-        r = run(f"git branch -r --merged origin/master")
-        if branch in [l.strip() for l in r.stdout.strip().split('\n')]:
-            return True
-        short = branch.replace('origin/', '')
-        r = run(f"git branch --merged master")
-        if short in [l.strip().replace('* ', '') for l in r.stdout.strip().split('\n')]:
-            return True
-        r = run(f"git merge-base --is-ancestor origin/{branch} origin/master")
-        if r.returncode == 0:
-            return True
-        r = run(f"git merge-base --is-ancestor origin/{branch} master")
-        if r.returncode == 0:
-            return True
-    else:
-        # 本地分支
-        r = run(f"git branch --merged master")
-        if branch in [l.strip().replace('* ', '') for l in r.stdout.strip().split('\n')]:
-            return True
-        r = run(f"git merge-base --is-ancestor {branch} master")
-        if r.returncode == 0:
-            return True
-    return False
 
 
 def main():

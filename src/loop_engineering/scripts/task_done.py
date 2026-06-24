@@ -24,6 +24,14 @@ def _find_project_root():
     return os.getcwd()
 
 
+def _default_branch():
+    """获取默认分支引用。优先级: local master > local main > origin/master > origin/main."""
+    for ref in ["master", "main", "origin/master", "origin/main"]:
+        if run(f"git rev-parse --verify {ref}").returncode == 0:
+            return ref
+    return "master"
+
+
 def slugify(desc):
     desc = re.split(r'\s+—\s+', desc.strip())[0].strip().replace(' ', '-').lower()
     result = re.sub(r'[^a-z0-9-]', '', desc)
@@ -80,13 +88,9 @@ def main():
 
     print(f"=== 任务完成: {task_id} ===")
 
-    # 生成 diff（本地分支 vs origin/master，push 前也能用）
-    # 检查 origin/master 是否存在，不存在则用 master
-    base_ref = "origin/master"
-    r = run("git rev-parse --verify origin/master")
-    if r.returncode != 0:
-        base_ref = "master"
-    run(f"git diff -U10 {base_ref}...{branch} > {diff_file}")
+    # 生成 diff（本地分支 vs 默认主分支）
+    base = _default_branch()
+    run(f"git diff -U10 {base}...{branch} > {diff_file}")
     print(f"Diff: {diff_file}")
 
     # 更新 tasks.md
