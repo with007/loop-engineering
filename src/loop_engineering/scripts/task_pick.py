@@ -11,7 +11,8 @@ from loop_engineering.task_id import parse_task_id, make_branch_name
 
 
 def run(cmd):
-    return subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    return subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                          encoding='utf-8', errors='replace')
 
 
 def _find_project_root():
@@ -50,7 +51,7 @@ def main():
         return
 
     for line in content.split('\n'):
-        match = re.match(r'^- \[ \]\s+(.+?)\s+\(→\s*' + re.escape(whoami) + r'\)', line)
+        match = re.match(r'^- \[[ r]\]\s+(.+?)\s+\(→\s*' + re.escape(whoami) + r'\)', line)
         if not match:
             continue
 
@@ -59,13 +60,35 @@ def main():
         if not task_id:
             continue  # 没有 [task-id] 的任务跳过
 
-        # 检查是否已有同名 agent 分支（匹配 task_id 前缀）
-        result = run(f"git ls-remote --heads origin 'agent/{whoami}/{task_id}-*'")
+        # 判断是否 reopen
+        is_reopen = line.startswith('- [r] ')
+
+        if is_reopen:
+            # 查找已有 agent 分支
+            r = run(f"git branch -a --list 'agent/{whoami}/{task_id}-*' --sort=-committerdate")
+            branches = [b.strip().lstrip('* ') for b in r.stdout.strip().split('\n') if b.strip()]
+            if branches:
+                # 取最新分支（含 remote 前缀则取本地名）
+                branch = branches[0]
+                if branch.startswith('remotes/origin/'):
+                    branch = branch[len('remotes/origin/'):]
+            else:
+                # 分支不存在，退化为新任务
+                branch = make_branch_name(whoami, task_id, desc)
+                is_reopen = False
+        else:
+            branch = make_branch_name(whoami, task_id, desc)
+
+        # 检查是否已有同名远程分支（新任务才检查）
+        if not is_reopen:
+            result = run(f"git ls-remote --heads origin 'agent/{whoami}/{task_id}-*'")
+            if result.stdout.strip():
+                continue  # 跳过已有分支的新任务
 
         open_spec = "true" if os.path.isdir(os.path.join(project_root, f"openspec/changes/{task_id}")) else "false"
-        branch = make_branch_name(whoami, task_id, desc)
+        reopen_flag = "true" if is_reopen else "false"
 
-        print(f"taskID={task_id} branch={branch} desc={desc} openSpec={open_spec}")
+        print(f"taskID={task_id} branch={branch} desc={desc} openSpec={open_spec} reopen={reopen_flag}")
         return
 
     print("NONE")

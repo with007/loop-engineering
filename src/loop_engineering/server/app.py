@@ -48,45 +48,51 @@ def _read_tasks(pr):
         pass
 
     result = []
+    current_task = None
     with open(tp, "r", encoding="utf-8") as f:
         for line in f:
             # 先匹配 checkbox
             m = re.match(r'^- \[(.)\]\s+(.+)', line)
-            if not m:
-                continue
-            status_char = m.group(1)
-            rest = m.group(2).strip()
+            if m:
+                current_task = None  # new task starts
+                status_char = m.group(1)
+                rest = m.group(2).strip()
 
-            # 提取 (→ assignee) — 可能在 meta 前或后
-            assignee = ""
-            m_assignee = re.search(r'\(→\s*(\w+)\)', rest)
-            if m_assignee:
-                assignee = m_assignee.group(1)
-                rest = (rest[:m_assignee.start()] + rest[m_assignee.end():]).strip()
+                # 提取 (→ assignee) — 可能在 meta 前或后
+                assignee = ""
+                m_assignee = re.search(r'\(→\s*(\w+)\)', rest)
+                if m_assignee:
+                    assignee = m_assignee.group(1)
+                    rest = (rest[:m_assignee.start()] + rest[m_assignee.end():]).strip()
 
-            # 提取 — meta
-            meta = ""
-            m_meta = re.search(r'\s+—\s+(.+)$', rest)
-            if m_meta:
-                meta = m_meta.group(1).strip()
-                rest = rest[:m_meta.start()].strip()
+                # 提取 — meta
+                meta = ""
+                m_meta = re.search(r'\s+—\s+(.+)$', rest)
+                if m_meta:
+                    meta = m_meta.group(1).strip()
+                    rest = rest[:m_meta.start()].strip()
 
-            desc = rest
-            # 去掉 [task-id] 后缀（如果有），保持描述干净
-            desc = re.sub(r'\s+\[[a-f0-9]{8}\]\s*$', '', desc).strip()
-            tid = parse_task_id(line) or ""
-            if status_char == "x" and tid and tid in agent_branches:
-                status = "pending_merge"
-            else:
-                s = {" ": "pending", "~": "in_progress", "x": "done"}
-                status = s.get(status_char, "pending")
-            result.append({
-                "description": desc,
-                "task_id": tid,
-                "status": status,
-                "assignee": assignee,
-                "meta": meta,
-            })
+                desc = rest
+                # 去掉 [task-id] 后缀（如果有），保持描述干净
+                desc = re.sub(r'\s+\[[a-f0-9]{8}\]\s*$', '', desc).strip()
+                tid = parse_task_id(line) or ""
+                if status_char == "x" and tid and tid in agent_branches:
+                    status = "pending_merge"
+                else:
+                    s = {" ": "pending", "~": "in_progress", "x": "done", "r": "reopen"}
+                    status = s.get(status_char, "pending")
+                current_task = {
+                    "description": desc,
+                    "task_id": tid,
+                    "status": status,
+                    "assignee": assignee,
+                    "meta": meta,
+                    "feedback": [],
+                }
+                result.append(current_task)
+            elif re.match(r'^\s{2,}\S', line) and current_task:
+                # indented continuation line = feedback
+                current_task["feedback"].append(line.strip())
     return result
 
 

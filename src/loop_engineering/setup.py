@@ -17,7 +17,8 @@ from . import config as cfg
 def _run(cmd, cwd=None, check=False):
     """运行 shell 命令."""
     result = subprocess.run(
-        cmd, shell=True, capture_output=True, text=True, cwd=cwd, timeout=120
+        cmd, shell=True, capture_output=True, text=True,
+        encoding='utf-8', errors='replace', cwd=cwd, timeout=120
     )
     if check and result.returncode != 0:
         raise RuntimeError(f"Command failed: {cmd}\n{result.stderr}")
@@ -781,12 +782,20 @@ python -m loop_engineering.scripts.task_pick $whoami --project-root {{ project_r
 ```bash
 # 用 task_pick 输出的完整分支名
 BRANCH="<task_pick 输出的 branch= 字段>"
+REOPEN="<task_pick 输出的 reopen= 字段>"
 
-# 从最新 {{ default_ref }} 创建分支（覆盖已存在的同名分支）
-git checkout -B $BRANCH {{ default_ref }}
+if [ "$REOPEN" = "true" ]; then
+  # reopen: 在已有分支上继续修改
+  git fetch origin --prune 2>/dev/null || true
+  git checkout $BRANCH
+else
+  # 新任务: 从最新 {{ default_ref }} 创建分支（覆盖已存在的同名分支）
+  git checkout -B $BRANCH {{ default_ref }}
+fi
 
 # 主工程 tasks.md 标记进行中（不提交，只给人看）
 # [ ] M6 (→ withg)  改为  [~] M6 (→ withg)
+# [r] M6 (→ withg)  改为  [~] M6 (→ withg)
 ```
 
 ### Step 3: 派发实现子代理
@@ -799,6 +808,7 @@ git checkout -B $BRANCH {{ default_ref }}
 ## 任务（OpenSpec）
 taskID: <taskID>
 OpenSpec 路径: openspec/changes/<taskID>/
+reopen: <true|false>
 
 ## 工作目录
 你必须在 agent worktree 工作：**{{ agent_dir }}**（不是主工程目录）。
@@ -808,6 +818,18 @@ cd {{ agent_dir }}
 git checkout <BRANCH>
 pwd  # 必须输出 {{ agent_dir }}
 ```
+
+<如果 reopen=true，插入以下两节:>
+
+## 历史报告
+以下为上次实现的 commit message，请理解已有实现后在此基础上修改：
+
+<git log -1 --format=%B 的输出>
+
+## 本轮反馈
+<tasks.md 中 [r] 行下方的缩进行内容>
+
+---
 
 ## 你的工作
 1. 读 openspec/changes/<taskID>/proposal.md 理解目标与范围
@@ -831,6 +853,10 @@ pwd  # 必须输出 {{ agent_dir }}
 
 完成后按以下格式输出（每节都会写入 git commit message，供人审查时理解全貌）：
 
+<如果 reopen=true:>
+## 本轮反馈
+<用户 reopen 时提供的反馈内容，从 prompt 中复制>
+
 ## 实现思路
 <为什么这样做、关键设计决策、考虑过的替代方案>
 
@@ -853,6 +879,7 @@ pwd  # 必须输出 {{ agent_dir }}
 ```
 ## 任务
 <描述 + 验收条件，来自 tasks.md>
+reopen: <true|false>
 
 ## 工作目录
 你必须在 agent worktree 工作：**{{ agent_dir }}**（不是主工程目录）。
@@ -862,6 +889,18 @@ cd {{ agent_dir }}
 git checkout <BRANCH>
 pwd  # 必须输出 {{ agent_dir }}
 ```
+
+<如果 reopen=true，插入以下两节:>
+
+## 历史报告
+以下为上次实现的 commit message，请理解已有实现后在此基础上修改：
+
+<git log -1 --format=%B 的输出>
+
+## 本轮反馈
+<tasks.md 中 [r] 行下方的缩进行内容>
+
+---
 
 ## 分支
 <BRANCH>
@@ -875,6 +914,10 @@ pwd  # 必须输出 {{ agent_dir }}
 ## 输出
 
 完成后按以下格式输出（每节都会写入 git commit message，供人审查时理解全貌）：
+
+<如果 reopen=true:>
+## 本轮反馈
+<用户 reopen 时提供的反馈内容，从 prompt 中复制>
 
 ## 实现思路
 <为什么这样做、关键设计决策、考虑过的替代方案>

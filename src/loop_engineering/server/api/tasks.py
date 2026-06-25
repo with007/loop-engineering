@@ -38,6 +38,10 @@ class AddTaskRequest(BaseModel):
     assignee: str
 
 
+class ReopenRequest(BaseModel):
+    feedback: str = ""  # 多行反馈，用 \n 分隔
+
+
 @router.get("/list")
 def list_tasks(project: str = Query(None)):
     """解析 tasks.md 返回任务列表."""
@@ -47,23 +51,29 @@ def list_tasks(project: str = Query(None)):
         return {"tasks": []}
 
     tasks = []
+    current_task = None
     with open(tasks_path, "r", encoding="utf-8") as f:
         for line in f:
             m = re.match(r'^- \[(.)\]\s+(.+?)(\s+\(→\s*(\w+)\))?(\s+—\s+(.+))?$', line)
-            if not m:
-                continue
-            status_char = m.group(1)
-            desc = m.group(2).strip()
-            assignee = m.group(4) if m.group(4) else ""
-            meta = m.group(6) if m.group(6) else ""
+            if m:
+                current_task = None  # new task starts, flush previous
+                status_char = m.group(1)
+                desc = m.group(2).strip()
+                assignee = m.group(4) if m.group(4) else ""
+                meta = m.group(6) if m.group(6) else ""
 
-            status_map = {" ": "pending", "~": "in_progress", "x": "done"}
-            tasks.append({
-                "description": desc,
-                "status": status_map.get(status_char, "pending"),
-                "assignee": assignee,
-                "meta": meta,
-            })
+                status_map = {" ": "pending", "~": "in_progress", "x": "done", "r": "reopen"}
+                current_task = {
+                    "description": desc,
+                    "status": status_map.get(status_char, "pending"),
+                    "assignee": assignee,
+                    "meta": meta,
+                    "feedback": [],
+                }
+                tasks.append(current_task)
+            elif re.match(r'^\s{2,}\S', line) and current_task:
+                # indented continuation line = feedback for the current task
+                current_task["feedback"].append(line.strip())
 
     return {"tasks": tasks}
 
@@ -172,24 +182,84 @@ def reset_task(task_id: str, project: str = Query(None)):
     return {"reset": True, "task_id": task_id, "message": f"Task '{task_id}' reset to pending"}
 
 
+@router.put("/{task_id}/reopen")
+def reopen_task(task_id: str, req: ReopenRequest, project: str = Query(None)):
+    """将已完成任务 ([x]) 重新打开为返工状态 ([r])，可选追加反馈缩进行."""
+    pr = _project_root(project)
+    tasks_path = os.path.join(pr, "tasks.md")
+    if not os.path.exists(tasks_path):
+        raise HTTPException(404, "tasks.md not found")
+
+    lines = []
+    with open(tasks_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    found = False
+    for i, line in enumerate(lines):
+        m = re.match(r'^- \[(.)\]\s+(.+)', line)
+        if not m:
+            continue
+        if m.group(1) not in ("x",):
+            # 只有已完成的任务才能 reopen
+            if parse_task_id(line) == task_id and m.group(1) != "x":
+                raise HTTPException(400, "Only completed tasks can be reopened")
+            continue
+        if parse_task_id(line) == task_id:
+            lines[i] = line.replace("- [x] ", "- [r] ", 1)
+            found = True
+
+            # 在任务行后追加反馈缩进行
+            if req.feedback.strip():
+                feedback_lines = [f"  {fl}\n" for fl in req.feedback.strip().split("\n") if fl.strip()]
+                # 找到插入位置：任务行之后、下一个非缩进非空行之前
+                insert_at = i + 1
+                while insert_at < len(lines) and (lines[insert_at].strip() == "" or lines[insert_at].startswith("  ")):
+                    insert_at += 1
+                # 移除旧的缩进行（如果有）
+                del lines[i + 1:insert_at]
+                for j, fl in enumerate(feedback_lines):
+                    lines.insert(i + 1 + j, fl)
+            break
+
+    if not found:
+        raise HTTPException(404, f"Completed task '{task_id}' not found")
+
+    with open(tasks_path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+    return {"reopened": True, "task_id": task_id, "message": f"Task '{task_id}' reopened as [r]"}
+
+
 @router.get("/{task_id}/report")
 def get_task_report(task_id: str, project: str = Query(None)):
-    """搜索 git log 返回任务 commit 的完整报告（markdown）。"""
+    """搜索 git log 返回任务 commit 的多轮报告（markdown）。"""
     pr = _project_root(project)
 
-    # 搜所有分支中含 [task_id] 的 commit（[ ] 在 git grep 中是 regex，需转义）
     r = subprocess.run(
-        ["git", "log", "--all", f"--grep=\\[{task_id}\\]", "--format=%H%n%B", "-1", "--no-merges"],
+        ["git", "log", "--all", f"--grep=\\[{task_id}\\]", "--format=%H%n%ai%n%B%n---REPORT-END---",
+         "--no-merges"],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
         cwd=pr, timeout=10
     )
     if r.returncode != 0 or not r.stdout.strip():
         raise HTTPException(404, f"No commit found for task '{task_id}'")
 
-    output = r.stdout.strip()
-    # 第一行是 commit hash，后面是完整 body
-    parts = output.split("\n", 1)
-    commit_hash = parts[0]
-    body = parts[1] if len(parts) > 1 else ""
+    reports = []
+    blocks = r.stdout.strip().split("\n---REPORT-END---")
+    for i, block in enumerate(blocks):
+        if not block.strip():
+            continue
+        lines = block.strip().split("\n", 2)
+        if len(lines) < 2:
+            continue
+        commit_hash = lines[0]
+        date = lines[1]
+        body = lines[2] if len(lines) > 2 else ""
+        reports.append({
+            "commit_hash": commit_hash,
+            "date": date,
+            "imp_round": len(blocks) - i,  # 最新的 imp 号最大
+            "body": body,
+        })
 
-    return {"commit_hash": commit_hash, "body": body}
+    return {"reports": reports}

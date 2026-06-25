@@ -9,6 +9,7 @@
     {% set done = tasks | selectattr('status', 'in', ['done', 'pending_merge']) | list | length %}
     {% set active = tasks | selectattr('status', 'equalto', 'in_progress') | list | length %}
     {% set pending = tasks | selectattr('status', 'equalto', 'pending') | list | length %}
+    {% set reopen = tasks | selectattr('status', 'equalto', 'reopen') | list | length %}
     <div class="card" style="margin-bottom: 20px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
             <span style="font-weight: 600;">进度</span>
@@ -20,6 +21,7 @@
         <div style="display: flex; gap: 16px; margin-top: 8px; font-size: 12px; color: var(--dim);">
             <span class="badge badge-待办">{{ pending }} 待办</span>
             <span class="badge badge-active">{{ active }} 进行中</span>
+            <span class="badge badge-reopen">{{ reopen }} 需返工</span>
             <span class="badge badge-pass">{{ done }} 完成</span>
         </div>
     </div>
@@ -30,8 +32,8 @@
     {% for t in tasks %}
     <div class="card" style="padding: 16px 20px; margin-bottom: 8px;">
         <div style="display: flex; align-items: flex-start; gap: 14px;">
-            <div class="status-icon {% if t.status in ('done', 'pending_merge') %}status-done{% elif t.status == 'in_progress' %}status-active-label{% else %}status-pending-label{% endif %}">
-                {% if t.status in ('done', 'pending_merge') %}&#x2713;{% elif t.status == 'in_progress' %}&#x223C;{% else %}&#x2014;{% endif %}
+            <div class="status-icon {% if t.status in ('done', 'pending_merge') %}status-done{% elif t.status == 'reopen' %}status-reopen{% elif t.status == 'in_progress' %}status-active-label{% else %}status-pending-label{% endif %}">
+                {% if t.status in ('done', 'pending_merge') %}&#x2713;{% elif t.status == 'reopen' %}&#x21BA;{% elif t.status == 'in_progress' %}&#x223C;{% else %}&#x2014;{% endif %}
             </div>
             <div style="flex: 1;">
                 <div style="font-size: 15px; font-weight: 500;">{{ t.description | truncate(120) }}</div>
@@ -43,24 +45,45 @@
                     <span>{{ t.meta }}</span>
                     {% endif %}
                 </div>
+                {% if t.feedback %}
+                <div style="margin-top: 4px; padding: 6px 10px; background: var(--surface2); border-left: 3px solid var(--active); border-radius: 4px; font-size: 12px; color: var(--muted);">
+                    {% for fb in t.feedback %}
+                    <div>{{ fb }}</div>
+                    {% endfor %}
+                </div>
+                {% endif %}
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
                 {% if t.status == 'done' %}
                 <button class="btn btn-sm"
                         onclick="viewReport('{{ t.task_id }}')"
-                        style="background: transparent; color: var(--text); border: 1px solid var(--border); opacity: 0.6; font-size: 11px; padding: 2px 8px;"
+                        style="background: transparent; color: var(--text); border: 1px solid var(--border); font-size: 15px; padding: 4px 10px; border-radius: 6px; cursor: pointer; min-width: 34px; text-align: center;"
                         title="查看报告">
                     📋
+                </button>
+                <button class="btn btn-sm"
+                        onclick="reopenTask('{{ t.task_id }}', '{{ t.description | e }}')"
+                        style="background: transparent; color: var(--active); border: 1px solid var(--active); font-size: 15px; padding: 4px 10px; border-radius: 6px; cursor: pointer; min-width: 34px; text-align: center;"
+                        title="重新打开">
+                    🔄
                 </button>
                 <span class="badge badge-pass">已完成</span>
                 {% elif t.status == 'pending_merge' %}
                 <button class="btn btn-sm"
                         onclick="viewReport('{{ t.task_id }}')"
-                        style="background: transparent; color: var(--text); border: 1px solid var(--border); opacity: 0.6; font-size: 11px; padding: 2px 8px;"
+                        style="background: transparent; color: var(--text); border: 1px solid var(--border); font-size: 15px; padding: 4px 10px; border-radius: 6px; cursor: pointer; min-width: 34px; text-align: center;"
                         title="查看报告">
                     📋
                 </button>
+                <button class="btn btn-sm"
+                        onclick="reopenTask('{{ t.task_id }}', '{{ t.description | e }}')"
+                        style="background: transparent; color: var(--active); border: 1px solid var(--active); font-size: 15px; padding: 4px 10px; border-radius: 6px; cursor: pointer; min-width: 34px; text-align: center;"
+                        title="重新打开">
+                    🔄
+                </button>
                 <span class="badge badge-active">已完成（分支待合入）</span>
+                {% elif t.status == 'reopen' %}
+                <span class="badge badge-reopen">需返工</span>
                 {% elif t.status == 'in_progress' %}
                 <span class="badge badge-active">进行中</span>
                 <button class="btn btn-sm"
@@ -68,7 +91,7 @@
                         hx-swap="none"
                         hx-confirm="将「{{ t.description | truncate(40) }}」重置为待办？这会让 task-runner 重新实现此任务。"
                         hx-on::after-request="if(event.detail.successful) htmx.ajax('GET', '/tasks/list?order={{ order }}&amp;status={{ status }}', {target: '#tasks-list-wrap'})"
-                        style="background: transparent; color: var(--active); border: 1px solid var(--active); opacity: 0.6; font-size: 11px; padding: 2px 8px;"
+                        style="background: transparent; color: var(--active); border: 1px solid var(--active); font-size: 15px; padding: 4px 10px; border-radius: 6px; cursor: pointer; min-width: 34px; text-align: center;"
                         title="重置为待办">
                     ↩
                 </button>
@@ -80,8 +103,8 @@
                         hx-swap="none"
                         hx-confirm="删除任务「{{ t.description | truncate(40) }}」？对应的 agent 分支也会被删除。"
                         hx-on::after-request="if(event.detail.successful) htmx.ajax('GET', '/tasks/list?order={{ order }}&amp;status={{ status }}', {target: '#tasks-list-wrap'})"
-                        style="background: transparent; color: var(--fail); border: 1px solid var(--fail); opacity: 0.6; font-size: 12px;">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                        style="background: transparent; color: var(--fail); border: 1px solid var(--fail); font-size: 15px; padding: 4px 10px; border-radius: 6px; cursor: pointer; min-width: 34px; text-align: center;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                 </button>
             </div>
         </div>
@@ -95,10 +118,10 @@
     {% endif %}
 </div>
 
-<!-- Report Modal -->
-<div x-data="{ open: false, title: '', body: '', loading: false }"
-     @open-report.window="open = true; title = $event.detail.title; body = ''; loading = true;
-                          fetch($event.detail.url).then(r => r.json()).then(d => { body = marked.parse(d.body || '*（无报告内容）*'); loading = false; }).catch(() => { body = '<p style=color:var(--fail)>加载失败</p>'; loading = false; })"
+<!-- Report Modal (multi-round tabs) -->
+<div x-data="{ open: false, title: '', reports: [], activeRound: 0, loading: false }"
+     @open-report.window="open = true; title = $event.detail.title; reports = []; activeRound = 0; loading = true;
+                          fetch($event.detail.url).then(r => r.json()).then(d => { reports = d.reports || []; activeRound = 0; loading = false; }).catch(() => { reports = [{body: '<p style=color:var(--fail)>加载失败</p>'}]; loading = false; })"
      @keydown.escape.window="open = false">
     <div x-show="open" class="modal-overlay" @click.self="open = false">
         <div class="modal-panel">
@@ -106,13 +129,64 @@
                 <h3 x-text="title"></h3>
                 <button class="modal-close" @click="open = false">&times;</button>
             </div>
+            <template x-if="reports.length > 1">
+                <div style="display: flex; gap: 4px; padding: 8px 24px; border-bottom: 1px solid var(--border);">
+                    <template x-for="(r, i) in reports" :key="i">
+                        <button class="btn btn-sm"
+                                :style="activeRound === i ? 'background: var(--active); color: #fff;' : 'background: transparent; color: var(--dim);'"
+                                style="border: 1px solid var(--border); font-size: 11px; padding: 4px 12px; border-radius: 4px; cursor: pointer;"
+                                @click="activeRound = i"
+                                x-text="'IMP' + r.imp_round"></button>
+                    </template>
+                </div>
+            </template>
             <div class="modal-body" :class="{ loading: loading }">
                 <template x-if="loading">
                     <span>加载中...</span>
                 </template>
-                <template x-if="!loading">
-                    <div class="report-md" x-html="body"></div>
+                <template x-if="!loading && reports.length > 0">
+                    <div class="report-md" x-html="marked.parse(reports[activeRound].body || '*（无报告内容）*')"></div>
                 </template>
+                <template x-if="!loading && reports.length === 0">
+                    <span style="color: var(--dim);">暂无报告</span>
+                </template>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Reopen Modal -->
+<div x-data="{ open: false, taskId: '', desc: '', feedback: '' }"
+     @open-reopen.window="open = true; taskId = $event.detail.taskId; desc = $event.detail.desc; feedback = ''"
+     @keydown.escape.window="open = false">
+    <div x-show="open" class="modal-overlay" @click.self="open = false">
+        <div class="modal-panel" style="width: 520px;">
+            <div class="modal-header">
+                <h3>重新打开任务</h3>
+                <button class="modal-close" @click="open = false">&times;</button>
+            </div>
+            <div style="padding: 20px 24px; display: flex; flex-direction: column; gap: 14px;">
+                <div>
+                    <label style="font-size: 13px; color: var(--muted); display: block; margin-bottom: 4px;">任务目标</label>
+                    <input type="text" x-model="desc"
+                           style="width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 6px; font-size: 14px; box-sizing: border-box;">
+                </div>
+                <div>
+                    <label style="font-size: 13px; color: var(--muted); display: block; margin-bottom: 4px;">本轮反馈（发给 implementer）</label>
+                    <textarea x-model="feedback" rows="4" placeholder="上次实现哪里有问题..."
+                              style="width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 6px; font-size: 13px; resize: vertical; box-sizing: border-box;"></textarea>
+                </div>
+                <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                    <button class="btn btn-sm" @click="open = false"
+                            style="background: transparent; color: var(--dim); border: 1px solid var(--border);">取消</button>
+                    <button class="btn btn-sm"
+                            @click="fetch('/api/tasks/' + taskId + '/reopen', {
+                                method: 'PUT',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({feedback: feedback})
+                            }).then(r => { if(r.ok) { open = false; htmx.ajax('GET', '/tasks/list?order={{ order }}&status={{ status }}', {target: '#tasks-list-wrap'}); } else { alert('重新打开失败'); } })"
+                            style="background: var(--active); color: #fff; border: none;">重新打开</button>
+                </div>
             </div>
         </div>
     </div>

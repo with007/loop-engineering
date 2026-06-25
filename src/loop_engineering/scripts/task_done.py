@@ -10,7 +10,8 @@ from loop_engineering.task_id import make_branch_name, parse_task_id
 
 
 def run(cmd):
-    return subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    return subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                          encoding='utf-8', errors='replace')
 
 
 def _find_project_root():
@@ -34,7 +35,10 @@ def _default_branch():
 
 
 def update_tasks_md(task_id, whoami, imp_n, vfy_n, project_root):
-    """更新 tasks.md: [ ]/[~] → [x] 并追加运行记录"""
+    """更新 tasks.md: [ ]/[~]/[r] → [x] 并追加运行记录.
+
+    [r] 任务在旧记录后追加新记录，用 · 分隔。
+    """
     now = datetime.now().strftime("%H:%M")
     record = f" — {now} IMP{imp_n} VFY{vfy_n} PASS"
     updated = False
@@ -45,9 +49,14 @@ def update_tasks_md(task_id, whoami, imp_n, vfy_n, project_root):
 
         with open(tasks_path, "w", encoding="utf-8") as f:
             for line in lines:
-                m = re.match(r'^(- \[[ ~]\]\s+)(.+?)(\s+\(→\s*' + re.escape(whoami) + r'\).*)$', line)
+                m = re.match(r'^(- \[[ r~]\]\s+)(.+?)(\s+\(→\s*' + re.escape(whoami) + r'\).*)$', line)
                 if m and parse_task_id(line) == task_id:
-                    f.write(f"- [x] {m.group(2)}{m.group(3)}{record}\n")
+                    if line.startswith('- [r] '):
+                        # reopen 任务：追加新记录
+                        new_meta = m.group(3).rstrip() + " · " + now + f" IMP{imp_n} VFY{vfy_n} PASS"
+                        f.write(f"- [x] {m.group(2)}{new_meta}\n")
+                    else:
+                        f.write(f"- [x] {m.group(2)}{m.group(3)}{record}\n")
                     updated = True
                 else:
                     f.write(line)
