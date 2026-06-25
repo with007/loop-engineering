@@ -1,4 +1,4 @@
-<div hx-get="/" hx-trigger="every 30s" hx-swap="outerHTML">
+<div hx-get="/" hx-trigger="every 30s" hx-swap="outerHTML" hx-include="#branch-filter">
     {% if not current %}
     <div class="card" style="text-align: center; padding: 60px 20px;">
         <h2>未找到项目</h2>
@@ -76,11 +76,20 @@
     {% set pending_br = proj.branches | selectattr('merged', 'equalto', false) | list %}
     {% set merged_br = proj.branches | selectattr('merged', 'equalto', true) | list %}
     <div class="card">
-        <h3>Agent 分支
-            {% if pending_br %}
-            <span class="badge badge-active" style="margin-left: 8px;">{{ pending_br | length }} 待合入</span>
-            {% endif %}
-        </h3>
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+            <h3 style="margin-bottom: 0;">Agent 分支
+                {% if pending_br %}
+                <span class="badge badge-active" style="margin-left: 8px;">{{ pending_br | length }} 待合入</span>
+                {% endif %}
+            </h3>
+            <input type="text" id="branch-filter" name="filter"
+                   placeholder="按 Agent 名筛选..."
+                   value="{{ filter or '' }}"
+                   hx-get="/" hx-trigger="keyup changed delay:400ms"
+                   hx-target="closest div[hx-get]"
+                   hx-swap="outerHTML"
+                   style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 5px 12px; border-radius: 7px; font-size: 13px; width: 200px;">
+        </div>
         {% if pending_br %}
         <div style="margin-bottom: 12px;">
             {% for b in pending_br %}

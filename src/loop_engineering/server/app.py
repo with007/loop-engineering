@@ -121,7 +121,7 @@ def _render(request: Request, template_name: str, context: dict):
     return resp
 
 
-def _build_projects_context(request: Request, current_pr: str):
+def _build_projects_context(request: Request, current_pr: str, agent_filter: str = ""):
     """构建项目列表 + 当前项目信息。仅包含有 loop-config.yaml 的项目."""
     from loop_engineering.registry import list_projects, register_project
     projects = list_projects()
@@ -149,39 +149,43 @@ def _build_projects_context(request: Request, current_pr: str):
         from loop_engineering.runlog import get_pass_rate
         passed, total, rate = get_pass_rate(pr, days=7)
 
-        # branches — 同时查本地和远程 agent 分支
+        # branches — 用 git for-each-ref 获取 agent 分支，按提交时间降序（最新在前）
         branches_list = []
         seen = set()
         try:
-            # 本地 agent 分支
-            r_local = subprocess.run('git branch --list "agent/*"', shell=True, capture_output=True, text=True,
-                                      encoding='utf-8', errors='replace', cwd=pr, timeout=5)
-            for line in r_local.stdout.strip().split("\n"):
-                b = line.strip().lstrip("*+ ")
-                if not b:
+            r = subprocess.run(
+                'git for-each-ref --sort=-committerdate --format="%(refname:short)" refs/heads/agent/ refs/remotes/origin/agent/',
+                shell=True, capture_output=True, text=True,
+                encoding='utf-8', errors='replace', cwd=pr, timeout=5
+            )
+            for line in r.stdout.strip().split("\n"):
+                ref = line.strip()
+                if not ref:
                     continue
-                seen.add(b)
-                # 检查是否已合入 {{ default_ref }}
-                r_merged = subprocess.run(
-                    f"git branch --merged master --list {b}", shell=True, capture_output=True,
-                    text=True, encoding='utf-8', errors='replace', cwd=pr, timeout=5
-                )
-                branches_list.append({"name": b, "merged": r_merged.stdout.strip() != ""})
-            # 远程 agent 分支
-            r_remote = subprocess.run("git branch -r", shell=True, capture_output=True, text=True,
-                                       encoding='utf-8', errors='replace', cwd=pr, timeout=5)
-            for line in r_remote.stdout.strip().split("\n"):
-                line = line.strip()
-                if "agent/" not in line:
-                    continue
-                b = line.replace("origin/", "")
+                b = ref.replace("origin/", "")
                 if b in seen:
                     continue
-                r2 = subprocess.run(
-                    f"git merge-base --is-ancestor origin/{b} origin/master",
-                    shell=True, capture_output=True, cwd=pr, timeout=5
-                )
-                branches_list.append({"name": b, "merged": r2.returncode == 0})
+                seen.add(b)
+
+                # 按 agent 名筛选（分支名格式: agent/<whoami>/<task_id>-<slug>）
+                if agent_filter:
+                    parts = b.split("/")
+                    if len(parts) < 2 or parts[0] != "agent" or parts[1] != agent_filter:
+                        continue
+
+                # 检查合入状态
+                if ref.startswith("origin/"):
+                    r2 = subprocess.run(
+                        f"git merge-base --is-ancestor {ref} origin/master",
+                        shell=True, capture_output=True, cwd=pr, timeout=5
+                    )
+                    branches_list.append({"name": b, "merged": r2.returncode == 0})
+                else:
+                    r_merged = subprocess.run(
+                        f"git branch --merged master --list {b}", shell=True, capture_output=True,
+                        text=True, encoding='utf-8', errors='replace', cwd=pr, timeout=5
+                    )
+                    branches_list.append({"name": b, "merged": r_merged.stdout.strip() != ""})
         except Exception:
             pass
 
@@ -242,7 +246,7 @@ async def project_switcher(request: Request, project: str = Query(None)):
 # ── Page routes ──
 
 @app.get("/")
-async def dashboard(request: Request, project: str = Query(None)):
+async def dashboard(request: Request, project: str = Query(None), filter: str = Query("")):
     pr = _project_root(request, q=project)
     from loop_engineering.registry import list_projects
 
@@ -253,22 +257,26 @@ async def dashboard(request: Request, project: str = Query(None)):
         # Filter to only those with loop-config.yaml
         valid = [p for p in projects if os.path.exists(os.path.join(p["root"], "loop-config.yaml"))]
         if valid:
-            return RedirectResponse(f"/?project={quote(valid[0]['root'])}", status_code=303)
+            redir = f"/?project={quote(valid[0]['root'])}"
+            if filter:
+                redir += f"&filter={quote(filter)}"
+            return RedirectResponse(redir, status_code=303)
         else:
             return RedirectResponse("/setup", status_code=303)
 
-    all_projects = _build_projects_context(request, pr)
+    all_projects = _build_projects_context(request, pr, agent_filter=filter)
     current = next((p for p in all_projects if p["is_current"]), all_projects[0] if all_projects else None)
     return _render(request, "dashboard.html", {
         "request": request,
         "projects": all_projects,
         "current_root": pr,
         "current": current,
+        "filter": filter,
     })
 
 
 @app.get("/tasks")
-async def tasks_page(request: Request, project: str = Query(None), order: str = Query("asc"), status: str = Query("pending,in_progress")):
+async def tasks_page(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query("")):
     pr = _project_root(request, q=project)
     tasks = _read_tasks(pr)
     allowed = [s.strip() for s in status.split(",") if s.strip()]
@@ -276,6 +284,10 @@ async def tasks_page(request: Request, project: str = Query(None), order: str = 
     if "done" in allowed:
         allowed.append("pending_merge")
     tasks = [t for t in tasks if t["status"] in allowed]
+    # 按 agent 名筛选
+    if filter:
+        f_lower = filter.strip().lower()
+        tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
     if order == "desc":
         tasks = list(reversed(tasks))
     return _render(request, "tasks.html", {
@@ -285,11 +297,12 @@ async def tasks_page(request: Request, project: str = Query(None), order: str = 
         "current_root": pr,
         "order": order,
         "status": status,
+        "filter": filter,
     })
 
 
 @app.get("/tasks/list")
-async def tasks_list(request: Request, project: str = Query(None), order: str = Query("asc"), status: str = Query("pending,in_progress")):
+async def tasks_list(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query("")):
     """返回完整任务区域（控件 + 列表），供控件操作后刷新."""
     pr = _project_root(request, q=project)
     tasks = _read_tasks(pr)
@@ -298,6 +311,10 @@ async def tasks_list(request: Request, project: str = Query(None), order: str = 
     if "done" in allowed:
         allowed.append("pending_merge")
     tasks = [t for t in tasks if t["status"] in allowed]
+    # 按 agent 名筛选
+    if filter:
+        f_lower = filter.strip().lower()
+        tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
     if order == "desc":
         tasks = list(reversed(tasks))
     return templates.TemplateResponse(request, "_tasks_list.html", {
@@ -306,11 +323,12 @@ async def tasks_list(request: Request, project: str = Query(None), order: str = 
         "agent_name": _agent_name(pr),
         "order": order,
         "status": status,
+        "filter": filter,
     })
 
 
 @app.get("/tasks/list-items")
-async def tasks_list_items(request: Request, project: str = Query(None), order: str = Query("asc"), status: str = Query("pending,in_progress")):
+async def tasks_list_items(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query("")):
     """返回仅任务条目（进度条 + 卡片），供 30s 轮询刷新."""
     pr = _project_root(request, q=project)
     tasks = _read_tasks(pr)
@@ -318,6 +336,10 @@ async def tasks_list_items(request: Request, project: str = Query(None), order: 
     if "done" in allowed:
         allowed.append("pending_merge")
     tasks = [t for t in tasks if t["status"] in allowed]
+    # 按 agent 名筛选
+    if filter:
+        f_lower = filter.strip().lower()
+        tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
     if order == "desc":
         tasks = list(reversed(tasks))
     return templates.TemplateResponse(request, "_tasks_items.html", {
@@ -326,11 +348,12 @@ async def tasks_list_items(request: Request, project: str = Query(None), order: 
         "agent_name": _agent_name(pr),
         "order": order,
         "status": status,
+        "filter": filter,
     })
 
 
 @app.post("/tasks/add")
-async def tasks_add(request: Request, description: str = Form(...), assignee: str = Form(...), task_id: str = Form(""), project: str = Form(None), order: str = Form("asc"), status: str = Form("pending,in_progress")):
+async def tasks_add(request: Request, description: str = Form(...), assignee: str = Form(...), task_id: str = Form(""), project: str = Form(None), order: str = Form("desc"), status: str = Form("pending,in_progress"), filter: str = Form("")):
     pr = _project_root(request, q=project)
     tp = os.path.join(pr, "tasks.md")
     from loop_engineering.task_id import generate_task_id
@@ -349,6 +372,10 @@ async def tasks_add(request: Request, description: str = Form(...), assignee: st
     if "done" in allowed:
         allowed.append("pending_merge")
     tasks = [t for t in tasks if t["status"] in allowed]
+    # 按 agent 名筛选
+    if filter:
+        f_lower = filter.strip().lower()
+        tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
     if order == "desc":
         tasks = list(reversed(tasks))
     return templates.TemplateResponse(request, "_tasks_list.html", {
@@ -357,6 +384,7 @@ async def tasks_add(request: Request, description: str = Form(...), assignee: st
         "agent_name": _agent_name(pr),
         "order": order,
         "status": status,
+        "filter": filter,
     })
 
 

@@ -14,15 +14,15 @@ def _project_root(project: str = None):
 
 
 @router.get("/list")
-def list_branches(project: str = Query(None)):
-    """列出 agent 分支及其合入状态."""
+def list_branches(project: str = Query(None), filter: str = Query("")):
+    """列出 agent 分支及其合入状态，默认按提交时间降序（最新在前），支持按 agent 名筛选."""
     pr = _project_root(project)
 
     try:
-        # 列出远程 agent 分支
+        # 使用 git for-each-ref 按提交时间降序排列
         result = subprocess.run(
-            "git branch -r", shell=True, capture_output=True, text=True,
-            encoding='utf-8', errors='replace', cwd=pr, timeout=10
+            'git for-each-ref --sort=-committerdate --format="%(refname:short)" refs/remotes/origin/agent/',
+            shell=True, capture_output=True, text=True, cwd=pr, timeout=10
         )
         lines = result.stdout.strip().split("\n")
     except Exception:
@@ -31,9 +31,15 @@ def list_branches(project: str = Query(None)):
     branches = []
     for line in lines:
         line = line.strip()
-        if "agent/" not in line:
+        if not line:
             continue
         branch = line.replace("origin/", "")
+
+        # 按 agent 名筛选（分支名格式: agent/<whoami>/<task_id>-<slug>）
+        if filter:
+            parts = branch.split("/")
+            if len(parts) < 2 or parts[0] != "agent" or parts[1] != filter:
+                continue
 
         # 检查是否已合入
         merged = _is_merged(pr, branch)
@@ -43,8 +49,6 @@ def list_branches(project: str = Query(None)):
             "merged": merged,
         })
 
-    # 按合入状态排序：未合入的排前面
-    branches.sort(key=lambda b: (b["merged"], b["name"]))
     return {"branches": branches}
 
 
