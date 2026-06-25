@@ -231,8 +231,8 @@ Python 代码冲突时，检查：
 合入完成后，检查项目是否配置了手动测试指南：
 
 ```bash
-if [ -f ".loop-engineering/verify/TEST.md" ]; then
-  cat .loop-engineering/verify/TEST.md
+if [ -f "TEST.md" ]; then
+  cat TEST.md
 else
   echo "(未找到 TEST.md，跳过手动测试步骤)"
 fi
@@ -241,7 +241,7 @@ fi
 **向用户输出**：
 ```
 ## 手动测试
-项目配置了手动测试指南（.loop-engineering/verify/TEST.md）。建议在 push 前按指南执行测试。测试完成后确认无误再 push。
+项目配置了手动测试指南（TEST.md）。建议在 push 前按指南执行测试。测试完成后确认无误再 push。
 ```
 
 如果 TEST.md 存在，展示其内容。如果不存在，跳过此步骤。**不阻塞合入**，由用户决定是否现在测试。

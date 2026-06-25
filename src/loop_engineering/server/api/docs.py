@@ -8,7 +8,7 @@ router = APIRouter()
 
 
 def _verify_dir(project_root):
-    return os.path.join(project_root, ".loop-engineering", "verify")
+    return project_root
 
 
 def _template_dir(preset_type):

@@ -208,8 +208,8 @@ git diff --name-only --diff-filter=U
 合入完成后，检查项目是否配置了手动测试指南：
 
 ```bash
-if [ -f ".loop-engineering/verify/TEST.md" ]; then
-  cat .loop-engineering/verify/TEST.md
+if [ -f "TEST.md" ]; then
+  cat TEST.md
 else
   echo "(未找到 TEST.md，跳过手动测试步骤)"
 fi

@@ -378,7 +378,7 @@ def render_skill_md(config):
 
 
 def deploy_verify_docs(config):
-    """从 Jinja2 模板渲染 VERIFY.md 和 TEST.md 到 .loop-engineering/verify/."""
+    """从 Jinja2 模板渲染 VERIFY.md 和 TEST.md 到项目根目录."""
     print("--- 部署验证文档 ---")
     from jinja2 import Environment, FileSystemLoader
 
@@ -410,8 +410,7 @@ def deploy_verify_docs(config):
             print(f"  [FAIL] generic 模板目录也不存在，跳过验证文档部署")
             return
 
-    target_dir = os.path.join(project_root, ".loop-engineering", "verify")
-    os.makedirs(target_dir, exist_ok=True)
+    target_dir = project_root
 
     env = Environment(loader=FileSystemLoader(templates_dir))
     for doc_name in ["VERIFY.md", "TEST.md"]:
@@ -1032,7 +1031,7 @@ pwd  # 必须输出 {{ agent_dir }}
 ## 你的工作（只能验证，不能改代码）
 **禁止 commit、禁止修改任何文件。** 验证 = 读代码 + 跑测试 + 检查 diff，不做任何写操作。
 
-1. **读验证文档**: 如果 `.loop-engineering/verify/VERIFY.md` 存在，按其中步骤逐项执行验证
+1. **读验证文档**: 如果项目根目录的 `VERIFY.md` 存在，按其中步骤逐项执行验证
 2. 读 openspec/changes/<taskID>/proposal.md 确认目标
 3. 读 openspec/changes/<taskID>/tasks.md 确认全部子任务 [x]
 4. 读完整 diff 和 implementer 报告，理解变更全貌
@@ -1101,7 +1100,7 @@ pwd  # 必须输出 {{ agent_dir }}
 ## 你的工作（只能验证，不能改代码）
 **禁止 commit、禁止修改任何文件。** 验证 = 读代码 + 跑测试 + 检查 diff，不做任何写操作。
 
-1. **读验证文档**: 如果 `.loop-engineering/verify/VERIFY.md` 存在，按其中步骤逐项执行验证
+1. **读验证文档**: 如果项目根目录的 `VERIFY.md` 存在，按其中步骤逐项执行验证
 2. 读完整 diff 和 implementer 报告，理解变更全貌
 3. 确认变更范围正确、无多余文件
 4. 识别已知局限：哪些场景未覆盖、哪些边界条件未测试
