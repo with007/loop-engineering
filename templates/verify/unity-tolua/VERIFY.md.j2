@@ -1,0 +1,45 @@
+# 验证指南 — {{ project_name }}
+
+> 项目类型: {{ preset_display_name }} | 生成自 `templates/verify/unity-tolua/VERIFY.md.j2`
+>
+> 你可以编辑此文件来添加项目特定的验证步骤。重新运行 `loop setup` 会覆盖 — 请备份自定义内容。
+
+## 自动化验证流水线
+
+验证子代理按以下步骤执行，非可选步骤失败则停止。
+
+### 1. 编译检查 (`unity_refresh`)
+
+- **工具**: MCP `refresh_unity(wait_for_ready=true)` → `read_console`
+- **超时**: 120s
+- **通过条件**: Console 无 error
+- **失败条件**: 编译报错
+
+### 2. 生成 Lua 路径 (`gen_lua_path`)
+
+- **条件**: 仅当 diff 中有新增 `.lua` 文件时执行
+- **命令**: `python scripts/genLuaPath.py`
+- **通过条件**: exit code 0
+
+### 3. Lua 运行时测试 (`lua_test`)
+
+- **工具**: 调用 `runtime-test` skill
+- **超时**: 30s
+- **通过条件**: 所有 `[AUTO TEST: xx]` 标记输出 PASS，无 FAIL
+
+## 验证输出格式
+
+```
+## 验证方案
+- 测试点 1: <验证方法>
+- 测试点 2: <验证方法>
+
+## 验证结果
+<所有测试点逐一结果>
+
+**最终**: PASS 或 FAIL + 原因
+
+## 已知局限
+- <未覆盖的场景>
+- <已知边界条件>
+```

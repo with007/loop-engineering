@@ -347,6 +347,7 @@ def render_skill_md(config):
         project_name=project_name,
         project_root=project_root.replace("\\", "/"),
         agent_workspace=agent_workspace.replace("\\", "/"),
+        agent_workspace_last=agent_workspace.replace("\\", "/").rstrip("/").split("/")[-1],
         agent_dir=agent_dir.replace("\\", "/"),
         agent_port=agent_port,
         agent_name=agent_name,
@@ -374,6 +375,66 @@ def render_skill_md(config):
     with open(target_path, "w", encoding="utf-8") as f:
         f.write(rendered)
     print(f"  [OK] SKILL.md 已生成: {target_path}")
+
+
+def deploy_verify_docs(config):
+    """从 Jinja2 模板渲染 VERIFY.md 和 TEST.md 到 .loop-engineering/verify/."""
+    print("--- 部署验证文档 ---")
+    from jinja2 import Environment, FileSystemLoader
+
+    project_root = config["project"]["root"]
+    project_name = config["project"]["name"]
+    agent_workspace = config["agent"]["workspace"]
+    agent_dir = os.path.join(agent_workspace, project_name)
+    project_type = config.get("type", "generic")
+
+    from loop_engineering.presets import get_verify_template_vars
+    vars_ = get_verify_template_vars(project_type)
+    if vars_ is None:
+        print(f"  WARNING: 未知预设类型 '{project_type}'，fallback 到 generic")
+        vars_ = get_verify_template_vars("generic")
+        project_type = "generic"
+
+    # 注入运行时路径
+    vars_["project_name"] = project_name
+    vars_["project_root"] = project_root.replace("\\", "/")
+    vars_["agent_dir"] = agent_dir.replace("\\", "/")
+
+    pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    templates_dir = os.path.join(os.path.dirname(pkg_dir), "templates", "verify", project_type)
+
+    if not os.path.isdir(templates_dir):
+        print(f"  WARNING: 模板目录不存在: {templates_dir}，fallback 到 generic")
+        templates_dir = os.path.join(os.path.dirname(pkg_dir), "templates", "verify", "generic")
+        if not os.path.isdir(templates_dir):
+            print(f"  [FAIL] generic 模板目录也不存在，跳过验证文档部署")
+            return
+
+    target_dir = os.path.join(project_root, ".loop-engineering", "verify")
+    os.makedirs(target_dir, exist_ok=True)
+
+    env = Environment(loader=FileSystemLoader(templates_dir))
+    for doc_name in ["VERIFY.md", "TEST.md"]:
+        template_file = doc_name + ".j2"
+        template_path = os.path.join(templates_dir, template_file)
+        if not os.path.exists(template_path):
+            print(f"  WARNING: 模板不存在: {template_path}")
+            continue
+
+        template = env.get_template(template_file)
+        rendered = template.render(**vars_)
+
+        target_path = os.path.join(target_dir, doc_name)
+        if os.path.exists(target_path):
+            with open(target_path, "r", encoding="utf-8") as f:
+                existing = f.read()
+            if existing == rendered:
+                print(f"  跳过 {doc_name}（内容相同）")
+                continue
+
+        with open(target_path, "w", encoding="utf-8") as f:
+            f.write(rendered)
+        print(f"  [OK] {doc_name} 已生成: {target_path}")
 
 
 def register_protocol(config):
@@ -553,6 +614,7 @@ def run_setup(config, force=False):
         ("部署 Skill 和 Command", lambda: deploy_skills(config)),
         ("添加 Unity MCP 依赖", lambda: add_unity_mcp(config)),
         ("渲染 SKILL.md", lambda: render_skill_md(config)),
+        ("部署验证文档", lambda: deploy_verify_docs(config)),
         ("注册通知协议", lambda: register_protocol(config)),
         ("同步配置到 Agent Worktree", lambda: sync_to_agent(config)),
     ]
@@ -685,7 +747,7 @@ whoami = $(python -c "import yaml; print(yaml.safe_load(open('.loop-engineering/
 **0a. 判断启动位置**：
 
 ```bash
-if echo "$(pwd)" | grep -q "{{ agent_workspace.replace('\\', '/').rstrip('/').split('/')[-1] }}"; then
+if echo "$(pwd)" | grep -q "{{ agent_workspace_last }}"; then
   echo "MODE=AGENT"
 else
   echo "MODE=MAIN"
@@ -968,21 +1030,24 @@ pwd  # 必须输出 {{ agent_dir }}
 <implementer 输出的完整报告 — 包含实现思路、实现过程、变更概要、向后兼容性>
 
 ## 你的工作（只能验证，不能改代码）
-1. 读 openspec/changes/<taskID>/proposal.md 确认目标
-2. 读 openspec/changes/<taskID>/tasks.md 确认全部子任务 [x]
-{% if is_unity %}
-3. refresh_unity + read_console → 0 errors
+**禁止 commit、禁止修改任何文件。** 验证 = 读代码 + 跑测试 + 检查 diff，不做任何写操作。
+
+1. **读验证文档**: 如果 `.loop-engineering/verify/VERIFY.md` 存在，按其中步骤逐项执行验证
+2. 读 openspec/changes/<taskID>/proposal.md 确认目标
+3. 读 openspec/changes/<taskID>/tasks.md 确认全部子任务 [x]
 4. 读完整 diff 和 implementer 报告，理解变更全貌
-5. **设计验证方案**：列出测试点、验证方法、覆盖场景
-6. 为每个行为设计 Lua 测试代码
-7. 用 register_lua_test 注册，调用 runtime-test skill 执行
-8. 识别已知局限：哪些场景未覆盖、哪些边界条件未测试
+5. 确认变更范围正确、无多余文件
+6. 识别已知局限：哪些场景未覆盖、哪些边界条件未测试
+
+{% if is_unity %}
+**如果 VERIFY.md 不存在，使用以下默认流程**:
+- refresh_unity + read_console → 0 errors
+- 设计验证方案：列出测试点、为每个行为设计 Lua 测试代码
+- 用 register_lua_test 注册，调用 runtime-test skill 执行
 {% else %}
-3. 读完整 diff 和 implementer 报告，理解变更全貌
-4. 确认变更范围正确、无多余文件
-5. **设计验证方案**：列出测试点、验证方法、覆盖场景
-6. 按方案逐项验证：模板变更则渲染检查关键字段；代码变更则确认逻辑正确
-7. 识别已知局限：哪些场景未覆盖、哪些边界条件未测试
+**如果 VERIFY.md 不存在，使用以下默认流程**:
+- 设计验证方案：列出测试点、验证方法、覆盖场景
+- 按方案逐项验证：模板变更则渲染检查关键字段；代码变更则确认逻辑正确
 {% endif %}
 
 ## 输出
@@ -1034,19 +1099,22 @@ pwd  # 必须输出 {{ agent_dir }}
 <implementer 输出的完整报告 — 包含实现思路、实现过程、变更概要、向后兼容性>
 
 ## 你的工作（只能验证，不能改代码）
-{% if is_unity %}
-1. refresh_unity + read_console → 0 errors
+**禁止 commit、禁止修改任何文件。** 验证 = 读代码 + 跑测试 + 检查 diff，不做任何写操作。
+
+1. **读验证文档**: 如果 `.loop-engineering/verify/VERIFY.md` 存在，按其中步骤逐项执行验证
 2. 读完整 diff 和 implementer 报告，理解变更全貌
-3. **设计验证方案**：列出测试点、验证方法、覆盖场景
-4. 为每个行为设计 Lua 测试代码
-5. 用 register_lua_test 注册，调用 runtime-test skill 执行
-6. 识别已知局限：哪些场景未覆盖、哪些边界条件未测试
+3. 确认变更范围正确、无多余文件
+4. 识别已知局限：哪些场景未覆盖、哪些边界条件未测试
+
+{% if is_unity %}
+**如果 VERIFY.md 不存在，使用以下默认流程**:
+- refresh_unity + read_console → 0 errors
+- 设计验证方案：列出测试点、为每个行为设计 Lua 测试代码
+- 用 register_lua_test 注册，调用 runtime-test skill 执行
 {% else %}
-1. 读完整 diff 和 implementer 报告，理解变更全貌
-2. 确认变更范围正确、无多余文件
-3. **设计验证方案**：列出测试点、验证方法、覆盖场景
-4. 按方案逐项验证：模板变更则渲染检查关键字段；代码变更则确认逻辑正确
-5. 识别已知局限：哪些场景未覆盖、哪些边界条件未测试
+**如果 VERIFY.md 不存在，使用以下默认流程**:
+- 设计验证方案：列出测试点、验证方法、覆盖场景
+- 按方案逐项验证
 {% endif %}
 
 ## 输出

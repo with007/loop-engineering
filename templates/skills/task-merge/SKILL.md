@@ -3,6 +3,7 @@ name: task-merge
 description: >
   合入任务分支到 master。输入 task ID 或分支名，自动检查工作区状态，
   判断工作区改动与分支改动的关系，选择 stash 或 commit 路线完成合入。
+  不指定分支时自动发现 agent 下未合入的分支供选择。
 user_invocable: true
 ---
 
@@ -13,17 +14,38 @@ user_invocable: true
 ## 原则
 
 - **不做 force push / force delete** — 只做安全的 merge
-- **遇到冲突不自动解决** — 列出冲突文件，交给用户
+- **冲突时先尝试自动分析解决** — 不要立刻交给用户，分析上下文、检查跨文件一致性后再决定。无法判定时才停止
 - **不自动 push** — 只做本地合入，push 留给用户
 - **stash 前告知用户判断依据** — 不静默 stash
 
 ## 流程
 
+### Step 0: 无参数自动发现
+
+如果用户只说"合入"而没有指定分支名或 task ID，自动查找 agent 下尚未合入 master 的分支：
+
+```bash
+git branch --no-merged master --list "agent/*"
+```
+
+- **0 个匹配** → 输出"没有未合入的 agent 分支"，退出
+- **1 个匹配** → 直接用该分支，进入 Step 2
+- **≥2 个匹配** → 列出所有匹配分支，让用户选一个
+
+列出时显示每个分支的：
+- 分支名
+- 分支上的 commit 数（`git rev-list master..<branch> --count`）
+- 最后一个 commit 的摘要（`git log master..<branch> --oneline -1`）
+
+让用户选择（输入序号），选择后进入 Step 2。
+
 ### Step 1: 解析目标分支
+
+**仅在用户提供了分支名或 task ID 时执行此步骤。**
 
 根据用户输入判断：
 
-**情况 A: 用户给了完整分支名**（如 `agent/with/task-a35f86a5`）
+**情况 A: 用户给了完整分支名**（如 `agent/with/a1b2c3d4-翻译tab`）
 
 ```bash
 git branch -a | grep "<分支名>"
@@ -100,10 +122,7 @@ git stash push -m "task-merge: auto stash before merging <branch>" -- <重叠文
 git merge <branch> --no-edit
 ```
 
-如果 merge 冲突：
-- 列出冲突文件
-- 告诉用户：stash 里还有原始改动（`git stash list`），可以 `git stash pop` 恢复
-- 停止
+如果 merge 冲突：进入 **[冲突解决策略](#冲突解决策略)**。
 
 如果 merge 成功：
 ```bash
@@ -122,12 +141,83 @@ git commit -m "WIP: 合入 <branch> 前的本地改动"
 git merge <branch> --no-edit
 ```
 
-如果 merge 冲突：
-- 列出冲突文件
-- 告诉用户：工作区改动已保存在倒数第二个 commit，解决冲突后 `git merge --continue`
-- 停止
+如果 merge 冲突：进入 **[冲突解决策略](#冲突解决策略)**。
 
-### Step 6: 验证结果
+### 冲突解决策略
+
+遇到冲突时，**先尝试自动分析解决**，不要立即停止交给用户。
+
+#### 分析每个冲突文件
+
+**1. 获取冲突文件列表**
+
+```bash
+git diff --name-only --diff-filter=U
+```
+
+**2. 逐个读文件，判断选择依据**
+
+| 冲突类型 | 判断方法 | 示例 |
+|---|---|---|
+| 纯代码改进 | 入方用更精确的 API/算法 → 选入方 | `git branch -r` → `git for-each-ref` |
+| 模板/前端 | **必须**检查依赖的 JS 函数签名 → 选与 JS 一致的一方 | 模板用 `$store.xxx`，JS 用 `Alpine.store(...)` — 必须一致 |
+| 重复内容 | 入方与 HEAD 有相同逻辑但写法不同 → 检查哪个与周边代码风格一致 | — |
+| 不可判定 | 两个版本各有利弊 → 标记为"需人工"，停止 | — |
+
+**3. 关键：跨文件一致性检查**
+
+- HTML 模板冲突时，检查引用的 JS 函数/变量/事件是否在代码库中存在
+- Python 代码冲突时，检查函数调用方是否有适配、导入模块是否有变化
+
+**4. 决定**
+
+- 能确定正确版本 → 自动解决
+- 不能确定 → 向用户说明两个版本差异，标注"需人工选择"，停止
+
+#### 解决流程
+
+1. 逐个分析冲突文件，确定每个文件用哪个版本
+2. 用 Edit 工具执行实际替换，消除冲突标记
+3. 验证无残留冲突标记：`grep -rE "<<<<<<|>>>>>>|=======" <project_root>`
+4. **验证功能**（必须用真实环境）：Python → 直接调函数验证；HTML → 真实渲染检查
+5. `git add <冲突文件>` + `git merge --continue`
+6. 输出 **冲突解决报告**
+
+#### 冲突解决报告格式
+
+```
+## 冲突解决报告
+**冲突文件数**: N
+
+### 1. `path/to/file1.py`
+- **选择**: 入方
+- **原因**: <原因>
+
+### 2. `path/to/file2.html`
+- **选择**: HEAD
+- **原因**: <原因>
+- **风险**: <风险级别>
+
+**验证结果**:
+- file1.py: <结果> ✅
+- file2.html: <结果> ✅
+```
+
+### Step 6: 手动测试提醒
+
+合入完成后，检查项目是否配置了手动测试指南：
+
+```bash
+if [ -f ".loop-engineering/verify/TEST.md" ]; then
+  cat .loop-engineering/verify/TEST.md
+else
+  echo "(未找到 TEST.md，跳过手动测试步骤)"
+fi
+```
+
+**向用户输出**：展示 TEST.md 内容，提醒用户在 push 前按指南测试。**不阻塞合入**，由用户决定。
+
+### Step 7: 验证结果
 
 ```bash
 git log --oneline -3
@@ -139,6 +229,7 @@ git status
 - 当前分支位置
 - 工作区是否干净
 - 如果用了 stash 路线，确认 stash 已清理
+- 如果 TEST.md 存在，提醒手动测试
 
 ## 输出示例
 
@@ -146,41 +237,46 @@ git status
 
 ```
 ## 合入完成 ✅
-**分支**: agent/with/task-a35f86a5
+**分支**: agent/with/a1b2c3d4-翻译tab
 **方式**: 直接 merge（工作区干净）
-**新增 commit**: ffac9d2 task-a35f86a5: 修复页面自动刷新导致输入被清空
+**新增 commit**: ffac9d2 a1b2c3d4: 翻译tab页标题为中文
 **当前状态**: master 已前进 2 个 commit，工作区干净
+**手动测试**: <TEST.md 存在时展示测试要点>
 ```
 
 ### Stash 路线
 
 ```
 ## 合入完成 ✅
-**分支**: agent/with/task-a35f86a5
+**分支**: agent/with/a1b2c3d4-翻译tab
 **方式**: stash → merge（工作区改动与分支改动高度重叠，判断为同一件事）
 **新增 commit**: ffac9d2 task-a35f86a5: 修复页面自动刷新导致输入被清空
 **当前状态**: master 已前进 2 个 commit，工作区干净
+**手动测试**: <TEST.md 存在时展示测试要点>
 ```
 
 ### Commit 路线
 
 ```
 ## 合入完成 ✅
-**分支**: agent/with/task-a35f86a5
+**分支**: agent/with/a1b2c3d4-翻译tab
 **方式**: commit 工作区 → merge（工作区改动与分支改动不重叠，判断为独立工作）
-**工作区备份**: commit abc1234 "WIP: 合入 agent/with/task-a35f86a5 前的本地改动"
+**工作区备份**: commit abc1234 "WIP: 合入 … 前的本地改动"
 **新增 commit**: ffac9d2 task-a35f86a5: 修复页面自动刷新导致输入被清空
 **当前状态**: master 已前进 2 个 commit，工作区干净
+**手动测试**: <TEST.md 存在时展示测试要点>
 ```
 
-### 冲突
+### 冲突需人工
 
 ```
-## 合入遇到冲突 ⚠️
-**分支**: agent/with/task-a35f86a5
-**冲突文件**:
-  - src/loop_engineering/server/templates/tasks.html
-  - src/loop_engineering/server/templates/runs.html
-**stash 备份**: stash@{0}（可 git stash pop 恢复原始改动）
-**下一步**: 手动解决冲突 → git add <冲突文件> → git merge --continue
+## 合入遇到冲突 ⚠️ 无法自动解决
+**分支**: agent/with/a1b2c3d4-翻译tab
+**冲突文件（需人工）**:
+### 1. `src/.../scheduler.py`
+- HEAD: 使用 asyncio.create_task 启动后台任务
+- 入方: 使用 threading.Thread 启动后台任务
+- 原因: 两种并发模型差异大，无法判定项目偏好
+**备份**: commit a3c74d5 "WIP: 合入 … 前的本地改动"
+**下一步**: 手动解决冲突 → git add → git merge --continue
 ```

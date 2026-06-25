@@ -143,8 +143,8 @@ python -m loop_engineering.scripts.task_pick $whoami --project-root D:/work_pvp/
 ```
 - 输出格式: `taskID=xxx branch=agent/<whoami>/xxx-<slug> desc=... openSpec=true|false`
 - `openSpec=true` → 任务关联 `openspec/changes/<taskID>/`，implementer 按 OpenSpec apply 流程处理
-- 无匹配则 `NONE` → 停止。
-- 已有进行中任务则 `BUSY` → 写心跳后跳过本轮，等待下次 cron 触发。
+- 无匹配则 `NONE` → `ExitWorktree(action="keep")` → 停止。
+
 
 ### Step 2: Fork 分支 + 标记进行中
 
@@ -243,7 +243,6 @@ pwd  # 必须输出 D:/work_pvp-agent/loop-engineering
 <是否破坏已有功能、迁移注意事项；无影响则写"无破坏性变更">
 ```
 
-
 **openSpec=false** 时：
 
 ```
@@ -273,7 +272,7 @@ pwd  # 必须输出 D:/work_pvp-agent/loop-engineering
 ---
 
 ## 分支
-agent/<whoami>/<taskID>
+<BRANCH>
 
 ## 规范
 遵循 CLAUDE.md，只改必要文件。修改后确认无语法错误。
@@ -333,13 +332,19 @@ pwd  # 必须输出 D:/work_pvp-agent/loop-engineering
 
 ## 你的工作（只能验证，不能改代码）
 **禁止 commit、禁止修改任何文件。** 验证 = 读代码 + 跑测试 + 检查 diff，不做任何写操作。
-1. 读 openspec/changes/<taskID>/proposal.md 确认目标
-2. 读 openspec/changes/<taskID>/tasks.md 确认全部子任务 [x]
-3. 读完整 diff 和 implementer 报告，理解变更全貌
-4. 确认变更范围正确、无多余文件
-5. **设计验证方案**：列出测试点、验证方法、覆盖场景
-6. 按方案逐项验证：模板变更则渲染检查关键字段；代码变更则确认逻辑正确
-7. 识别已知局限：哪些场景未覆盖、哪些边界条件未测试
+
+1. **读验证文档**: 如果 `.loop-engineering/verify/VERIFY.md` 存在，按其中步骤逐项执行验证
+2. 读 openspec/changes/<taskID>/proposal.md 确认目标
+3. 读 openspec/changes/<taskID>/tasks.md 确认全部子任务 [x]
+4. 读完整 diff 和 implementer 报告，理解变更全貌
+5. 确认变更范围正确、无多余文件
+6. 识别已知局限：哪些场景未覆盖、哪些边界条件未测试
+
+
+**如果 VERIFY.md 不存在，使用以下默认流程**:
+- 设计验证方案：列出测试点、验证方法、覆盖场景
+- 按方案逐项验证：模板变更则渲染检查关键字段；代码变更则确认逻辑正确
+
 
 ## 输出
 
@@ -390,14 +395,18 @@ pwd  # 必须输出 D:/work_pvp-agent/loop-engineering
 <implementer 输出的完整报告 — 包含实现思路、实现过程、变更概要、向后兼容性>
 
 ## 你的工作（只能验证，不能改代码）
-
 **禁止 commit、禁止修改任何文件。** 验证 = 读代码 + 跑测试 + 检查 diff，不做任何写操作。
 
-1. 读完整 diff 和 implementer 报告，理解变更全貌
-2. 确认变更范围正确、无多余文件
-3. **设计验证方案**：列出测试点、验证方法、覆盖场景
-4. 按方案逐项验证：模板变更则渲染检查关键字段；代码变更则确认逻辑正确
-5. 识别已知局限：哪些场景未覆盖、哪些边界条件未测试
+1. **读验证文档**: 如果 `.loop-engineering/verify/VERIFY.md` 存在，按其中步骤逐项执行验证
+2. 读完整 diff 和 implementer 报告，理解变更全貌
+3. 确认变更范围正确、无多余文件
+4. 识别已知局限：哪些场景未覆盖、哪些边界条件未测试
+
+
+**如果 VERIFY.md 不存在，使用以下默认流程**:
+- 设计验证方案：列出测试点、验证方法、覆盖场景
+- 按方案逐项验证
+
 
 ## 输出
 
@@ -431,11 +440,10 @@ implementer 修复说明: <...>
 
 **PASS**:
 1. 检查 `git status`，确认改动文件合理
-2. 将 implementer 和 verifier 的输出组装成符合规范的 commit body。
-   - **正常情况**（工作区有改动）：`git add` + `git commit`：
-     ```bash
-     git add <改动的源文件>
-     git commit -F - <<'COMMIT_EOF'
+2. 提交（先生成 commit，diff 才有内容）。将 implementer 和 verifier 的输出组装成 commit body：
+   ```bash
+   git add <改动的源文件>
+   git commit -F - <<'COMMIT_EOF'
 [<taskID>] <任务简述>
 
 <若有 OpenSpec 关联: **关联**: openspec/changes/<taskID>/>
@@ -450,29 +458,10 @@ implementer 修复说明: <...>
 ---
 IMP<序号> VFY<轮数>
 COMMIT_EOF
-     ```
-   - **已有 commit**（工作区干净，HEAD 是 implementer 留下的裸提交）：`git commit --amend` 补全 body：
-     ```bash
-     git commit --amend -F - <<'COMMIT_EOF'
-<保留原有 subject 行不变>
-
-<若有 OpenSpec 关联: **关联**: openspec/changes/<taskID>/>
-
-## 任务
-<任务描述 + 验收条件，来自 tasks.md>
-
-<implementer 输出的: 实现思路、实现过程、变更概要、向后兼容性>
-
-<verifier 输出的: 验证方案、验证结果、已知局限>
-
----
-IMP<序号> VFY<轮数>
-COMMIT_EOF
-     ```
-     > 注意：`--amend` 时第一行留空，让 git 保留原有 subject，只在 body 部分追加报告内容。如果原有 subject 也不规范，则用 `-m "<规范标题>"` 一并替换。
+   ```
 3. 运行收尾脚本（更新主工程 tasks.md: [~]→[x]、生成 diff、弹通知）：
    ```bash
-   python -m loop_engineering.scripts.task_done $whoami <taskID> [IMP序号] [VFY轮数] --project-root D:/work_pvp/loop-engineering
+   python -m loop_engineering.scripts.task_done $whoami [任务ID] [IMP序号] [VFY轮数] --project-root D:/work_pvp/loop-engineering
    ```
 4. 推送：
    ```bash
@@ -491,7 +480,6 @@ COMMIT_EOF
 **FAIL**:
 ```
 记录 FAIL 数 → SendMessage 当前 implementer（≤5次，每次携带 FAIL 测试点）
-    ├─ SendMessage 指令中明确：只修代码 + git add，禁止 implementer 自行 commit
     ├─ FAIL 数收敛（↓）→ 继续
     └─ 5 次不收敛 → 新起 implementer（新鲜上下文，携带全部 FAIL 历史）
                         ├─ 最多 3 个 implementer

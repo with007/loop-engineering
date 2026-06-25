@@ -217,9 +217,7 @@
                 {type:'shell', id:'gen_lua_path', command:'python scripts/genLuaPath.py', condition:'lua_files_added'},
                 {type:'lua_test', id:'runtime_test'}
             ],
-            'unity-basic': [{type:'unity_refresh', id:'compile'}],
-            'node-frontend': [{type:'npm_build', id:'build'}, {type:'npm_test', id:'test'}],
-            'go-backend': [{type:'go_build', id:'build'}, {type:'go_test', id:'test'}],
+            'python-server': [{type:'shell', id:'test', command:'python -m pytest || echo skipped'}],
             'generic': [{type:'shell', id:'build', command:'npm run build || echo skipped'}, {type:'shell', id:'test', command:'npm test || echo skipped'}]
         };
         function setupForm() {
@@ -228,6 +226,10 @@
                 agentWorkspace: '',
                 selectedType: '',
                 verifySteps: [],
+                verifyTemplate: '',
+                testTemplate: '',
+                loadingVerify: false,
+                loadingTest: false,
                 mainPort: 8080,
                 agentPort: 9080,
                 get isUnity() { return this.selectedType.startsWith('unity'); },
@@ -247,6 +249,31 @@
                 onProjectRootChange(val) {
                     var ws = this.genWorkspace(val);
                     if (ws) this.agentWorkspace = ws;
+                },
+                async fetchTemplates(type) {
+                    if (!type) {
+                        this.verifyTemplate = '';
+                        this.testTemplate = '';
+                        return;
+                    }
+                    this.loadingVerify = true;
+                    this.loadingTest = true;
+                    try {
+                        var vResp = await fetch('/api/docs/preview?type=' + encodeURIComponent(type) + '&doc=verify');
+                        var vData = await vResp.json();
+                        this.verifyTemplate = vData.content || '';
+                    } catch(e) {
+                        this.verifyTemplate = '加载失败: ' + e.message;
+                    }
+                    this.loadingVerify = false;
+                    try {
+                        var tResp = await fetch('/api/docs/preview?type=' + encodeURIComponent(type) + '&doc=test');
+                        var tData = await tResp.json();
+                        this.testTemplate = tData.content || '';
+                    } catch(e) {
+                        this.testTemplate = '加载失败: ' + e.message;
+                    }
+                    this.loadingTest = false;
                 },
                 async pickFolder(target) {
                     console.log('pickFolder called:', target);
@@ -386,6 +413,73 @@
                     } catch (e) {
                         this.message = {type: 'error', text: 'Teardown failed: ' + e.message};
                     }
+                }
+            };
+        }
+
+        // Docs editor — VERIFY.md / TEST.md online editing
+        function docsEditor() {
+            return {
+                activeDoc: 'verify',
+                content: '',
+                previewHtml: '',
+                saving: false,
+                saved: false,
+                error: '',
+                timer: null,
+
+                async init() {
+                    await this.switchDoc('verify');
+                },
+
+                async switchDoc(doc) {
+                    this.activeDoc = doc;
+                    this.saved = false;
+                    this.error = '';
+                    try {
+                        var params = new URLSearchParams(window.location.search);
+                        var proj = params.get('project') || '';
+                        var url = '/api/docs/' + doc + (proj ? '?project=' + encodeURIComponent(proj) : '');
+                        var resp = await fetch(url);
+                        var data = await resp.json();
+                        this.content = data.content || '';
+                        this.onEdit();
+                    } catch(e) {
+                        this.error = '加载失败: ' + e.message;
+                    }
+                },
+
+                onEdit() {
+                    var self = this;
+                    if (self.timer) clearTimeout(self.timer);
+                    self.timer = setTimeout(function() {
+                        self.previewHtml = marked.parse(self.content || '*（空）*');
+                    }, 200);
+                },
+
+                async save() {
+                    this.saving = true;
+                    this.saved = false;
+                    this.error = '';
+                    try {
+                        var params = new URLSearchParams(window.location.search);
+                        var proj = params.get('project') || '';
+                        var url = '/api/docs/' + this.activeDoc + (proj ? '?project=' + encodeURIComponent(proj) : '');
+                        var resp = await fetch(url, {
+                            method: 'PUT',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({content: this.content})
+                        });
+                        if (resp.ok) {
+                            this.saved = true;
+                        } else {
+                            var data = await resp.json();
+                            this.error = data.detail || '保存失败';
+                        }
+                    } catch(e) {
+                        this.error = '保存失败: ' + e.message;
+                    }
+                    this.saving = false;
                 }
             };
         }

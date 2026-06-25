@@ -1,0 +1,37 @@
+# 手动测试指南 — {{ project_name }}
+
+> 项目类型: {{ preset_display_name }}
+
+## 启动项目
+
+```bash
+{{ test_serve }}
+```
+{% if test_url %}
+服务地址: {{ test_url }}
+{% endif %}
+
+## 测试清单
+
+{% for s in test_scenarios %}
+### {{ loop.index }}. {{ s.name }}
+
+**步骤**:
+{% for step in s.steps %}
+{{ loop.index }}. {{ step }}
+{% endfor %}
+
+**预期**: {{ s.expected }}
+
+{% endfor %}
+
+## 测试完成后
+
+- 停止服务
+- 检查终端无异常日志
+- 确认无文件残留或脏状态
+
+---
+
+> 你可以编辑此文件（`.loop-engineering/verify/TEST.md`）来添加项目特定的测试场景。
+> 重新运行 `loop setup` 会覆盖 — 请备份自定义内容。

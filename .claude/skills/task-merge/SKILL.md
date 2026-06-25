@@ -226,7 +226,27 @@ Python 代码冲突时，检查：
 - 备份位置（stash 路线：`stash@{0}` / commit 路线：WIP commit）
 - 恢复命令
 
-### Step 6: 验证结果
+### Step 6: 手动测试提醒
+
+合入完成后，检查项目是否配置了手动测试指南：
+
+```bash
+if [ -f ".loop-engineering/verify/TEST.md" ]; then
+  cat .loop-engineering/verify/TEST.md
+else
+  echo "(未找到 TEST.md，跳过手动测试步骤)"
+fi
+```
+
+**向用户输出**：
+```
+## 手动测试
+项目配置了手动测试指南（.loop-engineering/verify/TEST.md）。建议在 push 前按指南执行测试。测试完成后确认无误再 push。
+```
+
+如果 TEST.md 存在，展示其内容。如果不存在，跳过此步骤。**不阻塞合入**，由用户决定是否现在测试。
+
+### Step 7: 验证结果
 
 ```bash
 git log --oneline -3
@@ -249,6 +269,7 @@ git status
 **方式**: 直接 merge（工作区干净）
 **新增 commit**: ffac9d2 a1b2c3d4: 翻译tab页标题为中文
 **当前状态**: master 已前进 2 个 commit，工作区干净
+**手动测试**: <TEST.md 存在时展示测试要点，否则不显示此行>
 ```
 
 ### Stash 路线
