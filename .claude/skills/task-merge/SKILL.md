@@ -14,7 +14,7 @@ user_invocable: true
 ## 原则
 
 - **不做 force push / force delete** — 只做安全的 merge
-- **遇到冲突不自动解决** — 列出冲突文件，交给用户
+- **冲突时先尝试自动分析解决** — 不要立刻交给用户，分析上下文、检查跨文件一致性后再决定。无法判定时才停止
 - **不自动 push** — 只做本地合入，push 留给用户
 - **stash 前告知用户判断依据** — 不静默 stash
 
@@ -122,10 +122,7 @@ git stash push -m "task-merge: auto stash before merging <branch>" -- <重叠文
 git merge <branch> --no-edit
 ```
 
-如果 merge 冲突：
-- 列出冲突文件
-- 告诉用户：stash 里还有原始改动（`git stash list`），可以 `git stash pop` 恢复
-- 停止
+如果 merge 冲突：进入 **[冲突解决策略](#冲突解决策略)**。
 
 如果 merge 成功：
 ```bash
@@ -144,10 +141,90 @@ git commit -m "WIP: 合入 <branch> 前的本地改动"
 git merge <branch> --no-edit
 ```
 
-如果 merge 冲突：
-- 列出冲突文件
-- 告诉用户：工作区改动已保存在倒数第二个 commit，解决冲突后 `git merge --continue`
-- 停止
+如果 merge 冲突：进入 **[冲突解决策略](#冲突解决策略)**。
+
+### 冲突解决策略
+
+遇到冲突时，**先尝试自动分析解决**，不要立即停止交给用户。
+
+#### 分析每个冲突文件
+
+**1. 获取冲突文件列表**
+
+```bash
+git diff --name-only --diff-filter=U
+```
+
+**2. 逐个读文件，判断选择依据**
+
+| 冲突类型 | 判断方法 | 示例 |
+|---|---|---|
+| 纯代码改进 | 入方用更精确的 API/算法 → 选入方 | `git branch -r` → `git for-each-ref --sort=... refs/remotes/origin/agent/` |
+| 模板/前端 | **必须**检查依赖的 JS 函数签名 → 选与 JS 一致的一方 | 模板用 `$store.reopen.xxx`，JS 用 `Alpine.store('reopen',...)` — 必须一致 |
+| 重复内容 | 入方与 HEAD 有相同逻辑但写法不同 → 检查哪个与周边代码风格一致 | — |
+| 不可判定 | 两个版本各有利弊 → 标记为"需人工"，停止 | — |
+
+**3. 关键：跨文件一致性检查**
+
+HTML 模板冲突时，**必须**检查模板引用的 JS 函数是否在代码库中存在：
+- `x-model="$store.xxx"` → 搜索 `Alpine.store('xxx',` 定义
+- `@click="funcName("` / `onclick="funcName("` → 搜索 `function funcName` 定义
+- `@open-xxx.window` → 搜索 `dispatchEvent` 或 `$dispatch` 对应的事件名
+- 确保模板引用的每个函数/变量/事件名在 JS 侧都有对应实现
+
+Python 代码冲突时，检查：
+- 被修改函数的调用方是否有适配
+- 导入的模块是否有变化
+
+**4. 决定**
+
+- 能确定正确版本 → 自动解决
+- 不能确定 → 向用户说明两个版本差异，标注"需人工选择"，停止
+
+#### 解决流程
+
+1. 逐个分析冲突文件，确定每个文件用哪个版本（或手动合并）
+2. 用 Edit 工具执行实际替换，消除冲突标记
+3. 验证无残留冲突标记：`grep -rE "<<<<<<|>>>>>>|=======" <project_root>`
+4. **验证功能**（必须用真实环境，不可跳过）：
+   - Python 代码 → `python -c "from module import func; func()"` 直接调用验证
+   - HTML 模板 → 用 jinja2 `Environment` + `FileSystemLoader` 真实渲染，检查关键元素
+   - 有疑问 → 启动真实 server 进一步验证
+5. `git add <冲突文件>` + `git merge --continue`
+6. 输出 **冲突解决报告**（见下方格式）
+
+#### 冲突解决报告格式
+
+```
+## 冲突解决报告
+
+**冲突文件数**: N
+
+### 1. `path/to/file1.py`
+- **选择**: 入方
+- **原因**: 入方用 git for-each-ref 精确获取 agent 分支并按时间排序，比 HEAD 的 git branch -r 更精确
+
+### 2. `path/to/file2.html`
+- **选择**: HEAD
+- **原因**: 入方改用 x-data 但 base.html 的 JS 函数仍用 Alpine.store，不一致会导致功能静默失效
+- **风险**: 低 — 已用 jinja2 渲染验证关键元素存在
+
+**验证结果**:
+- `file1.py`: 直接调函数，返回结构正确 ✅
+- `file2.html`: 模板渲染通过，关键元素存在 ✅
+```
+
+#### 无法自动解决时
+
+如果遇到以下情况，标记为"需人工"并停止：
+- 两个版本逻辑完全不同，无法判定哪个正确
+- 冲突涉及业务逻辑，只有原作者知道意图
+- 合并会导致已知的测试/构建失败且无法快速修复
+
+此时告知用户：
+- 冲突文件列表及各自差异
+- 备份位置（stash 路线：`stash@{0}` / commit 路线：WIP commit）
+- 恢复命令
 
 ### Step 6: 验证结果
 
@@ -195,14 +272,34 @@ git status
 **当前状态**: master 已前进 2 个 commit，工作区干净
 ```
 
-### 冲突
+### 冲突自动解决
 
 ```
-## 合入遇到冲突 ⚠️
+## 合入完成 ✅
 **分支**: agent/with/a1b2c3d4-翻译tab
-**冲突文件**:
-  - src/loop_engineering/server/templates/tasks.html
-  - src/loop_engineering/server/templates/runs.html
-**stash 备份**: stash@{0}（可 git stash pop 恢复原始改动）
-**下一步**: 手动解决冲突 → git add <冲突文件> → git merge --continue
+**方式**: commit 工作区 → merge → 自动解决 2 处冲突
+**冲突解决报告**:
+### 1. `src/.../branches.py`
+- **选择**: 入方
+- **原因**: 入方用 git for-each-ref 精确获取 agent 分支并按时间排序
+### 2. `src/.../_tasks_items.html`
+- **选择**: HEAD
+- **原因**: 入方改用 x-data 但 base.html JS 仍用 Alpine.store，不一致会导致功能静默失效
+- **风险**: 低 — 已用 jinja2 渲染验证
+**新增 commit**: 730c6d2 Merge branch（含 2 个任务 commit）
+**当前状态**: master 已前进 3 个 commit，工作区干净
+```
+
+### 冲突需人工
+
+```
+## 合入遇到冲突 ⚠️ 无法自动解决
+**分支**: agent/with/a1b2c3d4-翻译tab
+**冲突文件（需人工）**:
+### 1. `src/.../scheduler.py`
+- HEAD: 使用 asyncio.create_task 启动后台任务
+- 入方: 使用 threading.Thread 启动后台任务
+- 原因: 两种并发模型差异大，无法判定项目偏好
+**备份**: commit a3c74d5 "WIP: 合入 … 前的本地改动"
+**下一步**: 手动解决冲突 → git add → git merge --continue
 ```
