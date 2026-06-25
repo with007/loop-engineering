@@ -321,12 +321,6 @@ def _cmd_config(args):
             _print_summary(cfg)
             if cfg.get("type"):
                 print(f"  类型:     {cfg['type']}")
-            if cfg.get("verify"):
-                steps = cfg["verify"].get("steps", [])
-                if steps:
-                    print(f"  验证步骤: {len(steps)} 步")
-                    for s in steps:
-                        print(f"    - {s.get('type', '?')}: {s.get('id', '?')}")
 
 
 def _cmd_teardown(args):

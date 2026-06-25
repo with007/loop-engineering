@@ -1,10 +1,48 @@
 # 手动测试指南 — {{ project_name }}
 
 > 项目类型: {{ preset_display_name }}
+>
+> 本文件是手动测试清单，在合入前按此检查。标有 🤖 的步骤
+> verifier 已自动通过 MCP 工具执行，你可以复核结果或重新执行。
+> 重新运行 `loop setup` 会覆盖 — 有自定义内容请备份。
+
+## 环境准备
+
+测试在 agent worktree 中执行。启动前确认：
+
+1. Unity Editor 已打开对应 worktree 的项目
+2. 项目运行时配置就绪
+   - 检查 `config.json` 中的开关是否正确（如 `autoTestBattle`、
+     `useDotsBattle` 等）
+   - 依赖的外部服务是否可访问
+
+> 🤖 verifier 已通过 MCP `refresh_unity` 触发编译并确认无 error。
 
 ## 启动项目
 
+Unity 项目通常在 Editor 中运行，没有统一的命令行启动方式。
 {{ test_serve }}
+
+> 🤖 verifier 已通过 MCP 进入 Play Mode。
+
+## 运行时验证
+
+verifier 已自动检查编译、Console error 和 Lua 自动测试。
+以下只关注 verifier 无法判断的部分。
+
+1. 走一遍本次变更涉及的核心 UI 流程
+   - 战斗相关变更：进入战斗，确认画面表现正常、无穿模或显示异常
+   - UI 变更：打开对应面板，确认布局正确、文字清晰、交互正常
+   - 系统功能：触发对应路径，检查行为符合预期
+2. 关注帧率是否有明显下降
+3. 关注是否有加载卡顿或异常等待
+
+## 测试完成后
+
+1. 退出 Play Mode
+2. 确认 Console 无残留 error 和 warning
+3. 如果测试期间修改了 `config.json` 的调试开关，恢复原值
+4. 确认主 worktree 项目文件未被修改
 
 ## 测试清单
 
@@ -19,14 +57,3 @@
 **预期**: {{ s.expected }}
 
 {% endfor %}
-
-## 测试完成后
-
-- 停止 Play Mode
-- 确认 Console 无残留错误
-- 确认无新增的警告
-
----
-
-> 你可以编辑此文件（`TEST.md`）来添加项目特定的测试场景。
-> 重新运行 `loop setup` 会覆盖 — 请备份自定义内容。

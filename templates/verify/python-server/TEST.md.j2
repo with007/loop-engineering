@@ -1,8 +1,40 @@
 # 手动测试指南 — {{ project_name }}
 
 > 项目类型: {{ preset_display_name }}
+>
+> 本文件是手动测试清单，在合入前按此检查。标有 🤖 的步骤
+> verifier 已自动执行，你可以复核结果或重新执行。
+> 重新运行 `loop setup` 会覆盖 — 有自定义内容请备份。
+
+## 环境准备
+
+测试在 agent worktree 中执行。
+
+1. 安装依赖
+   ```bash
+   pip install -e ".[ui]"     # 带可选依赖
+   # 或 pip install -e .      # 仅核心依赖
+   ```
+   根据项目的 `pyproject.toml` 或 `setup.py` 确定安装命令。
+
+2. 查看项目是否有配置文件需要预先设置
+   - 环境变量（`.env`、`config.yaml` 等）
+   - 数据库连接、API key 等
+
+> 🤖 verifier 执行时会自动 pip install。测试完成后记得
+> 切回主 worktree 重新 `pip install`，保持主环境干净。
 
 ## 启动项目
+
+填写项目的启动命令。常见例子：
+
+| 项目类型 | 启动命令 |
+|----------|----------|
+| FastAPI | `python -m uvicorn app:app --port 8000` |
+| Flask | `flask run` 或 `python app.py` |
+| Django | `python manage.py runserver` |
+| CLI 工具 | `python -m your_module [子命令]` |
+| 纯库 | 无服务，跳过 |
 
 ```bash
 {{ test_serve }}
@@ -10,6 +42,39 @@
 {% if test_url %}
 服务地址: {{ test_url }}
 {% endif %}
+
+> 🤖 verifier 在验证时会后台启动服务、请求关键端点、然后停止。
+
+## 运行时验证
+
+启动服务后，从用户视角验证基本功能正常。
+
+### Web 服务
+
+1. 浏览器打开服务地址，确认页面正常加载（无白屏、无 500）
+2. 走一遍核心用户流程（登录、主页面、关键操作）
+3. 用 curl 或浏览器 DevTools 检查关键 API 返回正确
+
+### CLI 工具
+
+1. 运行 `--help` 确认子命令正常显示
+2. 执行一个核心子命令，验证输出符合预期
+
+### 纯库
+
+跳过运行时验证。
+
+## 测试完成后
+
+1. 停止服务（Ctrl+C 或 kill 进程）
+2. 检查终端无异常日志
+3. **切回主 worktree 重新安装依赖**：
+   ```bash
+   # 回到主 worktree 后执行
+   pip install -e ".[ui]"
+   ```
+   如果在 agent worktree 中安装了不同版本，这一步确保
+   主环境不会残留测试时的依赖变化。
 
 ## 测试清单
 
@@ -24,14 +89,3 @@
 **预期**: {{ s.expected }}
 
 {% endfor %}
-
-## 测试完成后
-
-- 停止服务
-- 检查终端无异常日志
-- 确认无文件残留或脏状态
-
----
-
-> 你可以编辑此文件（`TEST.md`）来添加项目特定的测试场景。
-> 重新运行 `loop setup` 会覆盖 — 请备份自定义内容。

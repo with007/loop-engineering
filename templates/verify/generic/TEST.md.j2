@@ -1,12 +1,62 @@
 # 手动测试指南 — {{ project_name }}
 
 > 项目类型: {{ preset_display_name }}
+>
+> 本文件是手动测试清单，在合入前按此检查。标有 🤖 的步骤
+> verifier 已自动执行，你可以复核结果或重新执行。
+> 重新运行 `loop setup` 会覆盖 — 有自定义内容请备份。
+
+## 环境准备
+
+根据项目类型安装依赖。常见例子：
+
+| 项目类型 | 安装命令 |
+|----------|----------|
+| Node | `npm install` |
+| Python | `pip install -e .` |
+| Go | `go mod download` |
+| Rust | `cargo build` |
+
+> 🤖 verifier 执行时会自动检测项目类型并安装依赖。
 
 ## 启动项目
+
+填写项目的启动命令。常见例子：
+
+| 项目类型 | 启动命令 |
+|----------|----------|
+| Node 前端 | `npm run dev` |
+| Python Web | `python -m uvicorn app:app` |
+| Go 服务 | `go run ./...` |
+| CLI 工具 | 对应子命令 |
+| 纯库 | 无服务，跳过 |
 
 ```bash
 {{ test_serve }}
 ```
+
+## 运行时验证
+
+启动服务后，从用户视角验证基本功能正常。
+
+- Web 服务：浏览器打开页面，走核心流程，检查关键 API 返回
+- CLI 工具：执行核心子命令，验证输出
+- 纯库：跳过
+
+> 🤖 verifier 在验证时会后台启动服务、请求关键端点、然后停止。
+
+## 测试完成后
+
+1. 停止服务（Ctrl+C 或 kill 进程）
+2. 检查终端无异常日志
+3. 切回主 worktree 重新安装依赖
+
+   | 项目类型 | 重新安装命令 |
+   |----------|-------------|
+   | Node | `npm install` |
+   | Python | `pip install -e .` |
+   | Go | `go mod download` |
+   | Rust | `cargo build` |
 
 ## 测试清单
 
@@ -21,13 +71,3 @@
 **预期**: {{ s.expected }}
 
 {% endfor %}
-
-## 测试完成后
-
-- 停止服务
-- 检查终端无异常日志
-
----
-
-> 你可以编辑此文件（`TEST.md`）来添加项目特定的测试场景。
-> 重新运行 `loop setup` 会覆盖 — 请备份自定义内容。

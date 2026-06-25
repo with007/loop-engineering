@@ -4,15 +4,6 @@ PRESETS = {
     "unity-tolua": {
         "name": "Unity + ToLua",
         "description": "Unity 项目，使用 ToLua 热更新框架",
-        "verify": {
-            "steps": [
-                {"id": "compile", "type": "unity_refresh", "timeout": 120},
-                {"id": "gen_lua_path", "type": "shell",
-                 "command": "python scripts/genLuaPath.py",
-                 "condition": "lua_files_added"},
-                {"id": "runtime_test", "type": "lua_test", "timeout": 30},
-            ]
-        },
         "test": {
             "serve": "在 Unity Editor 中打开项目，进入 Play Mode",
             "scenarios": [
@@ -40,14 +31,8 @@ PRESETS = {
     "python-server": {
         "name": "Python Server",
         "description": "Python Web/服务端项目",
-        "verify": {
-            "steps": [
-                {"id": "test", "type": "shell",
-                 "command": "python -m pytest || echo skipped"},
-            ]
-        },
         "test": {
-            "serve": "python -m <模块名>",
+            "serve": "",
             "scenarios": [
                 {
                     "name": "测试检查",
@@ -72,12 +57,6 @@ PRESETS = {
     "generic": {
         "name": "Generic",
         "description": "通用项目",
-        "verify": {
-            "steps": [
-                {"id": "build", "type": "shell", "command": "npm run build || echo skipped"},
-                {"id": "test", "type": "shell", "command": "npm test || echo skipped"},
-            ]
-        },
         "test": {
             "serve": "npm run dev || npm start",
             "scenarios": [
@@ -106,13 +85,10 @@ def list_presets():
 
 
 def apply_preset(config, preset_name):
-    """将预设的 verify steps 应用到配置."""
+    """应用预设类型到配置."""
     preset = get_preset(preset_name)
     if not preset:
         return config
-    if "verify" not in config:
-        config["verify"] = {}
-    config["verify"]["steps"] = preset["verify"]["steps"]
     config["type"] = preset_name
     return config
 
