@@ -130,6 +130,7 @@ def _exec_shell(command, cwd, timeout):
     try:
         r = subprocess.run(
             command, shell=True, capture_output=True, text=True,
+            encoding='utf-8', errors='replace',
             cwd=cwd, timeout=timeout
         )
         output = (r.stdout + r.stderr)[:10240]

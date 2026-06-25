@@ -29,7 +29,8 @@ def _run(cmd, cwd=None):
     """运行 shell 命令，返回 (returncode, stdout, stderr)."""
     try:
         result = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, cwd=cwd, timeout=30
+            cmd, shell=True, capture_output=True, text=True,
+            encoding='utf-8', errors='replace', cwd=cwd, timeout=30
         )
         return result.returncode, result.stdout.strip(), result.stderr.strip()
     except Exception:

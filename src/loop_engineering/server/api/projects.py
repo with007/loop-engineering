@@ -67,7 +67,8 @@ def _count_agent_branches(project_root):
     """统计未合入的 agent 分支数."""
     try:
         result = subprocess.run(
-            "git branch -r", shell=True, capture_output=True, text=True, cwd=project_root, timeout=10
+            "git branch -r", shell=True, capture_output=True, text=True,
+            encoding='utf-8', errors='replace', cwd=project_root, timeout=10
         )
         lines = result.stdout.strip().split("\n")
         return sum(1 for l in lines if "agent/" in l and "origin/agent/" in l)

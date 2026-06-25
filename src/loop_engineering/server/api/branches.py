@@ -21,7 +21,8 @@ def list_branches(project: str = Query(None)):
     try:
         # 列出远程 agent 分支
         result = subprocess.run(
-            "git branch -r", shell=True, capture_output=True, text=True, cwd=pr, timeout=10
+            "git branch -r", shell=True, capture_output=True, text=True,
+            encoding='utf-8', errors='replace', cwd=pr, timeout=10
         )
         lines = result.stdout.strip().split("\n")
     except Exception:
@@ -59,7 +60,8 @@ def _is_merged(project_root, branch):
             return True
         r = sp.run(
             f"git branch -r --merged origin/master",
-            shell=True, capture_output=True, text=True, cwd=project_root, timeout=10
+            shell=True, capture_output=True, text=True,
+            encoding='utf-8', errors='replace', cwd=project_root, timeout=10
         )
         return branch in [l.strip() for l in r.stdout.strip().split("\n")]
     except Exception:

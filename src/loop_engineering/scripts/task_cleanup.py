@@ -8,7 +8,8 @@ from loop_engineering.task_id import extract_task_id_from_branch
 
 
 def run(cmd):
-    return subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    return subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                          encoding='utf-8', errors='replace')
 
 
 def _default_branch():

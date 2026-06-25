@@ -3,6 +3,7 @@ name: task-merge
 description: >
   合入任务分支到 master。输入 task ID 或分支名，自动检查工作区状态，
   判断工作区改动与分支改动的关系，选择 stash 或 commit 路线完成合入。
+  不指定分支时自动发现 agent 下未合入的分支供选择。
 user_invocable: true
 ---
 
@@ -19,7 +20,28 @@ user_invocable: true
 
 ## 流程
 
+### Step 0: 无参数自动发现
+
+如果用户只说"合入"而没有指定分支名或 task ID，自动查找 agent 下尚未合入 master 的分支：
+
+```bash
+git branch --no-merged master --list "agent/*"
+```
+
+- **0 个匹配** → 输出"没有未合入的 agent 分支"，退出
+- **1 个匹配** → 直接用该分支，进入 Step 2
+- **≥2 个匹配** → 列出所有匹配分支，让用户选一个
+
+列出时显示每个分支的：
+- 分支名
+- 分支上的 commit 数（`git rev-list master..<branch> --count`）
+- 最后一个 commit 的摘要（`git log master..<branch> --oneline -1`）
+
+让用户选择（输入序号），选择后进入 Step 2。
+
 ### Step 1: 解析目标分支
+
+**仅在用户提供了分支名或 task ID 时执行此步骤。**
 
 根据用户输入判断：
 

@@ -196,7 +196,8 @@ def start_loop(project_root):
             f'"cd {project_root} && claude --dangerously-skip-permissions"\''
         )
 
-    proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            encoding='utf-8')
     # Windows: PID 由 ps1 脚本异步写入 loop.pid；非 Windows: 直接用 proc.pid
     if platform.system() != "Windows":
         _write_pid(project_root, proc.pid)
@@ -213,7 +214,8 @@ def stop_loop(project_root):
         try:
             if platform.system() == "Windows":
                 subprocess.run(f"taskkill /F /T /PID {pid}", shell=True,
-                               capture_output=True, timeout=10)
+                               capture_output=True, text=True,
+                               encoding='utf-8', errors='replace', timeout=10)
                 # 确认进程是否真的被杀掉了
                 import time
                 time.sleep(1)
@@ -268,7 +270,8 @@ def _pid_alive(pid):
     try:
         if platform.system() == "Windows":
             r = subprocess.run(f"tasklist /FI \"PID eq {pid}\" /NH",
-                               shell=True, capture_output=True, text=True, timeout=5)
+                               shell=True, capture_output=True, text=True,
+                               encoding='utf-8', errors='replace', timeout=5)
             return str(pid) in r.stdout
         else:
             os.kill(pid, 0)

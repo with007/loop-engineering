@@ -36,12 +36,13 @@ def _notify_windows(title, message, diff_path):
             f.write(f'explorer /select,"{abs_path}"\n')
     subprocess.Popen(
         ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', tmp],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, encoding='utf-8'
     )
 
 
 def _notify_mac(title, message):
-    subprocess.run(['osascript', '-e', f'display notification "{message}" with title "{title}"'])
+    subprocess.run(['osascript', '-e', f'display notification "{message}" with title "{title}"'],
+                   encoding='utf-8', errors='replace')
 
 
 if __name__ == "__main__":

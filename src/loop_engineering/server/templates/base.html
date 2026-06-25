@@ -410,11 +410,50 @@
             }));
         }
 
-        // Reopen modal — dispatch event to Alpine
+        // Reopen modal — use Alpine.store for reliable cross-component communication
+        document.addEventListener('alpine:init', () => {
+            Alpine.store('reopen', {
+                open: false,
+                taskId: '',
+                desc: '',
+                feedback: '',
+                show(taskId, desc) {
+                    this.taskId = taskId;
+                    this.desc = desc;
+                    this.feedback = '';
+                    this.open = true;
+                }
+            });
+        });
+
         function reopenTask(taskId, desc) {
-            window.dispatchEvent(new CustomEvent('open-reopen', {
-                detail: { taskId: taskId, desc: desc }
-            }));
+            console.log('reopenTask called:', taskId, desc);
+            try {
+                var store = Alpine.store('reopen');
+                store.show(taskId, desc);
+            } catch(e) {
+                console.error('reopenTask error:', e);
+                alert('reopenTask 出错: ' + e.message);
+            }
+        }
+
+        function submitReopen(order, status) {
+            var store = Alpine.store('reopen');
+            var p = new URLSearchParams(window.location.search).get('project');
+            var url = '/api/tasks/' + store.taskId + '/reopen';
+            if (p) url += '?project=' + encodeURIComponent(p);
+            fetch(url, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({feedback: store.feedback})
+            }).then(function(r) {
+                if (r.ok) {
+                    store.open = false;
+                    htmx.ajax('GET', '/tasks/list?order=' + order + '&status=' + status, {target: '#tasks-list-wrap'});
+                } else {
+                    alert('重新打开失败');
+                }
+            });
         }
     </script>
 </body>

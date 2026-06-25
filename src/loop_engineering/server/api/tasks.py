@@ -54,17 +54,23 @@ def list_tasks(project: str = Query(None)):
     current_task = None
     with open(tasks_path, "r", encoding="utf-8") as f:
         for line in f:
-            m = re.match(r'^- \[(.)\]\s+(.+?)(\s+\(→\s*(\w+)\))?(\s+—\s+(.+))?$', line)
+            m = re.match(r'^- \[(.)\]\s+(.+?)(\s+\(→\s*(\w+)\))?(\s+\[[a-f0-9]{8}\])?(\s+—\s+(.+))?$', line)
             if m:
                 current_task = None  # new task starts, flush previous
                 status_char = m.group(1)
                 desc = m.group(2).strip()
                 assignee = m.group(4) if m.group(4) else ""
-                meta = m.group(6) if m.group(6) else ""
+                meta = m.group(7) if m.group(7) else ""
 
                 status_map = {" ": "pending", "~": "in_progress", "x": "done", "r": "reopen"}
+                tid = parse_task_id(line)
+                # 从描述中去除 [task_id]
+                clean_desc = desc
+                if tid:
+                    clean_desc = re.sub(r'\s+\[[a-f0-9]{8}\]\s*$', '', desc).strip()
                 current_task = {
-                    "description": desc,
+                    "description": clean_desc,
+                    "task_id": tid or "",
                     "status": status_map.get(status_char, "pending"),
                     "assignee": assignee,
                     "meta": meta,
@@ -199,27 +205,27 @@ def reopen_task(task_id: str, req: ReopenRequest, project: str = Query(None)):
         m = re.match(r'^- \[(.)\]\s+(.+)', line)
         if not m:
             continue
-        if m.group(1) not in ("x",):
-            # 只有已完成的任务才能 reopen
-            if parse_task_id(line) == task_id and m.group(1) != "x":
-                raise HTTPException(400, "Only completed tasks can be reopened")
+        if parse_task_id(line) != task_id:
             continue
-        if parse_task_id(line) == task_id:
-            lines[i] = line.replace("- [x] ", "- [r] ", 1)
-            found = True
 
-            # 在任务行后追加反馈缩进行
-            if req.feedback.strip():
-                feedback_lines = [f"  {fl}\n" for fl in req.feedback.strip().split("\n") if fl.strip()]
-                # 找到插入位置：任务行之后、下一个非缩进非空行之前
-                insert_at = i + 1
-                while insert_at < len(lines) and (lines[insert_at].strip() == "" or lines[insert_at].startswith("  ")):
-                    insert_at += 1
-                # 移除旧的缩进行（如果有）
-                del lines[i + 1:insert_at]
-                for j, fl in enumerate(feedback_lines):
-                    lines.insert(i + 1 + j, fl)
-            break
+        # 找到目标任务
+        if m.group(1) != "x":
+            raise HTTPException(400, "Only completed tasks can be reopened")
+        lines[i] = line.replace("- [x] ", "- [r] ", 1)
+        found = True
+
+        # 在任务行后追加反馈缩进行
+        if req.feedback.strip():
+            feedback_lines = [f"  {fl}\n" for fl in req.feedback.strip().split("\n") if fl.strip()]
+            # 找到插入位置：任务行之后、下一个非缩进非空行之前
+            insert_at = i + 1
+            while insert_at < len(lines) and (lines[insert_at].strip() == "" or lines[insert_at].startswith("  ")):
+                insert_at += 1
+            # 移除旧的缩进行（如果有）
+            del lines[i + 1:insert_at]
+            for j, fl in enumerate(feedback_lines):
+                lines.insert(i + 1 + j, fl)
+        break
 
     if not found:
         raise HTTPException(404, f"Completed task '{task_id}' not found")
