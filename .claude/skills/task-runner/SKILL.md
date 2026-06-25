@@ -41,7 +41,7 @@ Agent 身份从 `loop-config.yaml` 的 `agent.name` 读取：
 
 ```bash
 # 从 loop-config.yaml 读取 agent name
-whoami = $(python -c "import yaml; print(yaml.safe_load(open('loop-config.yaml'))['agent']['name'])")
+whoami = $(python -c "import yaml; print(yaml.safe_load(open('.loop-engineering/loop-config.yaml'))['agent']['name'])")
 # 如: "with"
 ```
 
@@ -143,7 +143,8 @@ python -m loop_engineering.scripts.task_pick $whoami --project-root D:/work_pvp/
 ```
 - 输出格式: `taskID=xxx branch=agent/<whoami>/xxx-<slug> desc=... openSpec=true|false`
 - `openSpec=true` → 任务关联 `openspec/changes/<taskID>/`，implementer 按 OpenSpec apply 流程处理
-- 无匹配则 `NONE` → `ExitWorktree(action="keep")` → 停止。
+- 无匹配则 `NONE` → 停止。
+- 已有进行中任务则 `BUSY` → 写心跳后跳过本轮，等待下次 cron 触发。
 
 ### Step 2: Fork 分支 + 标记进行中
 

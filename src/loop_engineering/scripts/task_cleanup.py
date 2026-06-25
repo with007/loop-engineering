@@ -53,9 +53,10 @@ def is_merged(branch, is_remote=True):
 
 
 def _find_project_root():
+    from loop_engineering.config import is_project_dir
     p = os.getcwd()
     for _ in range(10):
-        if os.path.exists(os.path.join(p, "loop-config.yaml")):
+        if is_project_dir(p):
             return p
         parent = os.path.dirname(p)
         if parent == p:

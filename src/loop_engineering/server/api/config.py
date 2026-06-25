@@ -41,12 +41,12 @@ def update_config(
     data_repo_path: str = Form(""),
 ):
     """表单提交：合并写入配置，端口变化时自动重生成 MCP 配置."""
-    from loop_engineering.config import read_config, write_config, merge_config
+    from loop_engineering.config import read_config, write_config, merge_config, is_project_dir
     from loop_engineering.presets import apply_preset
 
     pr = _project_root(project)
-    if not os.path.exists(os.path.join(pr, "loop-config.yaml")):
-        raise HTTPException(404, "loop-config.yaml not found")
+    if not is_project_dir(pr):
+        raise HTTPException(404, ".loop-engineering/loop-config.yaml not found")
 
     updates = {
         "project": {"name": project_name},
@@ -113,7 +113,7 @@ def teardown_project(
     pr = _project_root(project)
     cfg = read_config(pr)
     if not cfg:
-        raise HTTPException(404, "loop-config.yaml not found")
+        raise HTTPException(404, ".loop-engineering/loop-config.yaml not found")
 
     project_name = cfg.get("project", {}).get("name", os.path.basename(pr))
 

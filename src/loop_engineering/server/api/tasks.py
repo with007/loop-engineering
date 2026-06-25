@@ -21,10 +21,11 @@ def _project_root(project: str = None):
     env = os.environ.get("LOOP_PROJECT_ROOT")
     if env:
         return env
-    # 向上搜索 git 仓库根目录（兜底：server 的 cwd 可能不是项目根）
+    from loop_engineering.config import is_project_dir
+    # 向上搜索 git 仓库根目录或 loop 项目目录（兜底：server 的 cwd 可能不是项目根）
     d = os.getcwd()
     for _ in range(10):
-        if os.path.exists(os.path.join(d, ".git")) or os.path.exists(os.path.join(d, "loop-config.yaml")):
+        if os.path.exists(os.path.join(d, ".git")) or is_project_dir(d):
             return d
         parent = os.path.dirname(d)
         if parent == d:

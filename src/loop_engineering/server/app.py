@@ -119,6 +119,22 @@ def _agent_name(pr):
     return cfg.get("agent", {}).get("name", "")
 
 
+def _filter_agent_workspace_copies(project_list):
+    """过滤掉 agent workspace 拷贝：loop-config.yaml 里的 project.root 和自身路径不一致."""
+    from loop_engineering.config import read_config as _read_cfg
+    result = []
+    for p in project_list:
+        try:
+            cfg = _read_cfg(p["root"])
+            cfg_root = cfg.get("project", {}).get("root", "")
+            if cfg_root and os.path.normcase(os.path.abspath(cfg_root)) != os.path.normcase(os.path.abspath(p["root"])):
+                continue
+        except Exception:
+            pass
+        result.append(p)
+    return result
+
+
 def _is_htmx(request: Request):
     return request.headers.get("HX-Request", "") == "true"
 
@@ -144,13 +160,15 @@ def _build_projects_context(request: Request, current_pr: str, agent_filter: str
     projects = list_projects()
 
     # 自动注册当前项目（仅当 loop-config.yaml 存在时）
-    cfg_path = os.path.join(current_pr, "loop-config.yaml")
-    if os.path.exists(cfg_path) and not any(os.path.normcase(p["root"]) == os.path.normcase(current_pr) for p in projects):
+    from loop_engineering.config import is_project_dir
+    if is_project_dir(current_pr) and not any(os.path.normcase(p["root"]) == os.path.normcase(current_pr) for p in projects):
         register_project(current_pr)
         projects = list_projects()
 
     # 过滤掉没有 loop-config.yaml 的孤项目
-    projects = [p for p in projects if os.path.exists(os.path.join(p["root"], "loop-config.yaml"))]
+    projects = [p for p in projects if is_project_dir(p["root"])]
+    # 过滤掉 agent workspace 拷贝（loop-config.yaml 里的 project.root 和自身路径不一致）
+    projects = _filter_agent_workspace_copies(projects)
 
     # 构建详情
     result = []
@@ -238,8 +256,10 @@ async def project_switcher(request: Request, project: str = Query(None)):
     """返回项目切换器 HTML 片段."""
     pr = _project_root(q=project)
     from loop_engineering.registry import list_projects
+    from loop_engineering.config import is_project_dir
     projects = list_projects()
-    projects = [p for p in projects if os.path.exists(os.path.join(p["root"], "loop-config.yaml"))]
+    projects = [p for p in projects if is_project_dir(p["root"])]
+    projects = _filter_agent_workspace_copies(projects)
 
     html = '<select onchange="switchProject(this.value)" style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 6px 12px; border-radius: 7px; font-size: 13px; max-width: 200px;">'
     if not projects:
@@ -266,13 +286,13 @@ async def project_switcher(request: Request, project: str = Query(None)):
 async def dashboard(request: Request, project: str = Query(None), filter: str = Query("")):
     pr = _project_root(request, q=project)
     from loop_engineering.registry import list_projects
+    from loop_engineering.config import is_project_dir
 
     # If current dir is not a project, fall back to a registered one
-    cfg_path = os.path.join(pr, "loop-config.yaml")
-    if not os.path.exists(cfg_path):
+    if not is_project_dir(pr):
         projects = list_projects()
         # Filter to only those with loop-config.yaml
-        valid = [p for p in projects if os.path.exists(os.path.join(p["root"], "loop-config.yaml"))]
+        valid = [p for p in projects if is_project_dir(p["root"])]
         if valid:
             redir = f"/?project={quote(valid[0]['root'])}"
             if filter:
@@ -570,8 +590,8 @@ async def settings_page(request: Request, project: str = Query(None)):
     from loop_engineering.presets import list_presets
 
     pr = _project_root(request, q=project)
-    cfg_path = os.path.join(pr, "loop-config.yaml")
-    if not os.path.exists(cfg_path):
+    from loop_engineering.config import is_project_dir
+    if not is_project_dir(pr):
         return RedirectResponse("/setup", status_code=303)
 
     cfg = read_config(pr)

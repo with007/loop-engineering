@@ -2,12 +2,13 @@
 """
 从 tasks.md 选取下一个待办任务。
 用法: python -m loop_engineering.scripts.task_pick <username>
-输出: taskID=<id> branch=<分支名> desc=<描述> openSpec=<true|false>  或  NONE
+输出: taskID=<id> branch=<分支名> desc=<描述> openSpec=<true|false>  或  NONE（无任务） 或  BUSY（有进行中任务）
 
 从当前目录向上查找 loop-config.yaml 定位项目根目录。
 """
 import subprocess, sys, re, os
 from loop_engineering.task_id import parse_task_id, make_branch_name
+from loop_engineering.config import is_project_dir
 
 
 def run(cmd):
@@ -19,7 +20,7 @@ def _find_project_root():
     """从 cwd 向上查找 loop-config.yaml，定位项目根目录."""
     p = os.getcwd()
     for _ in range(10):
-        if os.path.exists(os.path.join(p, "loop-config.yaml")):
+        if is_project_dir(p):
             return p
         parent = os.path.dirname(p)
         if parent == p:
@@ -50,6 +51,12 @@ def main():
     except FileNotFoundError:
         print("NONE")
         return
+
+    # 如果当前用户已有进行中的任务，不再选新任务
+    for line in content.split('\n'):
+        if re.match(r'^- \[~\]\s+.+?\s+\(→\s*' + re.escape(whoami) + r'\)', line):
+            print("BUSY")
+            return
 
     for line in content.split('\n'):
         match = re.match(r'^- \[[ r]\]\s+(.+?)\s+\(→\s*' + re.escape(whoami) + r'\)', line)

@@ -7,6 +7,7 @@
 import subprocess, sys, re, time, os, json
 from datetime import datetime, timezone
 from loop_engineering.task_id import make_branch_name, parse_task_id
+from loop_engineering.config import is_project_dir
 
 
 def run(cmd):
@@ -17,7 +18,7 @@ def run(cmd):
 def _find_project_root():
     p = os.getcwd()
     for _ in range(10):
-        if os.path.exists(os.path.join(p, "loop-config.yaml")):
+        if is_project_dir(p):
             return p
         parent = os.path.dirname(p)
         if parent == p:

@@ -243,9 +243,10 @@ def _cmd_init():
 
 def _find_project_root():
     """从当前目录向上查找 loop-config.yaml，返回项目根目录路径."""
+    from loop_engineering.config import is_project_dir
     p = os.getcwd()
     for _ in range(10):
-        if os.path.exists(os.path.join(p, "loop-config.yaml")):
+        if is_project_dir(p):
             return p
         parent = os.path.dirname(p)
         if parent == p:
@@ -266,8 +267,8 @@ def _cmd_config(args):
         print("错误: 未找到 loop-config.yaml，请指定 --project-root 或在项目目录下运行")
         sys.exit(1)
 
-    if not os.path.exists(os.path.join(pr, "loop-config.yaml")):
-        print(f"错误: {pr} 下没有 loop-config.yaml，请先执行 setup")
+    if not os.path.exists(os.path.join(pr, ".loop-engineering", "loop-config.yaml")):
+        print(f"错误: {pr} 下没有 .loop-engineering/loop-config.yaml，请先执行 setup")
         sys.exit(1)
 
     if args.config_command == "set":
@@ -356,7 +357,7 @@ def _cmd_teardown(args):
             data_repo = cfg.get("data_repo", {}).get("path")
             if data_repo:
                 print(f"  - Data worktree: {os.path.join(agent_ws, os.path.basename(data_repo))}")
-        print(f"  - loop-config.yaml: {pr}\\loop-config.yaml")
+        print(f"  - loop-config.yaml: {pr}\\.loop-engineering\\loop-config.yaml")
         print(f"  - 从注册表移除: {project_name}")
         return
 
@@ -405,11 +406,12 @@ def _cmd_ui(args):
 def _find_and_start_ui(args):
     """从当前目录向上查找 loop-config.yaml，启动 Dashboard."""
     from loop_engineering.server.app import start_server
+    from loop_engineering.config import is_project_dir
 
     p = os.getcwd()
     project_root = p
     for _ in range(10):
-        if os.path.exists(os.path.join(p, "loop-config.yaml")):
+        if is_project_dir(p):
             project_root = p
             break
         parent = os.path.dirname(p)

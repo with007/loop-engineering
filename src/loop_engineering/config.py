@@ -1,10 +1,11 @@
 """Loop Engineering 配置管理.
 
-读取和写入 loop-config.yaml，自动检测项目设置。
+读取和写入 .loop-engineering/loop-config.yaml，自动检测项目设置。
 """
 
 import os
 import platform
+import shutil
 import subprocess
 import re
 from pathlib import Path
@@ -37,24 +38,49 @@ def _run(cmd, cwd=None):
         return -1, "", ""
 
 
-def read_config(project_root):
-    """读取项目根目录下的 loop-config.yaml，返回 dict.
+def _config_path(project_root):
+    """返回 loop-config.yaml 规范路径（位于 .loop-engineering/ 下）。"""
+    return os.path.join(project_root, ".loop-engineering", "loop-config.yaml")
 
+
+_LEGACY_CONFIG = "loop-config.yaml"  # 根目录旧路径，仅用于迁移
+
+
+def read_config(project_root):
+    """读取 .loop-engineering/loop-config.yaml，返回 dict.
+
+    首次调用时自动将根目录的旧 loop-config.yaml 迁移到 .loop-engineering/ 下。
     如果文件不存在，返回空 dict。
     """
-    config_path = os.path.join(project_root, "loop-config.yaml")
-    if not os.path.exists(config_path):
-        return {}
-    with open(config_path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    new_path = _config_path(project_root)
+    if os.path.exists(new_path):
+        with open(new_path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+
+    # 迁移：根目录旧路径 → .loop-engineering/
+    legacy_path = os.path.join(project_root, _LEGACY_CONFIG)
+    if os.path.exists(legacy_path):
+        os.makedirs(os.path.dirname(new_path), exist_ok=True)
+        shutil.move(legacy_path, new_path)
+        with open(new_path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+
+    return {}
 
 
 def write_config(project_root, config):
-    """写入 loop-config.yaml 到项目根目录."""
-    config_path = os.path.join(project_root, "loop-config.yaml")
+    """写入 loop-config.yaml 到 .loop-engineering/ 下."""
+    config_path = _config_path(project_root)
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
     with open(config_path, "w", encoding="utf-8") as f:
         yaml.dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
     return config_path
+
+
+def is_project_dir(path):
+    """检查目录是否为 loop-engineering 项目（含新路径或旧路径的 loop-config.yaml）。"""
+    return os.path.exists(os.path.join(path, ".loop-engineering", "loop-config.yaml")) or \
+           os.path.exists(os.path.join(path, _LEGACY_CONFIG))
 
 
 def merge_config(project_root, updates):

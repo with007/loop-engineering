@@ -421,17 +421,24 @@ def sync_to_agent(config):
     except Exception as e:
         print(f"  [OFFLINE] fetch 失败，仍继续同步文件: {str(e)[:120]}")
 
-    for fname in ["loop-config.yaml", ".mcp.json"]:
+    for fname in [".loop-engineering/loop-config.yaml", ".mcp.json"]:
         src = os.path.join(project_root, fname)
         dst = os.path.join(agent_dir, fname)
         if not os.path.exists(src):
-            print(f"  跳过 {fname}（不存在）")
+            print(f"  跳过 {os.path.basename(fname)}（不存在）")
             continue
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
         if _file_changed(src, dst):
             shutil.copy2(src, dst)
-            print(f"  [OK] {fname} 已同步")
+            print(f"  [OK] {os.path.basename(fname)} 已同步")
         else:
-            print(f"  跳过 {fname}（内容相同）")
+            print(f"  跳过 {os.path.basename(fname)}（内容相同）")
+
+    # 清理 agent workspace 中可能残留的旧 root 级别 loop-config.yaml
+    old_cfg = os.path.join(agent_dir, "loop-config.yaml")
+    if os.path.exists(old_cfg):
+        os.remove(old_cfg)
+        print("  [OK] 清理旧 loop-config.yaml（根目录残留）")
 
 
 def add_unity_mcp(config):
@@ -565,7 +572,6 @@ def run_setup(config, force=False):
     # 从 config 中移除内部字段（_detected）
     clean_config = {k: v for k, v in config.items() if not k.startswith("_")}
     config_path = cfg.write_config(config["project"]["root"], clean_config)
-    _ensure_gitignore(config["project"]["root"], "loop-config.yaml")
     _ensure_gitignore(config["project"]["root"], ".loop-engineering/")
 
     # 自动提交 setup 产生的文件
@@ -672,7 +678,7 @@ Agent 身份从 `loop-config.yaml` 的 `agent.name` 读取：
 
 ```bash
 # 从 loop-config.yaml 读取 agent name
-whoami = $(python -c "import yaml; print(yaml.safe_load(open('loop-config.yaml'))['agent']['name'])")
+whoami = $(python -c "import yaml; print(yaml.safe_load(open('.loop-engineering/loop-config.yaml'))['agent']['name'])")
 # 如: "with"
 ```
 
@@ -1230,12 +1236,13 @@ def run_teardown(project_root, force=False, dry_run=False):
     else:
         _log("agent workspace", False, "配置中没有 agent.workspace")
 
-    # 3. 删除 loop-config.yaml
+    # 3. 删除 loop-config.yaml（新旧路径都检查）
     if not dry_run:
-        config_path = os.path.join(project_root, "loop-config.yaml")
-        if os.path.exists(config_path):
-            os.remove(config_path)
-            _log("删除 loop-config.yaml", True)
+        for cfg_rel in [".loop-engineering/loop-config.yaml", "loop-config.yaml"]:
+            config_path = os.path.join(project_root, cfg_rel)
+            if os.path.exists(config_path):
+                os.remove(config_path)
+                _log(f"删除 {cfg_rel}", True)
         else:
             _log("删除 loop-config.yaml", True, "已不存在")
     else:

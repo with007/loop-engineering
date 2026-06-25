@@ -15,12 +15,12 @@ def _project_root(project: str = None):
 
 def _find_all_projects(pr=None):
     """扫描配置目录，发现所有 loop-config.yaml 项目."""
+    from loop_engineering.config import is_project_dir
     if pr is None:
         pr = _project_root()
     projects = []
     # 当前项目
-    cfg_path = os.path.join(pr, "loop-config.yaml")
-    if os.path.exists(cfg_path):
+    if is_project_dir(pr):
         projects.append(_project_info(pr))
 
     # TODO: 后续支持从 ~/.config/loop-engineering/projects.yaml 读取多项目
