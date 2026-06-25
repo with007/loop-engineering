@@ -29,6 +29,7 @@ def _find_project_root():
 
 
 def main():
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     if len(sys.argv) < 2:
         print("Usage: task_pick.py <username> [--project-root <path>]")
         sys.exit(1)

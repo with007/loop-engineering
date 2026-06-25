@@ -68,6 +68,7 @@ def update_tasks_md(task_id, whoami, imp_n, vfy_n, project_root):
 
 
 def main():
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     if len(sys.argv) < 3:
         print("Usage: task_done.py <username> <taskID> [IMP序号] [VFY轮数]")
         sys.exit(1)
