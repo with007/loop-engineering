@@ -33,8 +33,8 @@ def _read_tasks(pr):
     tp = os.path.join(pr, "tasks.md")
     if not os.path.exists(tp):
         return []
-    # 收集已有的 agent 分支名
-    agent_branches = set()
+    # 收集已有的 agent 分支名（task_id -> branch_name）
+    agent_branches = {}
     try:
         r = subprocess.run('git branch --list "agent/*"', shell=True, capture_output=True, text=True,
                            encoding='utf-8', errors='replace', cwd=pr, timeout=5)
@@ -43,7 +43,20 @@ def _read_tasks(pr):
             if b:
                 tid = extract_task_id_from_branch(b)
                 if tid:
-                    agent_branches.add(tid)
+                    agent_branches[tid] = b
+    except Exception:
+        pass
+
+    # 收集已合入 master 的分支名（用于区分 done vs pending_merge）
+    merged_branches = set()
+    try:
+        r = subprocess.run('git branch --merged master --list "agent/*"', shell=True,
+                           capture_output=True, text=True,
+                           encoding='utf-8', errors='replace', cwd=pr, timeout=5)
+        for line in r.stdout.strip().split("\n"):
+            b = line.strip().lstrip("*+ ")
+            if b:
+                merged_branches.add(b)
     except Exception:
         pass
 
@@ -77,7 +90,11 @@ def _read_tasks(pr):
                 desc = re.sub(r'\s+\[[a-f0-9]{8}\]\s*$', '', desc).strip()
                 tid = parse_task_id(line) or ""
                 if status_char == "x" and tid and tid in agent_branches:
-                    status = "pending_merge"
+                    # 分支存在但可能已经合入 — 检查是否已在 master 中
+                    if agent_branches[tid] in merged_branches:
+                        status = "done"
+                    else:
+                        status = "pending_merge"
                 else:
                     s = {" ": "pending", "~": "in_progress", "x": "done", "r": "reopen"}
                     status = s.get(status_char, "pending")
@@ -195,7 +212,7 @@ def _build_projects_context(request: Request, current_pr: str, agent_filter: str
             "is_current": pr == current_pr,
             "tasks": {
                 "pending": sum(1 for t in tasks if t["status"] == "pending"),
-                "in_progress": sum(1 for t in tasks if t["status"] == "in_progress"),
+                "in_progress": sum(1 for t in tasks if t["status"] in ("in_progress", "pending_merge", "reopen")),
                 "done": sum(1 for t in tasks if t["status"] == "done"),
                 "pending_merge": sum(1 for t in tasks if t["status"] == "pending_merge"),
             },
@@ -280,6 +297,9 @@ async def tasks_page(request: Request, project: str = Query(None), order: str = 
     pr = _project_root(request, q=project)
     tasks = _read_tasks(pr)
     allowed = [s.strip() for s in status.split(",") if s.strip()]
+    # "in_progress" filter also includes "pending_merge" and "reopen"
+    if "in_progress" in allowed:
+        allowed.extend(["pending_merge", "reopen"])
     # "done" filter also includes "pending_merge" (completed but branch not yet merged)
     if "done" in allowed:
         allowed.append("pending_merge")
@@ -307,6 +327,9 @@ async def tasks_list(request: Request, project: str = Query(None), order: str = 
     pr = _project_root(request, q=project)
     tasks = _read_tasks(pr)
     allowed = [s.strip() for s in status.split(",") if s.strip()]
+    # "in_progress" filter also includes "pending_merge" and "reopen"
+    if "in_progress" in allowed:
+        allowed.extend(["pending_merge", "reopen"])
     # "done" filter also includes "pending_merge" (completed but branch not yet merged)
     if "done" in allowed:
         allowed.append("pending_merge")
@@ -333,6 +356,9 @@ async def tasks_list_items(request: Request, project: str = Query(None), order: 
     pr = _project_root(request, q=project)
     tasks = _read_tasks(pr)
     allowed = [s.strip() for s in status.split(",") if s.strip()]
+    # "in_progress" filter also includes "pending_merge" and "reopen"
+    if "in_progress" in allowed:
+        allowed.extend(["pending_merge", "reopen"])
     if "done" in allowed:
         allowed.append("pending_merge")
     tasks = [t for t in tasks if t["status"] in allowed]
@@ -368,6 +394,9 @@ async def tasks_add(request: Request, description: str = Form(...), assignee: st
             f.write(line)
     tasks = _read_tasks(pr)
     allowed = [s.strip() for s in status.split(",") if s.strip()]
+    # "in_progress" filter also includes "pending_merge" and "reopen"
+    if "in_progress" in allowed:
+        allowed.extend(["pending_merge", "reopen"])
     # "done" filter also includes "pending_merge" (completed but branch not yet merged)
     if "done" in allowed:
         allowed.append("pending_merge")
