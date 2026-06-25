@@ -21,6 +21,10 @@
                 {{ slabel }}
             </button>
             {% endfor %}
+            <input type="text" id="task-agent-filter" name="filter"
+                   placeholder="按 Agent 名筛选..."
+                   value="{{ filter or '' }}"
+                   style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 4px 10px; border-radius: 7px; font-size: 12px; width: 160px; margin-left: 8px;">
         </div>
         <button class="sort-btn"
                 style="font-size: 12px; padding: 4px 12px; border-radius: 16px; cursor: pointer;
@@ -46,7 +50,7 @@ if (!window._tasksFilterBound) {
         if (!items) return;
         var hxUrl = items.getAttribute('hx-get') || '';
         var params = new URLSearchParams(hxUrl.split('?')[1] || '');
-        var currentOrder = params.get('order') || 'asc';
+        var currentOrder = params.get('order') || 'desc';
         var currentStatus = params.get('status') || 'pending,in_progress';
 
         // Status chip click
@@ -62,7 +66,7 @@ if (!window._tasksFilterBound) {
                 parts.push(skey);
             }
             var newStatus = parts.join(',');
-            htmx.ajax('GET', '/tasks/list?order=' + currentOrder + '&status=' + newStatus,
+            htmx.ajax('GET', '/tasks/list?order=' + currentOrder + '&status=' + newStatus + '&filter=' + encodeURIComponent(document.getElementById('task-agent-filter')?.value || ''),
                       {target: '#tasks-list-wrap'});
             return;
         }
@@ -70,10 +74,27 @@ if (!window._tasksFilterBound) {
         // Sort button click
         if (e.target.closest('.sort-btn')) {
             var newOrder = (currentOrder === 'desc') ? 'asc' : 'desc';
-            htmx.ajax('GET', '/tasks/list?order=' + newOrder + '&status=' + currentStatus,
+            htmx.ajax('GET', '/tasks/list?order=' + newOrder + '&status=' + currentStatus + '&filter=' + encodeURIComponent(document.getElementById('task-agent-filter')?.value || ''),
                       {target: '#tasks-list-wrap'});
             return;
         }
+    });
+
+    // Agent filter input: debounced keyup triggers refresh
+    var filterTimer;
+    document.addEventListener('input', function(e) {
+        if (!e.target || e.target.id !== 'task-agent-filter') return;
+        clearTimeout(filterTimer);
+        filterTimer = setTimeout(function() {
+            var items = document.getElementById('tasks-items');
+            if (!items) return;
+            var hxUrl = items.getAttribute('hx-get') || '';
+            var params = new URLSearchParams(hxUrl.split('?')[1] || '');
+            var currentOrder = params.get('order') || 'desc';
+            var currentStatus = params.get('status') || 'pending,in_progress';
+            htmx.ajax('GET', '/tasks/list?order=' + currentOrder + '&status=' + currentStatus + '&filter=' + encodeURIComponent(e.target.value),
+                      {target: '#tasks-list-wrap'});
+        }, 400);
     });
 }
 </script>

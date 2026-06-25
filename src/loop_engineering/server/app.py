@@ -276,7 +276,7 @@ async def dashboard(request: Request, project: str = Query(None), filter: str = 
 
 
 @app.get("/tasks")
-async def tasks_page(request: Request, project: str = Query(None), order: str = Query("asc"), status: str = Query("pending,in_progress")):
+async def tasks_page(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query("")):
     pr = _project_root(request, q=project)
     tasks = _read_tasks(pr)
     allowed = [s.strip() for s in status.split(",") if s.strip()]
@@ -284,6 +284,10 @@ async def tasks_page(request: Request, project: str = Query(None), order: str = 
     if "done" in allowed:
         allowed.append("pending_merge")
     tasks = [t for t in tasks if t["status"] in allowed]
+    # 按 agent 名筛选
+    if filter:
+        f_lower = filter.strip().lower()
+        tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
     if order == "desc":
         tasks = list(reversed(tasks))
     return _render(request, "tasks.html", {
@@ -293,11 +297,12 @@ async def tasks_page(request: Request, project: str = Query(None), order: str = 
         "current_root": pr,
         "order": order,
         "status": status,
+        "filter": filter,
     })
 
 
 @app.get("/tasks/list")
-async def tasks_list(request: Request, project: str = Query(None), order: str = Query("asc"), status: str = Query("pending,in_progress")):
+async def tasks_list(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query("")):
     """返回完整任务区域（控件 + 列表），供控件操作后刷新."""
     pr = _project_root(request, q=project)
     tasks = _read_tasks(pr)
@@ -306,6 +311,10 @@ async def tasks_list(request: Request, project: str = Query(None), order: str = 
     if "done" in allowed:
         allowed.append("pending_merge")
     tasks = [t for t in tasks if t["status"] in allowed]
+    # 按 agent 名筛选
+    if filter:
+        f_lower = filter.strip().lower()
+        tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
     if order == "desc":
         tasks = list(reversed(tasks))
     return templates.TemplateResponse(request, "_tasks_list.html", {
@@ -314,11 +323,12 @@ async def tasks_list(request: Request, project: str = Query(None), order: str = 
         "agent_name": _agent_name(pr),
         "order": order,
         "status": status,
+        "filter": filter,
     })
 
 
 @app.get("/tasks/list-items")
-async def tasks_list_items(request: Request, project: str = Query(None), order: str = Query("asc"), status: str = Query("pending,in_progress")):
+async def tasks_list_items(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query("")):
     """返回仅任务条目（进度条 + 卡片），供 30s 轮询刷新."""
     pr = _project_root(request, q=project)
     tasks = _read_tasks(pr)
@@ -326,6 +336,10 @@ async def tasks_list_items(request: Request, project: str = Query(None), order: 
     if "done" in allowed:
         allowed.append("pending_merge")
     tasks = [t for t in tasks if t["status"] in allowed]
+    # 按 agent 名筛选
+    if filter:
+        f_lower = filter.strip().lower()
+        tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
     if order == "desc":
         tasks = list(reversed(tasks))
     return templates.TemplateResponse(request, "_tasks_items.html", {
@@ -334,11 +348,12 @@ async def tasks_list_items(request: Request, project: str = Query(None), order: 
         "agent_name": _agent_name(pr),
         "order": order,
         "status": status,
+        "filter": filter,
     })
 
 
 @app.post("/tasks/add")
-async def tasks_add(request: Request, description: str = Form(...), assignee: str = Form(...), task_id: str = Form(""), project: str = Form(None), order: str = Form("asc"), status: str = Form("pending,in_progress")):
+async def tasks_add(request: Request, description: str = Form(...), assignee: str = Form(...), task_id: str = Form(""), project: str = Form(None), order: str = Form("desc"), status: str = Form("pending,in_progress"), filter: str = Form("")):
     pr = _project_root(request, q=project)
     tp = os.path.join(pr, "tasks.md")
     from loop_engineering.task_id import generate_task_id
@@ -357,6 +372,10 @@ async def tasks_add(request: Request, description: str = Form(...), assignee: st
     if "done" in allowed:
         allowed.append("pending_merge")
     tasks = [t for t in tasks if t["status"] in allowed]
+    # 按 agent 名筛选
+    if filter:
+        f_lower = filter.strip().lower()
+        tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
     if order == "desc":
         tasks = list(reversed(tasks))
     return templates.TemplateResponse(request, "_tasks_list.html", {
@@ -365,6 +384,7 @@ async def tasks_add(request: Request, description: str = Form(...), assignee: st
         "agent_name": _agent_name(pr),
         "order": order,
         "status": status,
+        "filter": filter,
     })
 
 
