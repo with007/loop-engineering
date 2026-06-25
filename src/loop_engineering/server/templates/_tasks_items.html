@@ -6,8 +6,8 @@
     <!-- 进度 bar -->
     {% set total = tasks | length %}
     {% if total > 0 %}
-    {% set done = tasks | selectattr('status', 'in', ['done', 'pending_merge']) | list | length %}
-    {% set active = tasks | selectattr('status', 'equalto', 'in_progress') | list | length %}
+    {% set done = tasks | selectattr('status', 'equalto', 'done') | list | length %}
+    {% set active = tasks | selectattr('status', 'in', ['in_progress', 'pending_merge', 'reopen']) | list | length %}
     {% set pending = tasks | selectattr('status', 'equalto', 'pending') | list | length %}
     {% set reopen = tasks | selectattr('status', 'equalto', 'reopen') | list | length %}
     <div class="card" style="margin-bottom: 20px;">
@@ -85,7 +85,7 @@
                         title="重新打开">
                     🔄
                 </button>
-                <span class="badge badge-active">已完成（分支待合入）</span>
+                <span class="badge badge-active">分支待合入</span>
                 {% elif t.status == 'reopen' %}
                 <span class="badge badge-reopen">需返工</span>
                 {% elif t.status == 'in_progress' %}
@@ -120,70 +120,4 @@
         <p style="margin-top: 4px;">尝试调整上方过滤条件</p>
     </div>
     {% endif %}
-</div>
-
-<!-- Report Modal (multi-round tabs) -->
-<div x-data="{ open: false, title: '', reports: [], activeRound: 0, loading: false }"
-     @open-report.window="open = true; title = $event.detail.title; reports = []; activeRound = 0; loading = true;
-                          fetch($event.detail.url).then(r => r.json()).then(d => { reports = d.reports || []; activeRound = 0; loading = false; }).catch(() => { reports = [{body: '<p style=color:var(--fail)>加载失败</p>'}]; loading = false; })"
-     @keydown.escape.window="open = false">
-    <div x-show="open" class="modal-overlay" @click.self="open = false">
-        <div class="modal-panel">
-            <div class="modal-header">
-                <h3 x-text="title"></h3>
-                <button class="modal-close" @click="open = false">&times;</button>
-            </div>
-            <template x-if="reports.length > 1">
-                <div style="display: flex; gap: 4px; padding: 8px 24px; border-bottom: 1px solid var(--border);">
-                    <template x-for="(r, i) in reports" :key="i">
-                        <button class="btn btn-sm"
-                                :style="activeRound === i ? 'background: var(--active); color: #fff;' : 'background: transparent; color: var(--dim);'"
-                                style="border: 1px solid var(--border); font-size: 11px; padding: 4px 12px; border-radius: 4px; cursor: pointer;"
-                                @click="activeRound = i"
-                                x-text="'IMP' + r.imp_round"></button>
-                    </template>
-                </div>
-            </template>
-            <div class="modal-body" :class="{ loading: loading }">
-                <template x-if="loading">
-                    <span>加载中...</span>
-                </template>
-                <template x-if="!loading && reports.length > 0">
-                    <div class="report-md" x-html="marked.parse(reports[activeRound].body || '*（无报告内容）*')"></div>
-                </template>
-                <template x-if="!loading && reports.length === 0">
-                    <span style="color: var(--dim);">暂无报告</span>
-                </template>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Reopen Modal -->
-<div x-show="$store.reopen.open" class="modal-overlay" style="display:none" @click.self="$store.reopen.open = false" @keydown.escape.window="$store.reopen.open = false">
-    <div class="modal-panel" style="width: 520px;">
-        <div class="modal-header">
-            <h3>重新打开任务</h3>
-            <button class="modal-close" @click="$store.reopen.open = false">&times;</button>
-        </div>
-        <div style="padding: 20px 24px; display: flex; flex-direction: column; gap: 14px;">
-            <div>
-                <label style="font-size: 13px; color: var(--muted); display: block; margin-bottom: 4px;">任务目标</label>
-                <input type="text" x-model="$store.reopen.desc"
-                       style="width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 6px; font-size: 14px; box-sizing: border-box;">
-            </div>
-            <div>
-                <label style="font-size: 13px; color: var(--muted); display: block; margin-bottom: 4px;">本轮反馈（发给 implementer）</label>
-                <textarea x-model="$store.reopen.feedback" rows="4" placeholder="上次实现哪里有问题..."
-                          style="width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 6px; font-size: 13px; resize: vertical; box-sizing: border-box;"></textarea>
-            </div>
-            <div style="display: flex; gap: 8px; justify-content: flex-end;">
-                <button class="btn btn-sm" @click="$store.reopen.open = false"
-                        style="background: transparent; color: var(--dim); border: 1px solid var(--border);">取消</button>
-                <button class="btn btn-sm"
-                        @click="submitReopen('{{ order }}', '{{ status }}')"
-                        style="background: var(--active); color: #fff; border: none;">重新打开</button>
-            </div>
-        </div>
-    </div>
 </div>
