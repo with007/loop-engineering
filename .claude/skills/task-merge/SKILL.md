@@ -11,8 +11,18 @@ user_invocable: true
 
 你是合入助手。用户说"合入 xxx 分支"或"合入 task-xxx"，你来安全地把任务分支合入 master。
 
+## 关键路径
+
+| 项目 | 路径 |
+|------|------|
+| 主工作树 | `<project.root>`（从 `.loop-engineering/loop-config.yaml` 读取） |
+| Agent 工作树 | `<agent.workspace>/<project.name>`（同上） |
+
+对于 loop-engineering 项目自身：主工作树 `D:/work_pvp/loop-engineering`，Agent 工作树 `D:/work_pvp-agent/loop-engineering`。
+
 ## 原则
 
+- **先验证后合入** — 在 agent worktree 中预合入任务分支，按 TEST.md 协助用户跑手动测试，通过后才合入 master
 - **不做 force push / force delete** — 只做安全的 merge
 - **冲突时先尝试自动分析解决** — 不要立刻交给用户，分析上下文、检查跨文件一致性后再决定。无法判定时才停止
 - **不自动 push** — 只做本地合入，push 留给用户
@@ -80,7 +90,7 @@ git diff master...<branch> --stat
 git status --porcelain
 ```
 
-- **空** → 工作区干净，跳到 Step 5（直接 merge）
+- **空** → 工作区干净，跳过 Step 4，进入 Step 5（验证门禁）
 - **非空** → 工作区有未提交改动，进入 Step 4
 
 ### Step 4: 分类工作区改动
@@ -105,7 +115,139 @@ git ls-files --others --exclude-standard
 
 告知用户判断依据（哪些文件重叠、哪些不重叠）和建议的路线。**一步确认**：让用户选择 stash 路线 / commit 路线 / 取消。
 
-### Step 5: 执行合入
+> **注意**: 此处仅记录用户选择，暂不执行。验证通过后（Step 6）再执行。
+
+### Step 5: 验证门禁 — 手动测试
+
+在真正合入 master 之前，先在 agent worktree 中预合入任务分支，按 TEST.md 协助用户跑手动测试。全部通过才允许进入 Step 6 执行合入。
+
+#### 5a. 进入 Agent Worktree
+
+从 `.loop-engineering/loop-config.yaml` 读取 agent worktree 路径：
+
+```bash
+# agent.workspace / project.name 拼出完整路径
+# 例: D:/work_pvp-agent/loop-engineering
+cat .loop-engineering/loop-config.yaml
+```
+
+解析出 `agent.workspace` 和 `project.name`，拼出完整路径：`<agent.workspace>/<project.name>`。
+
+检查 agent worktree 是否存在：
+```bash
+test -f "$AGENT_WORKTREE/.git" && echo "EXISTS" || echo "NOT_FOUND"
+```
+
+- **不存在** → 报错"Agent worktree 不存在，请先运行 `loop setup`"，退出
+- **存在** → `EnterWorktree(path="$AGENT_WORKTREE")`
+
+#### 5b. Fetch 和 Checkout 任务分支
+
+```bash
+git fetch origin --prune
+
+# 确认分支在 origin 上存在
+git branch -r --list "origin/<branch>" | head -1
+```
+
+分支不存在 → 报错"分支 `<branch>` 未推送到 origin，无法验证" + ExitWorktree + 退出。
+
+分支存在 → checkout：
+```bash
+git checkout --detach master
+git checkout -B <branch> origin/<branch>
+git branch --show-current
+# 必须输出 <branch>
+```
+
+#### 5c. 读取 TEST.md
+
+```bash
+test -f "TEST.md" && echo "FOUND" || echo "NOT_FOUND"
+```
+
+- **不存在** → 输出"项目未配置 TEST.md，跳过手动测试"，直接跳到 5e（汇总确认后继续合入）
+- **存在** → 读取 TEST.md 内容
+
+#### 5d. 按 TEST.md 逐步骤引导测试
+
+读取 TEST.md 内容，提取其中的测试步骤。然后**逐步骤协助用户执行**。
+
+原则：
+- TEST.md 里有什么就测什么，不额外编造测试项
+- 能自动执行的步骤（`pip install`、`curl`、CLI 命令等）直接帮用户跑了
+- 需要用户浏览器操作的步骤，提示用户去做，等用户确认结果
+- 每完成一项输出结果（✅/❌），失败时记下原因
+
+#### 5e. 停止服务 + 汇总确认
+
+测试完成后停止后台服务（如有启动），然后向用户展示测试汇总表：
+
+```
+## 手动测试结果 — <branch>
+
+| # | 测试项 | 结果 |
+|---|--------|------|
+| <从 TEST.md 中提取的测试项逐一列出> |
+
+**结论**: <全部通过 → "建议通过" / 有失败 → "存在失败项，建议不通过">
+```
+
+然后询问：
+```
+回复 **pass** 继续合入，或 **fail** 取消合入并清理 agent worktree。
+```
+
+> **如果所有项都 ✅**: 默认建议 pass，但让用户最终决定。
+> **如果有 ❌**: 列出失败项和原因，提醒用户注意。仍可 pass（如果用户认为失败项无关紧要）。
+
+#### 5f. FAIL — 清理 Agent Worktree
+
+用户回复 fail 或选择不继续：
+
+```bash
+cd $AGENT_WORKTREE
+git checkout --detach master
+git branch -D <branch>
+```
+
+```
+ExitWorktree(action="keep")
+```
+
+输出：
+```
+## 合入已取消 ❌
+**分支**: <branch>
+**原因**: <手动测试未通过 / 用户取消>
+**状态**: 主工作区未改变，无任何修改
+```
+
+**流程结束，不再继续。**
+
+#### 5g. PASS — 清理并继续
+
+用户回复 pass：
+
+```bash
+cd $AGENT_WORKTREE
+git checkout --detach master
+git branch -D <branch>
+```
+
+```
+ExitWorktree(action="keep")
+```
+
+输出：
+```
+## 手动测试通过 ✅
+正在切回主 worktree 执行合入...
+```
+
+继续进入 Step 6。
+
+### Step 6: 执行合入
 
 #### Stash 路线（工作区改动 = 同一件事的半成品）
 
@@ -226,27 +368,19 @@ Python 代码冲突时，检查：
 - 备份位置（stash 路线：`stash@{0}` / commit 路线：WIP commit）
 - 恢复命令
 
-### Step 6: 手动测试提醒
+### Step 7: 手动测试提醒
 
-合入完成后，检查项目是否配置了手动测试指南：
+合入已在 Step 5 中通过 agent worktree 验证，此处仅提醒：push 前可在 master 上快速复核。
 
-```bash
-if [ -f "TEST.md" ]; then
-  cat TEST.md
-else
-  echo "(未找到 TEST.md，跳过手动测试步骤)"
-fi
-```
-
-**向用户输出**：
+如果 TEST.md 存在，简要提示：
 ```
 ## 手动测试
-项目配置了手动测试指南（TEST.md）。建议在 push 前按指南执行测试。测试完成后确认无误再 push。
+已在 agent worktree 中按 TEST.md 完成手动测试并通过。push 前可在 master 上快速复核。
 ```
 
-如果 TEST.md 存在，展示其内容。如果不存在，跳过此步骤。**不阻塞合入**，由用户决定是否现在测试。
+如果 TEST.md 不存在，跳过。
 
-### Step 7: 验证结果
+### Step 8: 验证结果
 
 ```bash
 git log --oneline -3
@@ -267,9 +401,9 @@ git status
 ## 合入完成 ✅
 **分支**: agent/with/a1b2c3d4-翻译tab
 **方式**: 直接 merge（工作区干净）
+**验证**: 手动测试通过 ✅
 **新增 commit**: ffac9d2 a1b2c3d4: 翻译tab页标题为中文
 **当前状态**: master 已前进 2 个 commit，工作区干净
-**手动测试**: <TEST.md 存在时展示测试要点，否则不显示此行>
 ```
 
 ### Stash 路线
@@ -278,6 +412,7 @@ git status
 ## 合入完成 ✅
 **分支**: agent/with/a1b2c3d4-翻译tab
 **方式**: stash → merge（工作区改动与分支改动高度重叠，判断为同一件事）
+**验证**: 手动测试通过 ✅
 **新增 commit**: ffac9d2 task-a35f86a5: 修复页面自动刷新导致输入被清空
 **当前状态**: master 已前进 2 个 commit，工作区干净
 ```
@@ -288,6 +423,7 @@ git status
 ## 合入完成 ✅
 **分支**: agent/with/a1b2c3d4-翻译tab
 **方式**: commit 工作区 → merge（工作区改动与分支改动不重叠，判断为独立工作）
+**验证**: 手动测试通过 ✅
 **工作区备份**: commit abc1234 "WIP: 合入 agent/with/a1b2c3d4-翻译tab 前的本地改动"
 **新增 commit**: ffac9d2 task-a35f86a5: 修复页面自动刷新导致输入被清空
 **当前状态**: master 已前进 2 个 commit，工作区干净
@@ -299,6 +435,7 @@ git status
 ## 合入完成 ✅
 **分支**: agent/with/a1b2c3d4-翻译tab
 **方式**: commit 工作区 → merge → 自动解决 2 处冲突
+**验证**: 手动测试通过 ✅
 **冲突解决报告**:
 ### 1. `src/.../branches.py`
 - **选择**: 入方
