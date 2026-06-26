@@ -1,5 +1,16 @@
 # Tasks
 
+> 约定: 任务按日期分组，同天内按优先级从上到下排列
+
+## 2026-06-26
+
+- [x] refactor-core-architecture (→ with) [f610728e] — 15:42 IMP1 VFY1 PASS · 16:45 IMP2 VFY1 PASS
+  ## IMP1 反馈
+  1. routers/pages.py 和 routers/fragments.py 为空壳，路由未迁移。需从 app.py 搬入页面路由和 HTMX 片段路由，app.py 精简到仅实例+注册+start_server
+  2. filter_tasks 的 order 和 filter_name 参数为 stub，需补全排序和 agent 名筛选逻辑，消除 4 个路由中的重复实现
+  3. 补齐 test_config.py（deep_merge）、test_control.py（状态机）、test_runlog.py（写入/查询/PASS率）
+  4. pip install 需先关闭正在运行的 loop.exe 进程（taskkill /F /IM loop.exe），再重试安装
+
 - [x] 翻译tab页标题为中文 (→ with) [70765679] — 14:23 IMP1 VFY1 PASS
 - [x] 现在页面好像会隔几秒重新加载，导致输入被清空 (→ with) [a35f86a5] — 16:15 IMP2 VFY1 PASS
 - [x] improve-claude-git-robustness — 借鉴 claude-controller: env清理/claude路径解析/git fetch重试/离线模式/pytest (→ with) [2a09877f] — 11:02 IMP1 VFY1 PASS
