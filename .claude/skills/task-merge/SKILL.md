@@ -84,44 +84,11 @@ git diff master...<branch> --stat
 
 输出清晰的分支摘要给用户看，然后确认是否继续合入。用户确认后进入 Step 3。
 
-### Step 3: 检查工作区状态
+### Step 3: 验证门禁 — 手动测试
 
-```bash
-git status --porcelain
-```
+在真正合入 master 之前，先在 agent worktree 中预合入任务分支，按 TEST.md 协助用户跑手动测试。全部通过才允许进入后续步骤执行合入。
 
-- **空** → 工作区干净，跳过 Step 4，进入 Step 5（验证门禁）
-- **非空** → 工作区有未提交改动，进入 Step 4
-
-### Step 4: 分类工作区改动
-
-对比工作区改动文件和分支改动文件的重叠程度：
-
-```bash
-# 分支改动的文件（相对于 master）
-git diff master...<branch> --name-only
-
-# 工作区改动的文件
-git diff --name-only
-# 以及 untracked 文件
-git ls-files --others --exclude-standard
-```
-
-**判断逻辑**：
-
-1. 计算重叠：两边都出现的文件数 / 分支改动文件数
-2. **重叠 ≥ 50%** → 工作区改动很可能是分支改动的半成品 → **推荐 stash 路线**
-3. **重叠 < 50%** → 工作区改动是独立工作 → **推荐 commit 路线**
-
-告知用户判断依据（哪些文件重叠、哪些不重叠）和建议的路线。**一步确认**：让用户选择 stash 路线 / commit 路线 / 取消。
-
-> **注意**: 此处仅记录用户选择，暂不执行。验证通过后（Step 6）再执行。
-
-### Step 5: 验证门禁 — 手动测试
-
-在真正合入 master 之前，先在 agent worktree 中预合入任务分支，按 TEST.md 协助用户跑手动测试。全部通过才允许进入 Step 6 执行合入。
-
-#### 5a. 进入 Agent Worktree
+#### 3a. 进入 Agent Worktree
 
 从 `.loop-engineering/loop-config.yaml` 读取 agent worktree 路径：
 
@@ -141,7 +108,7 @@ test -f "$AGENT_WORKTREE/.git" && echo "EXISTS" || echo "NOT_FOUND"
 - **不存在** → 报错"Agent worktree 不存在，请先运行 `loop setup`"，退出
 - **存在** → `EnterWorktree(path="$AGENT_WORKTREE")`
 
-#### 5b. Fetch 和 Checkout 任务分支
+#### 3b. Fetch 和 Checkout 任务分支
 
 ```bash
 git fetch origin --prune
@@ -160,16 +127,16 @@ git branch --show-current
 # 必须输出 <branch>
 ```
 
-#### 5c. 读取 TEST.md
+#### 3c. 读取 TEST.md
 
 ```bash
 test -f "TEST.md" && echo "FOUND" || echo "NOT_FOUND"
 ```
 
-- **不存在** → 输出"项目未配置 TEST.md，跳过手动测试"，直接跳到 5e（汇总确认后继续合入）
+- **不存在** → 输出"项目未配置 TEST.md，跳过手动测试"，直接跳到 3e（汇总确认后继续合入）
 - **存在** → 读取 TEST.md 内容
 
-#### 5d. 按需制定测试计划并执行
+#### 3d. 按需制定测试计划并执行
 
 TEST.md 是**测试方法论参考**，不是必须全部执行的死清单。
 
@@ -194,7 +161,7 @@ TEST.md 说明了项目中可用的测试手段（pip install、启动服务、c
 
 > 测试范围由变更驱动，TEST.md 提供方法。
 
-#### 5e. 停止服务 + 汇总确认
+#### 3e. 停止服务 + 汇总确认
 
 测试完成后停止后台服务（如有启动），然后向用户展示测试汇总表：
 
@@ -218,7 +185,7 @@ TEST.md 说明了项目中可用的测试手段（pip install、启动服务、c
 > **如果所有项都 ✅**: 默认建议 pass，但让用户最终决定。
 > **如果有 ❌**: 列出失败项和原因，提醒用户注意。仍可 pass（如果用户认为失败项无关紧要）。
 
-#### 5f. FAIL — 清理 Agent Worktree
+#### 3f. FAIL — 清理 Agent Worktree
 
 用户回复 fail 或选择不继续：
 
@@ -242,7 +209,7 @@ ExitWorktree(action="keep")
 
 **流程结束，不再继续。**
 
-#### 5g. PASS — 清理并继续
+#### 3g. PASS — 清理并继续
 
 用户回复 pass：
 
@@ -259,12 +226,53 @@ ExitWorktree(action="keep")
 输出：
 ```
 ## 手动测试通过 ✅
-正在切回主 worktree 执行合入...
+正在切回主 worktree 继续合入流程...
 ```
 
-继续进入 Step 6。
+继续进入 Step 4。
+
+### Step 4: 检查工作区状态
+
+```bash
+git status --porcelain
+```
+
+- **空** → 工作区干净，跳过 Step 5，进入 Step 6（执行合入）
+- **非空** → 工作区有未提交改动，进入 Step 5
+
+### Step 5: 分类工作区改动
+
+对比工作区改动文件和分支改动文件的重叠程度：
+
+```bash
+# 分支改动的文件（相对于 master）
+git diff master...<branch> --name-only
+
+# 工作区改动的文件
+git diff --name-only
+# 以及 untracked 文件
+git ls-files --others --exclude-standard
+```
+
+**判断逻辑**：
+
+1. 计算重叠：两边都出现的文件数 / 分支改动文件数
+2. **重叠 ≥ 50%** → 工作区改动很可能是分支改动的半成品 → **推荐 stash 路线**
+3. **重叠 < 50%** → 工作区改动是独立工作 → **推荐 commit 路线**
+
+告知用户判断依据（哪些文件重叠、哪些不重叠）和建议的路线。**一步确认**：让用户选择 stash 路线 / commit 路线 / 取消。
+
+> **注意**: 此处仅记录用户选择，暂不执行。验证通过后（Step 3 已完成）在 Step 6 执行。
 
 ### Step 6: 执行合入
+
+#### 干净路线（工作区无改动，Step 5 已跳过）
+
+```bash
+git merge <branch> --no-edit
+```
+
+如果 merge 冲突：进入 **[冲突解决策略](#冲突解决策略)**。
 
 #### Stash 路线（工作区改动 = 同一件事的半成品）
 
@@ -387,7 +395,7 @@ Python 代码冲突时，检查：
 
 ### Step 7: 手动测试提醒
 
-合入已在 Step 5 中通过 agent worktree 验证，此处仅提醒：push 前可在 master 上快速复核。
+合入已在 Step 3 中通过 agent worktree 验证，此处仅提醒：push 前可在 master 上快速复核。
 
 如果 TEST.md 存在，简要提示：
 ```
