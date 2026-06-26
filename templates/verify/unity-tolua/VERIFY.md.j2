@@ -6,6 +6,16 @@
 > 验证范围由变更驱动 — 只执行涉及模块的步骤，未涉及的跳过。
 > 你可以编辑步骤中的具体命令。重新运行 `loop setup` 会覆盖 — 有自定义内容请备份。
 
+## 测试工具
+
+| 工具 | 用途 |
+|------|------|
+| MCP refresh_unity | 触发 Unity 编译，等待完成 |
+| MCP read_console | 读取 Console 输出，检查编译 error |
+| MCP manage_editor | 控制 Play Mode 进入/退出 |
+| runtime-test skill | 执行注册的 Lua 自动测试，检查 PASS/FAIL 标记 |
+| Bash 命令 | Lua 路径生成脚本、进程管理 |
+
 ## 自动化验证手段
 
 以下是 verifier 可用的自动化验证方法。
