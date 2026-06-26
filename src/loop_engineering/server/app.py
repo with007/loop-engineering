@@ -8,119 +8,49 @@ import subprocess
 
 from fastapi import FastAPI, Request, Form, Query
 from fastapi.responses import RedirectResponse, Response
-from fastapi.templating import Jinja2Templates
-from loop_engineering.task_id import parse_task_id, extract_task_id_from_branch
+
+from loop_engineering.path_utils import resolve_project_root
+from loop_engineering.server.dependencies import templates, is_htmx, render_page, get_agent_name
+from loop_engineering.server.services.task_parser import parse_tasks, filter_tasks
+from loop_engineering.server.services.project_context import build_projects_context
 
 app = FastAPI(title="Loop Engineering Dashboard")
 
-_tpl_dir = os.path.join(os.path.dirname(__file__), "templates")
-templates = Jinja2Templates(directory=_tpl_dir)
-templates.env.cache = None
+
+# ── API routes ──
+from .api import control, projects, tasks, runs, branches, config, docs  # noqa: E402
+app.include_router(control.router, prefix="/api/control", tags=["control"])
+app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
+app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
+app.include_router(runs.router, prefix="/api/runs", tags=["runs"])
+app.include_router(branches.router, prefix="/api/branches", tags=["branches"])
+app.include_router(config.router, prefix="/api/config", tags=["config"])
+app.include_router(docs.router, prefix="/api/docs", tags=["docs"])
 
 
-def _project_root(request: Request = None, q: str = None):
-    """获取当前项目根目录。优先 query param，否则 env var."""
-    if q:
-        return q
-    if request:
-        q = request.query_params.get("project")
-        if q:
-            return q
-    return os.environ.get("LOOP_PROJECT_ROOT", os.getcwd())
-
-
-def _read_tasks(pr):
-    tp = os.path.join(pr, "tasks.md")
-    if not os.path.exists(tp):
-        return []
-    # 收集已有的 agent 分支名（task_id -> branch_name）
-    agent_branches = {}
-    try:
-        r = subprocess.run('git branch --list "agent/*"', shell=True, capture_output=True, text=True,
-                           encoding='utf-8', errors='replace', cwd=pr, timeout=5)
-        for line in r.stdout.strip().split("\n"):
-            b = line.strip().lstrip("*+ ")
-            if b:
-                tid = extract_task_id_from_branch(b)
-                if tid:
-                    agent_branches[tid] = b
-    except Exception:
-        pass
-
-    # 收集已合入 master 的分支名（用于区分 done vs pending_merge）
-    merged_branches = set()
-    try:
-        r = subprocess.run('git branch --merged master --list "agent/*"', shell=True,
-                           capture_output=True, text=True,
-                           encoding='utf-8', errors='replace', cwd=pr, timeout=5)
-        for line in r.stdout.strip().split("\n"):
-            b = line.strip().lstrip("*+ ")
-            if b:
-                merged_branches.add(b)
-    except Exception:
-        pass
-
+def _read_tasks_dict(pr):
+    """读取 tasks.md 并返回 dict 列表（用于现有模板兼容）。"""
+    tasklines = parse_tasks(pr)
     result = []
-    current_task = None
-    with open(tp, "r", encoding="utf-8") as f:
-        for line in f:
-            # 先匹配 checkbox
-            m = re.match(r'^- \[(.)\]\s+(.+)', line)
-            if m:
-                current_task = None  # new task starts
-                status_char = m.group(1)
-                rest = m.group(2).strip()
-
-                # 提取 (→ assignee) — 可能在 meta 前或后
-                assignee = ""
-                m_assignee = re.search(r'\(→\s*(\w+)\)', rest)
-                if m_assignee:
-                    assignee = m_assignee.group(1)
-                    rest = (rest[:m_assignee.start()] + rest[m_assignee.end():]).strip()
-
-                # 提取 — meta
-                meta = ""
-                m_meta = re.search(r'\s+—\s+(.+)$', rest)
-                if m_meta:
-                    meta = m_meta.group(1).strip()
-                    rest = rest[:m_meta.start()].strip()
-
-                desc = rest
-                # 去掉 [task-id] 后缀（如果有），保持描述干净
-                desc = re.sub(r'\s+\[[a-f0-9]{8}\]\s*$', '', desc).strip()
-                tid = parse_task_id(line) or ""
-                if status_char == "x" and tid and tid in agent_branches:
-                    # 分支存在但可能已经合入 — 检查是否已在 master 中
-                    if agent_branches[tid] in merged_branches:
-                        status = "done"
-                    else:
-                        status = "pending_merge"
-                else:
-                    s = {" ": "pending", "~": "in_progress", "x": "done", "r": "reopen"}
-                    status = s.get(status_char, "pending")
-                current_task = {
-                    "description": desc,
-                    "task_id": tid,
-                    "status": status,
-                    "assignee": assignee,
-                    "meta": meta,
-                    "feedback": [],
-                }
-                result.append(current_task)
-            elif re.match(r'^\s{2,}\S', line) and current_task:
-                # indented continuation line = feedback
-                current_task["feedback"].append(line.strip())
+    for tl in tasklines:
+        status = tl.status
+        s = {" ": "pending", "~": "in_progress", "x": "done", "r": "reopen"}
+        desc = tl.description
+        if tl.task_id:
+            desc = re.sub(r'\s+\[[a-f0-9]{8}\]\s*$', '', desc).strip()
+        result.append({
+            "description": desc,
+            "task_id": tl.task_id,
+            "status": s.get(status, "pending"),
+            "assignee": tl.assignee,
+            "meta": tl.meta,
+            "feedback": tl.feedback,
+        })
     return result
 
 
-def _agent_name(pr):
-    from loop_engineering.config import read_config
-    cfg = read_config(pr)
-    return cfg.get("agent", {}).get("name", "")
-
-
 def _filter_agent_workspace_copies(project_list):
-    """过滤掉 agent workspace 拷贝：loop-config.yaml 里的 project.root 和自身路径不一致."""
+    """过滤掉 agent workspace 拷贝."""
     from loop_engineering.config import read_config as _read_cfg
     result = []
     for p in project_list:
@@ -135,127 +65,26 @@ def _filter_agent_workspace_copies(project_list):
     return result
 
 
-def _is_htmx(request: Request):
-    return request.headers.get("HX-Request", "") == "true"
-
-
-def _render(request: Request, template_name: str, context: dict):
-    if _is_htmx(request):
-        resp = templates.TemplateResponse(request, template_name, context)
-    else:
-        content_html = templates.get_template(template_name).render(context)
-        resp = templates.TemplateResponse(request, "base.html", {
-            "request": request,
-            "content": content_html,
-        })
-    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    resp.headers["Pragma"] = "no-cache"
-    resp.headers["Expires"] = "0"
-    return resp
-
-
-def _build_projects_context(request: Request, current_pr: str, agent_filter: str = ""):
-    """构建项目列表 + 当前项目信息。仅包含有 loop-config.yaml 的项目."""
-    from loop_engineering.registry import list_projects, register_project
-    projects = list_projects()
-
-    # 自动注册当前项目（仅当 loop-config.yaml 存在时）
-    from loop_engineering.config import is_project_dir
-    if is_project_dir(current_pr) and not any(os.path.normcase(p["root"]) == os.path.normcase(current_pr) for p in projects):
-        register_project(current_pr)
-        projects = list_projects()
-
-    # 过滤掉没有 loop-config.yaml 的孤项目
-    projects = [p for p in projects if is_project_dir(p["root"])]
-    # 过滤掉 agent workspace 拷贝（loop-config.yaml 里的 project.root 和自身路径不一致）
-    projects = _filter_agent_workspace_copies(projects)
-
-    # 构建详情
-    result = []
-    for p in projects:
-        pr = p["root"]
-        cfg = {}
-        from loop_engineering.config import read_config
-        try:
-            cfg = read_config(pr)
-        except Exception:
-            pass
-        tasks = _read_tasks(pr)
-        from loop_engineering.runlog import get_pass_rate
-        passed, total, rate = get_pass_rate(pr, days=7)
-
-        # branches — 用 git for-each-ref 获取 agent 分支，按提交时间降序（最新在前）
-        branches_list = []
-        seen = set()
-        try:
-            r = subprocess.run(
-                'git for-each-ref --sort=-committerdate --format="%(refname:short)" refs/heads/agent/ refs/remotes/origin/agent/',
-                shell=True, capture_output=True, text=True,
-                encoding='utf-8', errors='replace', cwd=pr, timeout=5
-            )
-            for line in r.stdout.strip().split("\n"):
-                ref = line.strip()
-                if not ref:
-                    continue
-                b = ref.replace("origin/", "")
-                if b in seen:
-                    continue
-                seen.add(b)
-
-                # 按 agent 名筛选（分支名格式: agent/<whoami>/<task_id>-<slug>）
-                if agent_filter:
-                    parts = b.split("/")
-                    if len(parts) < 2 or parts[0] != "agent" or parts[1] != agent_filter:
-                        continue
-
-                # 检查合入状态
-                if ref.startswith("origin/"):
-                    r2 = subprocess.run(
-                        f"git merge-base --is-ancestor {ref} origin/master",
-                        shell=True, capture_output=True, cwd=pr, timeout=5
-                    )
-                    branches_list.append({"name": b, "merged": r2.returncode == 0})
-                else:
-                    r_merged = subprocess.run(
-                        f"git branch --merged master --list {b}", shell=True, capture_output=True,
-                        text=True, encoding='utf-8', errors='replace', cwd=pr, timeout=5
-                    )
-                    branches_list.append({"name": b, "merged": r_merged.stdout.strip() != ""})
-        except Exception:
-            pass
-
-        result.append({
-            "name": p["name"],
-            "root": pr,
-            "is_current": pr == current_pr,
-            "tasks": {
-                "pending": sum(1 for t in tasks if t["status"] == "pending"),
-                "in_progress": sum(1 for t in tasks if t["status"] in ("in_progress", "pending_merge", "reopen")),
-                "done": sum(1 for t in tasks if t["status"] == "done"),
-                "pending_merge": sum(1 for t in tasks if t["status"] == "pending_merge"),
-            },
-            "pass_rate": {"passed": passed, "total": total, "rate": round(rate * 100, 1)},
-            "branches": branches_list,
-        })
-
-    return result
-
-
-# ── API routes ──
-from .api import control, projects, tasks, runs, branches, config, docs  # noqa: E402
-app.include_router(control.router, prefix="/api/control", tags=["control"])
-app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
-app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
-app.include_router(runs.router, prefix="/api/runs", tags=["runs"])
-app.include_router(branches.router, prefix="/api/branches", tags=["branches"])
-app.include_router(config.router, prefix="/api/config", tags=["config"])
-app.include_router(docs.router, prefix="/api/docs", tags=["docs"])
+def _apply_task_filters(tasks_list, status_str, filter_str, order_str):
+    """Apply status/filter/order to a task dict list."""
+    allowed = [s.strip() for s in status_str.split(",") if s.strip()]
+    if "in_progress" in allowed:
+        allowed.extend(["pending_merge", "reopen"])
+    if "done" in allowed:
+        allowed.append("pending_merge")
+    tasks = [t for t in tasks_list if t["status"] in allowed]
+    if filter_str:
+        f_lower = filter_str.strip().lower()
+        tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
+    if order_str == "desc":
+        tasks = list(reversed(tasks))
+    return tasks
 
 
 @app.get("/api/projects/switcher")
 async def project_switcher(request: Request, project: str = Query(None)):
     """返回项目切换器 HTML 片段."""
-    pr = _project_root(q=project)
+    pr = resolve_project_root(project=project)
     from loop_engineering.registry import list_projects
     from loop_engineering.config import is_project_dir
     projects = list_projects()
@@ -273,8 +102,8 @@ async def project_switcher(request: Request, project: str = Query(None)):
     html += '''<script>
         function switchProject(root) {
             var url = window.location.pathname + '?project=' + encodeURIComponent(root);
-            htmx.ajax('GET', url, {target: '#content', swap: 'innerHTML'});
             history.pushState({}, '', url);
+            htmx.ajax('GET', url, {target: '#content', swap: 'innerHTML'});
         }
     </script>'''
     from fastapi.responses import HTMLResponse
@@ -285,14 +114,12 @@ async def project_switcher(request: Request, project: str = Query(None)):
 
 @app.get("/")
 async def dashboard(request: Request, project: str = Query(None), filter: str = Query("")):
-    pr = _project_root(request, q=project)
+    pr = resolve_project_root(project=project, request=request)
     from loop_engineering.registry import list_projects
     from loop_engineering.config import is_project_dir
 
-    # If current dir is not a project, fall back to a registered one
     if not is_project_dir(pr):
         projects = list_projects()
-        # Filter to only those with loop-config.yaml
         valid = [p for p in projects if is_project_dir(p["root"])]
         if valid:
             redir = f"/?project={quote(valid[0]['root'])}"
@@ -302,9 +129,12 @@ async def dashboard(request: Request, project: str = Query(None), filter: str = 
         else:
             return RedirectResponse("/setup", status_code=303)
 
-    all_projects = _build_projects_context(request, pr, agent_filter=filter)
-    current = next((p for p in all_projects if p["is_current"]), all_projects[0] if all_projects else None)
-    return _render(request, "dashboard.html", {
+    all_projects = build_projects_context(pr, agent_filter=filter)
+    current = next((p for p in all_projects if p.get("is_current")), all_projects[0] if all_projects else None)
+    if current is None:
+        current = {"root": pr, "name": os.path.basename(pr)}
+        current["is_current"] = True
+    return render_page(request, "dashboard.html", {
         "request": request,
         "projects": all_projects,
         "current_root": pr,
@@ -315,26 +145,12 @@ async def dashboard(request: Request, project: str = Query(None), filter: str = 
 
 @app.get("/tasks")
 async def tasks_page(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query("")):
-    pr = _project_root(request, q=project)
-    tasks = _read_tasks(pr)
-    allowed = [s.strip() for s in status.split(",") if s.strip()]
-    # "in_progress" filter also includes "pending_merge" and "reopen"
-    if "in_progress" in allowed:
-        allowed.extend(["pending_merge", "reopen"])
-    # "done" filter also includes "pending_merge" (completed but branch not yet merged)
-    if "done" in allowed:
-        allowed.append("pending_merge")
-    tasks = [t for t in tasks if t["status"] in allowed]
-    # 按 agent 名筛选
-    if filter:
-        f_lower = filter.strip().lower()
-        tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
-    if order == "desc":
-        tasks = list(reversed(tasks))
-    return _render(request, "tasks.html", {
+    pr = resolve_project_root(project=project, request=request)
+    tasks = _apply_task_filters(_read_tasks_dict(pr), status, filter, order)
+    return render_page(request, "tasks.html", {
         "request": request,
         "tasks": tasks,
-        "agent_name": _agent_name(pr),
+        "agent_name": get_agent_name(pr),
         "current_root": pr,
         "order": order,
         "status": status,
@@ -344,27 +160,16 @@ async def tasks_page(request: Request, project: str = Query(None), order: str = 
 
 @app.get("/tasks/list")
 async def tasks_list(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query("")):
-    """返回完整任务区域（控件 + 列表），供控件操作后刷新."""
-    pr = _project_root(request, q=project)
-    tasks = _read_tasks(pr)
-    allowed = [s.strip() for s in status.split(",") if s.strip()]
-    # "in_progress" filter also includes "pending_merge" and "reopen"
-    if "in_progress" in allowed:
-        allowed.extend(["pending_merge", "reopen"])
-    # "done" filter also includes "pending_merge" (completed but branch not yet merged)
-    if "done" in allowed:
-        allowed.append("pending_merge")
-    tasks = [t for t in tasks if t["status"] in allowed]
-    # 按 agent 名筛选
-    if filter:
-        f_lower = filter.strip().lower()
-        tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
-    if order == "desc":
-        tasks = list(reversed(tasks))
-    return templates.TemplateResponse(request, "_tasks_list.html", {
+    pr = resolve_project_root(project=project, request=request)
+    tasks = _apply_task_filters(_read_tasks_dict(pr), status, filter, order)
+    from fastapi.templating import Jinja2Templates
+    import os as _os
+    _td = _os.path.join(_os.path.dirname(__file__), "templates")
+    _tpl = Jinja2Templates(directory=_td)
+    return _tpl.TemplateResponse(request, "_tasks_list.html", {
         "request": request,
         "tasks": tasks,
-        "agent_name": _agent_name(pr),
+        "agent_name": get_agent_name(pr),
         "order": order,
         "status": status,
         "filter": filter,
@@ -373,26 +178,16 @@ async def tasks_list(request: Request, project: str = Query(None), order: str = 
 
 @app.get("/tasks/list-items")
 async def tasks_list_items(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query("")):
-    """返回仅任务条目（进度条 + 卡片），供 30s 轮询刷新."""
-    pr = _project_root(request, q=project)
-    tasks = _read_tasks(pr)
-    allowed = [s.strip() for s in status.split(",") if s.strip()]
-    # "in_progress" filter also includes "pending_merge" and "reopen"
-    if "in_progress" in allowed:
-        allowed.extend(["pending_merge", "reopen"])
-    if "done" in allowed:
-        allowed.append("pending_merge")
-    tasks = [t for t in tasks if t["status"] in allowed]
-    # 按 agent 名筛选
-    if filter:
-        f_lower = filter.strip().lower()
-        tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
-    if order == "desc":
-        tasks = list(reversed(tasks))
-    return templates.TemplateResponse(request, "_tasks_items.html", {
+    pr = resolve_project_root(project=project, request=request)
+    tasks = _apply_task_filters(_read_tasks_dict(pr), status, filter, order)
+    from fastapi.templating import Jinja2Templates
+    import os as _os
+    _td = _os.path.join(_os.path.dirname(__file__), "templates")
+    _tpl = Jinja2Templates(directory=_td)
+    return _tpl.TemplateResponse(request, "_tasks_items.html", {
         "request": request,
         "tasks": tasks,
-        "agent_name": _agent_name(pr),
+        "agent_name": get_agent_name(pr),
         "order": order,
         "status": status,
         "filter": filter,
@@ -401,7 +196,7 @@ async def tasks_list_items(request: Request, project: str = Query(None), order: 
 
 @app.post("/tasks/add")
 async def tasks_add(request: Request, description: str = Form(...), assignee: str = Form(...), task_id: str = Form(""), project: str = Form(None), order: str = Form("desc"), status: str = Form("pending,in_progress"), filter: str = Form("")):
-    pr = _project_root(request, q=project)
+    pr = resolve_project_root(project=project, request=request)
     tp = os.path.join(pr, "tasks.md")
     from loop_engineering.task_id import generate_task_id
     tid = task_id if task_id and re.match(r'^[a-f0-9]{8}$', task_id) else generate_task_id(description)
@@ -413,344 +208,171 @@ async def tasks_add(request: Request, description: str = Form(...), assignee: st
         with open(tp, "w", encoding="utf-8") as f:
             f.write("# Tasks\n\n")
             f.write(line)
-    tasks = _read_tasks(pr)
-    allowed = [s.strip() for s in status.split(",") if s.strip()]
-    # "in_progress" filter also includes "pending_merge" and "reopen"
-    if "in_progress" in allowed:
-        allowed.extend(["pending_merge", "reopen"])
-    # "done" filter also includes "pending_merge" (completed but branch not yet merged)
-    if "done" in allowed:
-        allowed.append("pending_merge")
-    tasks = [t for t in tasks if t["status"] in allowed]
-    # 按 agent 名筛选
-    if filter:
-        f_lower = filter.strip().lower()
-        tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
-    if order == "desc":
-        tasks = list(reversed(tasks))
-    return templates.TemplateResponse(request, "_tasks_list.html", {
+    tasks = _apply_task_filters(_read_tasks_dict(pr), status, filter, order)
+    from fastapi.templating import Jinja2Templates
+    import os as _os
+    _td = _os.path.join(_os.path.dirname(__file__), "templates")
+    _tpl = Jinja2Templates(directory=_td)
+    resp = _tpl.TemplateResponse(request, "_tasks_items.html", {
         "request": request,
         "tasks": tasks,
-        "agent_name": _agent_name(pr),
+        "agent_name": get_agent_name(pr),
         "order": order,
         "status": status,
         "filter": filter,
     })
+    resp.headers["HX-Trigger-After-Swap"] = "taskAdded"
+    return resp
 
 
 @app.get("/runs")
-async def runs_page(request: Request, whoami: str = "", project: str = Query(None)):
-    from loop_engineering.runlog import list_runs, get_pass_rate
-    pr = _project_root(request, q=project)
-    entries = list_runs(pr, whoami=whoami or None, limit=100)
-    passed, total, rate = get_pass_rate(pr, days=7)
-    agents = list(set(e.get("whoami", "") for e in entries if e.get("whoami")))
-    return _render(request, "runs.html", {
+async def runs_page(request: Request, project: str = Query(None), order: str = Query(""), filter: str = Query("")):
+    pr = resolve_project_root(project=project, request=request)
+    runs_entries = []
+    import glob, json
+    runs_dir = os.path.join(pr, ".loop-engineering", "runs")
+    if os.path.isdir(runs_dir):
+        for fpath in sorted(glob.glob(os.path.join(runs_dir, "*.json")), reverse=True):
+            try:
+                with open(fpath, "r", encoding="utf-8") as fh:
+                    entry = json.load(fh)
+                if filter and entry.get("whoami", "") != filter:
+                    continue
+                runs_entries.append({
+                    "task_id": entry.get("task_id", ""),
+                    "task_desc": entry.get("task_desc", ""),
+                    "whoami": entry.get("whoami", ""),
+                    "phase": entry.get("phase", ""),
+                    "result": entry.get("result", ""),
+                    "imp_round": entry.get("imp_round", 1),
+                    "vfy_round": entry.get("vfy_round", 1),
+                    "completed": entry.get("completed", ""),
+                })
+            except Exception:
+                pass
+    return render_page(request, "runs.html", {
         "request": request,
-        "runs": entries,
-        "pass_rate": {"passed": passed, "total": total, "rate": round(rate * 100, 1)},
-        "agents": agents,
-        "filter_whoami": whoami,
+        "runs": runs_entries,
         "current_root": pr,
+        "filter": filter,
     })
 
 
 @app.get("/control")
 async def control_page(request: Request, project: str = Query(None)):
-    from loop_engineering.control import get_status
-    pr = _project_root(request, q=project)
-    return _render(request, "control.html", {
+    pr = resolve_project_root(project=project, request=request)
+    return render_page(request, "control.html", {
         "request": request,
-        "status": get_status(pr),
         "current_root": pr,
     })
 
 
 @app.get("/control/status-fragment")
 async def control_status_fragment(request: Request, project: str = Query(None)):
-    """Control 页的 Loop 状态 + 按钮片段（供 5s polling 刷新）."""
-    from loop_engineering.control import get_status
-    pr = _project_root(request, q=project)
-    status = get_status(pr)
-    is_running = status.get("running", False)
-    paused = status.get("paused", False)
-    html = f'''<div id="control-status" hx-get="/control/status-fragment" hx-trigger="every 5s" hx-swap="outerHTML">
-        <div class="card" style="margin-bottom: 20px;">
-            <div class="status-indicator" style="margin-bottom: 16px;">
-                <span class="status-dot {"active" if is_running else ("paused" if paused else "")}"></span>
-                <span style="font-weight: 600; font-size: 18px;">
-                    {"Loop 运行中" if is_running else ("已暂停" if paused else "空闲")}
-                </span>
-                <span style="color: var(--dim); font-size: 13px; margin-left: auto;">
-                    {f'HB: <span id="hb-time" data-iso="{status["heartbeat"]}">{status["heartbeat"][:19].replace("T", " ")}</span>' if status.get("heartbeat") else "无心跳"}
-                </span>
-            </div>
-            <div class="controls" style="margin-bottom: 16px;">'''
-    if is_running:
-        html += '''<button class="btn btn-danger"
-                        hx-post="/api/control/stop"
-                        hx-target="#control-status"
-                        hx-swap="outerHTML">停止 Loop</button>
-                <button class="btn btn-sm"
-                        hx-post="/api/control/focus"
-                        hx-swap="none"
-                        style="background: var(--surface2); color: var(--text); border: 1px solid var(--border);">🔍 聚焦窗口</button>'''
-        if paused:
-            html += '''<button class="btn btn-primary"
-                        hx-delete="/api/control/pause"
-                        hx-target="#control-status"
-                        hx-swap="outerHTML">恢复</button>'''
-        else:
-            html += '''<button class="btn btn-warn"
-                        hx-post="/api/control/pause"
-                        hx-target="#control-status"
-                        hx-swap="outerHTML">暂停</button>'''
-    else:
-        html += '''<button class="btn btn-success"
-                        hx-post="/api/control/start"
-                        hx-target="#control-status"
-                        hx-swap="outerHTML">启动 Loop</button>'''
-        if status.get("pid") and status.get("pid_alive"):
-            html += '''<button class="btn btn-sm"
-                        hx-post="/api/control/focus"
-                        hx-swap="none"
-                        style="background: var(--surface2); color: var(--text); border: 1px solid var(--border); margin-left: 8px;">🔍 聚焦窗口</button>'''
-    html += '''</div></div></div>
-    <script>
-        (function() {
-            var el = document.getElementById('hb-time');
-            if (!el) return;
-            var iso = el.getAttribute('data-iso');
-            if (!iso) return;
-            var d = new Date(iso);
-            var now = new Date();
-            var sec = Math.floor((now - d) / 1000);
-            if (sec < 60) el.textContent = sec + 's ago';
-            else if (sec < 3600) el.textContent = Math.floor(sec/60) + 'm ago';
-            else el.textContent = Math.floor(sec/3600) + 'h ago';
-        })();
-    </script>'''
-    from fastapi.responses import HTMLResponse
-    return HTMLResponse(content=html)
+    pr = resolve_project_root(project=project, request=request)
+    return templates.TemplateResponse(request, "control.html", {
+        "request": request,
+        "current_root": pr,
+    })
 
 
 @app.get("/control/info-fragment")
 async def control_info_fragment(request: Request, project: str = Query(None)):
-    """Control 页的信号文件 + 工作原理片段（供 5s polling 刷新）."""
-    from loop_engineering.control import get_status
-    pr = _project_root(request, q=project)
-    status = get_status(pr)
-    is_running = status.get("running", False)
-    paused = status.get("paused", False)
-    hb_color = "var(--pass)" if is_running else "#64748b"
-    pause_color = "var(--active)" if paused else "#64748b"
-    html = f'''<div id="control-info" hx-get="/control/info-fragment" hx-trigger="every 5s" hx-swap="outerHTML">
-        <div class="grid grid-2">
-            <div class="card">
-                <h3>信号文件</h3>
-                <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-family: monospace;">
-                    <div style="display: flex; justify-content: space-between;">
-                        <span>control/heartbeat</span>
-                        <span style="color: {hb_color}">{status.get("heartbeat") or "无"}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between;">
-                        <span>control/pause</span>
-                        <span style="color: {pause_color}">{"ON" if paused else "关"}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between;">
-                        <span>control/throttle</span>
-                        <span style="color: var(--dim);">{status.get("throttle", "")}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between;">
-                        <span>control/loop.pid</span>
-                        <span style="color: var(--dim);">{status.get("pid") or "无"}</span>
-                    </div>
-                </div>
-            </div>
-            <div class="card">
-                <h3>工作原理</h3>
-                <p style="color: var(--muted); font-size: 13px; line-height: 1.6;">
-                    <strong>Start</strong> 打开终端窗口运行<br>
-                    <code style="color: var(--blue);">claude --dangerously-skip-permissions -p '/runloop'</code>
-                </p>
-                <p style="color: var(--muted); font-size: 13px; line-height: 1.6; margin-top: 8px;">
-                    Dashboard 通过以下方式检测 Loop 状态：<br>
-                    • 心跳文件（每轮更新）<br>
-                    • 进程 ID（终端窗口存活）
-                </p>
-            </div>
-        </div>
-    </div>'''
-    from fastapi.responses import HTMLResponse
-    return HTMLResponse(content=html)
+    pr = resolve_project_root(project=project, request=request)
+    return templates.TemplateResponse(request, "control.html", {
+        "request": request,
+        "current_root": pr,
+    })
 
 
 @app.get("/settings")
 async def settings_page(request: Request, project: str = Query(None)):
-    from loop_engineering.config import read_config
-    from loop_engineering.presets import list_presets
-
-    pr = _project_root(request, q=project)
-    from loop_engineering.config import is_project_dir
-    if not is_project_dir(pr):
-        return RedirectResponse("/setup", status_code=303)
-
-    cfg = read_config(pr)
-    presets = [{"key": k, "name": n, "desc": d} for k, n, d in list_presets()]
-
-    return _render(request, "settings.html", {
+    pr = resolve_project_root(project=project, request=request)
+    return render_page(request, "settings.html", {
         "request": request,
         "current_root": pr,
-        "config": cfg,
-        "presets": presets,
     })
 
 
 @app.get("/setup")
-async def setup_page(request: Request):
-    import subprocess
-    git_user = ""
-    try:
-        r = subprocess.run("git config user.name", shell=True, capture_output=True, text=True,
-                           encoding='utf-8', errors='replace', timeout=5)
-        git_user = r.stdout.strip()
-    except Exception:
-        pass
-    return _render(request, "setup.html", {"request": request, "git_user": git_user})
+async def setup_page(request: Request, project: str = Query(None)):
+    """Setup wizard — always served standalone (no base.html wrapping)."""
+    from fastapi.templating import Jinja2Templates
+    import os as _os
+    _td = _os.path.join(_os.path.dirname(__file__), "templates")
+    _tpl = Jinja2Templates(directory=_td)
+    pr = resolve_project_root(project=project)
+    from loop_engineering.config import detect_config
+    detected = detect_config(pr)
+    return _tpl.TemplateResponse(request, "setup.html", {
+        "request": request,
+        "detected_name": detected.get("project", {}).get("name", ""),
+        "detected_workspace": detected.get("agent", {}).get("workspace", ""),
+        "detected_user": detected.get("agent", {}).get("name", ""),
+        "detected_unity": bool(detected.get("_detected", {}).get("unity")),
+        "detected_data_repo": detected.get("data_repo", {}).get("path", ""),
+        "presets": [
+            {"key": "unity-tolua", "name": "Unity + ToLua", "desc": "PVP 卡牌项目"},
+            {"key": "python-server", "name": "Python Server", "desc": "Python CLI/Server 项目（loop-engineering 同类）"},
+            {"key": "generic", "name": "Generic", "desc": "通用项目（无特定语言/framework）"},
+        ],
+        "current_root": pr,
+    })
 
 
 @app.post("/setup/run")
-async def setup_run(request: Request, project_root: str = Form(...), agent_name: str = Form(None),
-                    agent_workspace: str = Form(None), main_port: int = Form(8080),
-                    agent_port: int = Form(9080), type: str = Form("")):
-    from loop_engineering.registry import register_project
+async def setup_run(request: Request, project_root: str = Form(...), agent_workspace: str = Form(...),
+                    agent_name: str = Form(""), type: str = Form("generic"), data_repo_path: str = Form(""),
+                    port: int = Form(8080)):
+    """执行 setup 流程."""
+    from loop_engineering.setup import run_setup
+    from loop_engineering.config import get_agent_dir
+    from loop_engineering.presets import apply_preset
 
-    if not os.path.isdir(project_root):
-        return _render(request, "setup.html", {
-            "request": request,
-            "error": f"目录不存在: {project_root}",
-        })
-
-    if not os.path.isdir(os.path.join(project_root, ".git")):
-        return _render(request, "setup.html", {
-            "request": request,
-            "error": f"不是 Git 仓库: {project_root}\n请先用 git init 或 git clone 初始化项目",
-        })
-
-    # 确定 agent name
-    if not agent_name:
-        try:
-            r = subprocess.run("git config user.name", shell=True, capture_output=True, text=True,
-                               encoding='utf-8', errors='replace', cwd=project_root, timeout=5)
-            agent_name = r.stdout.strip()
-        except Exception:
-            agent_name = ""
-
-    # 构建配置
-    from loop_engineering.config import detect_config
-    config = detect_config(project_root)
-    config["agent"]["name"] = agent_name or config["agent"].get("name", "")
-    if agent_workspace:
-        config["agent"]["workspace"] = os.path.abspath(agent_workspace)
-    config["main"]["mcp_port"] = main_port
-    config["agent"]["mcp_port"] = agent_port
-    if type:
-        from loop_engineering.presets import apply_preset
-        config = apply_preset(config, type)
-
-    try:
-        from loop_engineering.setup import run_setup
-        run_setup(config, force=True)
-        register_project(project_root, config["project"]["name"])
-        return Response(status_code=200, headers={"HX-Redirect": f"/?project={quote(project_root)}"})
-    except Exception as e:
-        return _render(request, "setup.html", {
-            "request": request,
-            "error": str(e),
-        })
+    config = {
+        "project": {"name": os.path.basename(project_root), "root": project_root},
+        "agent": {"workspace": agent_workspace, "name": agent_name, "mcp_port": 9080},
+        "main": {"mcp_port": port},
+    }
+    if data_repo_path:
+        config["data_repo"] = {"path": data_repo_path}
+    config = apply_preset(config, type)
+    run_setup(config)
+    return RedirectResponse("/?project=" + quote(project_root), status_code=303)
 
 
 @app.get("/api/setup/browse")
-async def browse_dirs(path: str = ""):
-    """浏览目录结构."""
-    import platform as _plat
-    if not path or not os.path.exists(path):
-        if _plat.system() == "Windows":
-            import string
-            drives = []
-            for d in string.ascii_uppercase:
-                dp = f"{d}:/"
-                if os.path.exists(dp):
-                    drives.append({"name": dp, "path": dp, "is_drive": True})
-            return {"path": "", "entries": drives}
-        else:
-            path = "/"
-    entries = []
-    try:
-        for name in sorted(os.listdir(path)):
-            full = os.path.join(path, name)
-            if os.path.isdir(full) and not name.startswith("."):
-                entries.append({"name": name, "path": full.replace("\\", "/"), "is_dir": True})
-    except PermissionError:
-        pass
-    parent = os.path.dirname(path).replace("\\", "/")
-    if parent == path:
-        parent = ""
-    return {"path": path.replace("\\", "/"), "parent": parent, "entries": entries}
+async def setup_browse(request: Request):
+    """打开文件夹选择对话框（Windows: PowerShell, macOS: AppleScript）."""
+    import platform, subprocess as sp
+    if platform.system() == "Windows":
+        ps = (
+            'Add-Type -AssemblyName System.Windows.Forms;'
+            '$f = New-Object System.Windows.Forms.FolderBrowserDialog;'
+            '$f.Description = "Select project root folder";'
+            'if ($f.ShowDialog() -eq "OK") { $f.SelectedPath } else { "" }'
+        )
+        r = sp.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True, timeout=30)
+        path = r.stdout.strip()
+    else:
+        # macOS: use AppleScript
+        script = 'tell app "System Events" to return POSIX path of (choose folder)'
+        r = sp.run(["osascript", "-e", script], capture_output=True, text=True, timeout=30)
+        path = r.stdout.strip()
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(content=path)
 
 
 @app.get("/api/setup/pickfolder")
-async def pick_folder():
-    """VBS COM 原生文件夹选择器."""
-    import platform as _plat, tempfile, time as _time
-    if _plat.system() != "Windows":
-        return {"path": ""}
-
-    vbs = tempfile.mktemp(suffix=".vbs")
-    out = tempfile.mktemp(suffix=".txt")
-    with open(vbs, "w") as f:
-        f.write(f"""
-Set objShell = CreateObject("Shell.Application")
-Set objFolder = objShell.BrowseForFolder(0, "Select Folder", 0, 0)
-Set fso = CreateObject("Scripting.FileSystemObject")
-Set out = fso.CreateTextFile("{out.replace(chr(92), chr(92)+chr(92))}", True)
-If Not objFolder Is Nothing Then
-    out.Write objFolder.Self.Path
-End If
-out.Close
-""")
-    try:
-        # 不捕获输出，让 cscript 正常显示对话框
-        subprocess.run(
-            ["cscript", "//Nologo", vbs],
-            timeout=300
-        )
-        _time.sleep(0.5)
-        if os.path.exists(out):
-            with open(out) as f:
-                path = f.read().strip()
-            os.remove(out)
-        else:
-            path = ""
-    except Exception:
-        path = ""
-    try:
-        os.remove(vbs)
-    except Exception:
-        pass
-    return {"path": path}
+async def setup_pickfolder(request: Request, current: str = Query("")):
+    """Pick folder via keyboard input (为 Alpine 组件提供的别名)."""
+    return await setup_browse(request)
 
 
-# ── Startup ──
-
-def start_server(project_root, port=8765, open_browser=True):
-    os.environ["LOOP_PROJECT_ROOT"] = project_root
-
-    # 首次启动时注册当前项目
-    from loop_engineering.registry import register_project
-    register_project(project_root)
-
+def start_server(project_root, port=8080, open_browser=True):
+    """启动 Dashboard 服务器."""
     import uvicorn
+    os.environ["LOOP_PROJECT_ROOT"] = os.path.abspath(project_root)
     if open_browser:
-        webbrowser.open(f"http://localhost:{port}")
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
+        webbrowser.open(f"http://localhost:{port}/?project={quote(project_root)}")
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")

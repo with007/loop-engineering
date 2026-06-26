@@ -3,20 +3,15 @@
 import os
 import subprocess
 from fastapi import APIRouter, Query
+from loop_engineering.path_utils import resolve_project_root
 
 router = APIRouter()
-
-
-def _project_root(project: str = None):
-    if project:
-        return project
-    return os.environ.get("LOOP_PROJECT_ROOT", os.getcwd())
 
 
 @router.get("/list")
 def list_branches(project: str = Query(None), filter: str = Query("")):
     """列出 agent 分支及其合入状态，默认按提交时间降序（最新在前），支持按 agent 名筛选."""
-    pr = _project_root(project)
+    pr = resolve_project_root(project=project)
 
     try:
         # 使用 git for-each-ref 按提交时间降序排列

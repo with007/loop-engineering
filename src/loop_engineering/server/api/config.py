@@ -3,14 +3,9 @@
 import os
 from fastapi import APIRouter, HTTPException, Query, Form
 from fastapi.responses import HTMLResponse
+from loop_engineering.path_utils import resolve_project_root
 
 router = APIRouter()
-
-
-def _project_root(project: str = None):
-    if project:
-        return project
-    return os.environ.get("LOOP_PROJECT_ROOT", os.getcwd())
 
 
 # ── endpoints ──
@@ -21,7 +16,7 @@ def get_config(project: str = Query(None)):
     from loop_engineering.config import read_config
     from loop_engineering.presets import list_presets
 
-    pr = _project_root(project)
+    pr = resolve_project_root(project=project)
     cfg = read_config(pr)
 
     return {
@@ -44,7 +39,7 @@ def update_config(
     from loop_engineering.config import read_config, write_config, merge_config, is_project_dir
     from loop_engineering.presets import apply_preset
 
-    pr = _project_root(project)
+    pr = resolve_project_root(project=project)
     if not is_project_dir(pr):
         raise HTTPException(404, ".loop-engineering/loop-config.yaml not found")
 
@@ -88,8 +83,8 @@ def update_config(
 
     if changed & {"agent.name", "project.name"}:
         try:
-            from loop_engineering.setup import render_skill_md
-            render_skill_md(new_config)
+            from loop_engineering.setup import deploy_skills
+            deploy_skills(new_config)
             actions.append("task-runner SKILL.md re-rendered")
         except Exception as e:
             actions.append(f"SKILL.md update failed: {e}")
@@ -110,7 +105,7 @@ def teardown_project(
     """移除 loop-engineering 的 agent worktree 和注册表条目."""
     from loop_engineering.config import read_config
 
-    pr = _project_root(project)
+    pr = resolve_project_root(project=project)
     cfg = read_config(pr)
     if not cfg:
         raise HTTPException(404, ".loop-engineering/loop-config.yaml not found")

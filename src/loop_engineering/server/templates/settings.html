@@ -7,7 +7,7 @@
     <!-- 加载中，由 hx-indicator 处理 -->
 
     <!-- 项目信息 -->
-    <form hx-post="/api/config/update?project={{ current_root }}"
+    <form hx-post="/api/config/update"
           hx-target="#settings-msg" hx-swap="innerHTML"
           hx-indicator="#settings-saving">
         <input type="hidden" name="project" value="{{ current_root }}">

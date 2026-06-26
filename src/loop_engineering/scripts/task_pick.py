@@ -6,9 +6,9 @@
 
 从当前目录向上查找 loop-config.yaml 定位项目根目录。
 """
-import subprocess, sys, re, os
-from loop_engineering.task_id import parse_task_id, make_branch_name
-from loop_engineering.config import is_project_dir
+import subprocess, sys, re, os, shlex
+from loop_engineering.task_id import TaskLine, make_branch_name
+from loop_engineering.path_utils import find_project_root
 
 
 def run(cmd):
@@ -16,60 +16,72 @@ def run(cmd):
                           encoding='utf-8', errors='replace')
 
 
-def _find_project_root():
-    """从 cwd 向上查找 loop-config.yaml，定位项目根目录."""
-    p = os.getcwd()
-    for _ in range(10):
-        if is_project_dir(p):
-            return p
-        parent = os.path.dirname(p)
-        if parent == p:
-            break
-        p = parent
-    return os.getcwd()  # fallback
-
-
 def main():
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     if len(sys.argv) < 2:
-        print("Usage: task_pick.py <username> [--project-root <path>]")
+        print("Usage: task_pick.py <username> [--project-root <path>] [--format shell]")
         sys.exit(1)
 
     whoami = sys.argv[1]
     project_root = None
+    fmt = None  # None = default legacy format
     for i, arg in enumerate(sys.argv):
         if arg == "--project-root" and i + 1 < len(sys.argv):
             project_root = sys.argv[i + 1]
-            break
+        elif arg == "--format" and i + 1 < len(sys.argv):
+            fmt = sys.argv[i + 1]
     if not project_root:
-        project_root = _find_project_root()
+        project_root = find_project_root()
     tasks_path = os.path.join(project_root, "tasks.md")
+
+    # Helper to output in the requested format
+    def emit(status, **kwargs):
+        if fmt == "shell":
+            print(f"STATUS={status}")
+            for k, v in kwargs.items():
+                print(f"{k}={shlex.quote(str(v))}")
+        else:
+            if status == "ok":
+                parts = [f"taskID={kwargs.get('task_id', '')}",
+                         f"branch={kwargs.get('branch', '')}",
+                         f"desc={kwargs.get('desc', '')}",
+                         f"openSpec={kwargs.get('openSpec', 'false')}",
+                         f"reopen={kwargs.get('reopen', 'false')}"]
+                print(" ".join(parts))
+            elif status == "none":
+                print("NONE")
+            elif status == "busy":
+                print("BUSY")
 
     try:
         with open(tasks_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+            lines = f.read().split('\n')
     except FileNotFoundError:
-        print("NONE")
+        emit("none")
         return
 
+    # 解析所有任务行
+    tasks = []
+    for line in lines:
+        tl = TaskLine.parse(line)
+        if tl and tl.assignee == whoami:
+            tasks.append(tl)
+
     # 如果当前用户已有进行中的任务，不再选新任务
-    for line in content.split('\n'):
-        if re.match(r'^- \[~\]\s+.+?\s+\(→\s*' + re.escape(whoami) + r'\)', line):
-            print("BUSY")
+    for tl in tasks:
+        if tl.status == "~":
+            emit("busy")
             return
 
-    for line in content.split('\n'):
-        match = re.match(r'^- \[[ r]\]\s+(.+?)\s+\(→\s*' + re.escape(whoami) + r'\)', line)
-        if not match:
+    for tl in tasks:
+        if tl.status not in (" ", "r"):
             continue
-
-        desc = match.group(1).strip()
-        task_id = parse_task_id(line)
-        if not task_id:
+        if not tl.task_id:
             continue  # 没有 [task-id] 的任务跳过
 
-        # 判断是否 reopen
-        is_reopen = line.startswith('- [r] ')
+        desc = tl.description
+        task_id = tl.task_id
+        is_reopen = tl.status == "r"
 
         if is_reopen:
             # 查找已有 agent 分支
@@ -96,10 +108,10 @@ def main():
         open_spec = "true" if os.path.isdir(os.path.join(project_root, f"openspec/changes/{task_id}")) else "false"
         reopen_flag = "true" if is_reopen else "false"
 
-        print(f"taskID={task_id} branch={branch} desc={desc} openSpec={open_spec} reopen={reopen_flag}")
+        emit("ok", task_id=task_id, BRANCH=branch, DESC=desc, OPENSPEC=open_spec, REOPEN=reopen_flag)
         return
 
-    print("NONE")
+    emit("none")
 
 
 if __name__ == "__main__":

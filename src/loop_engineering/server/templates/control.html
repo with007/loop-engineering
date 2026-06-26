@@ -150,9 +150,7 @@
 
         function set_throttle() {
             var val = document.getElementById('throttle-input').value;
-            var params = new URLSearchParams(window.location.search);
-            var proj = params.get('project');
-            var url = '/api/control/throttle' + (proj ? '?project=' + encodeURIComponent(proj) : '');
+            var url = window.Project ? window.Project.bind('/api/control/throttle') : '/api/control/throttle';
             var msgEl = document.getElementById('throttle-msg');
             msgEl.style.color = 'var(--dim)';
             msgEl.textContent = '设置中...';

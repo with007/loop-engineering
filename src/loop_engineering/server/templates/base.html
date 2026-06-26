@@ -306,16 +306,25 @@
         document.body.addEventListener('htmx:afterSettle', updateNav);
         updateNav();  // initial call
 
-        // Preserve ?project= across all page navigations
-        var PAGE_ROUTES = ['/', '/tasks', '/runs', '/control', '/settings', '/setup'];
+        // ── Project state object ──
+        window.Project = {
+            current: function() {
+                var params = new URLSearchParams(window.location.search);
+                return params.get('project') || '';
+            },
+            bind: function(path) {
+                var proj = this.current();
+                if (!proj) return path;
+                if (path.indexOf('project=') > -1) return path;
+                return path + (path.indexOf('?') > -1 ? '&' : '?') + 'project=' + encodeURIComponent(proj);
+            }
+        };
+
+        // Single htmx:configRequest — inject X-Loop-Project header
         document.body.addEventListener('htmx:configRequest', function(evt) {
-            var path = evt.detail.path;
-            var route = path.split('?')[0];
-            if (PAGE_ROUTES.indexOf(route) === -1) return;
-            var params = new URLSearchParams(window.location.search);
-            var project = params.get('project');
-            if (project && path.indexOf('project=') === -1) {
-                evt.detail.path = path + (path.indexOf('?') > -1 ? '&' : '?') + 'project=' + encodeURIComponent(project);
+            var proj = window.Project.current();
+            if (proj) {
+                evt.detail.headers['X-Loop-Project'] = proj;
             }
         });
 
@@ -340,9 +349,7 @@
 
                 async loadConfig() {
                     try {
-                        var params = new URLSearchParams(window.location.search);
-                        var proj = params.get('project') || '';
-                        var url = '/api/config/current' + (proj ? '?project=' + encodeURIComponent(proj) : '');
+                        var url = window.Project.bind('/api/config/current');
                         var resp = await fetch(url);
                         var data = await resp.json();
                         this.config = data.config || {project: {}, agent: {}, main: {}};
@@ -360,9 +367,7 @@
                     this.saving = true;
                     this.message = null;
                     try {
-                        var params = new URLSearchParams(window.location.search);
-                        var proj = params.get('project') || '';
-                        var url = '/api/config/update' + (proj ? '?project=' + encodeURIComponent(proj) : '');
+                        var url = window.Project.bind('/api/config/update');
                         var body = {
                             project: {name: this.config.project.name},
                             agent: {
@@ -395,9 +400,7 @@
                 async executeTeardown() {
                     if (this.teardownConfirmText !== this.config.project.name) return;
                     try {
-                        var params = new URLSearchParams(window.location.search);
-                        var proj = params.get('project') || '';
-                        var url = '/api/config/teardown' + (proj ? '?project=' + encodeURIComponent(proj) : '');
+                        var url = window.Project.bind('/api/config/teardown');
                         var resp = await fetch(url, {
                             method: 'POST',
                             headers: {'Content-Type': 'application/json'},
@@ -437,9 +440,7 @@
                     this.saved = false;
                     this.error = '';
                     try {
-                        var params = new URLSearchParams(window.location.search);
-                        var proj = params.get('project') || '';
-                        var url = '/api/docs/' + doc + (proj ? '?project=' + encodeURIComponent(proj) : '');
+                        var url = window.Project.bind('/api/docs/' + doc);
                         var resp = await fetch(url);
                         var data = await resp.json();
                         this.content = data.content || '';
@@ -462,9 +463,7 @@
                     this.saved = false;
                     this.error = '';
                     try {
-                        var params = new URLSearchParams(window.location.search);
-                        var proj = params.get('project') || '';
-                        var url = '/api/docs/' + this.activeDoc + (proj ? '?project=' + encodeURIComponent(proj) : '');
+                        var url = window.Project.bind('/api/docs/' + this.activeDoc);
                         var resp = await fetch(url, {
                             method: 'PUT',
                             headers: {'Content-Type': 'application/json'},
@@ -484,21 +483,9 @@
             };
         }
 
-        // Preserve ?project= param across all HTMX requests
-        document.body.addEventListener('htmx:configRequest', function(evt) {
-            var params = new URLSearchParams(window.location.search);
-            var proj = params.get('project');
-            if (proj && !evt.detail.path.includes('project=')) {
-                evt.detail.path += (evt.detail.path.includes('?') ? '&' : '?') + 'project=' + encodeURIComponent(proj);
-            }
-        });
-
         // Report modal — dispatch event to Alpine
         function viewReport(taskId) {
-            var params = new URLSearchParams(window.location.search);
-            var proj = params.get('project');
-            var url = '/api/tasks/' + taskId + '/report';
-            if (proj) url += '?project=' + encodeURIComponent(proj);
+            var url = window.Project.bind('/api/tasks/' + taskId + '/report');
             window.dispatchEvent(new CustomEvent('open-report', {
                 detail: { title: taskId, url: url }
             }));
@@ -533,9 +520,7 @@
 
         function submitReopen(order, status) {
             var store = Alpine.store('reopen');
-            var p = new URLSearchParams(window.location.search).get('project');
-            var url = '/api/tasks/' + store.taskId + '/reopen';
-            if (p) url += '?project=' + encodeURIComponent(p);
+            var url = window.Project.bind('/api/tasks/' + store.taskId + '/reopen');
             fetch(url, {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json'},

@@ -163,27 +163,18 @@ def start_loop(project_root):
         os.makedirs(os.path.dirname(bat_path), exist_ok=True)
         with open(bat_path, "w") as f:
             f.write(run_bat)
+        # PS1: 仅终端窗口启动 + PID 写入 + SendKeys（心跳由 Python 管理）
         ps_script = (
             f'$p = Start-Process cmd -ArgumentList \'/k \"{bat_path}\"\' '
             f'-WindowStyle Normal -PassThru;'
             f'[System.IO.File]::WriteAllText(\'{pid_path}\', $p.Id.ToString());'
-            # 立即写心跳（不等 while 循环的 30s 间隔）
-            f'[System.IO.File]::WriteAllText(\'{hb_path}\', [DateTime]::UtcNow.ToString("o"));'
-            # SendKeys
+            # SendKeys — PS 保留（无法绕过）
             f'Start-Sleep -Seconds 2;'
             f'$ws = New-Object -ComObject WScript.Shell;'
             f'$ws.AppActivate(\'Loop: {project_name}\');Start-Sleep -Seconds 1;'
             f'$ws.SendKeys(\'/runloop\');Start-Sleep -Milliseconds 300;'
             f'$ws.SendKeys(\'{"{ENTER}"}\');Start-Sleep -Milliseconds 300;'
             f'$ws.SendKeys(\'{"{ENTER}"}\');'
-            # 后台持续写心跳，每 30 秒一次，直到窗口关闭
-            f'try{{'
-            f'while(-not $p.HasExited){{'
-            f'[System.IO.File]::WriteAllText(\'{hb_path}\', [DateTime]::UtcNow.ToString("o"));'
-            f'Start-Sleep -Seconds 30'
-            f'}}'
-            f'}}catch{{}};'
-            f'Remove-Item \'{hb_path}\' -ErrorAction SilentlyContinue'
         )
         ps_path = os.path.join(_control_dir(project_root), "loop.ps1")
         os.makedirs(os.path.dirname(ps_path), exist_ok=True)
@@ -201,6 +192,26 @@ def start_loop(project_root):
     # Windows: PID 由 ps1 脚本异步写入 loop.pid；非 Windows: 直接用 proc.pid
     if platform.system() != "Windows":
         _write_pid(project_root, proc.pid)
+
+    # 后台线程：Python 管理心跳循环（取代 PS1 中的 while 循环）
+    import threading
+    def _heartbeat_loop():
+        while proc.poll() is None:
+            try:
+                write_heartbeat(project_root)
+            except Exception:
+                pass
+            time.sleep(30)
+        # 进程退出后清理心跳
+        hb_path = _flag_path(project_root, "heartbeat")
+        if os.path.exists(hb_path):
+            try:
+                os.remove(hb_path)
+            except Exception:
+                pass
+
+    t = threading.Thread(target=_heartbeat_loop, daemon=True)
+    t.start()
 
     return {"started": True, "pid": proc.pid}
 

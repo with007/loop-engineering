@@ -3,6 +3,7 @@
 import os
 from fastapi import APIRouter, Request, Query
 from fastapi.responses import JSONResponse
+from loop_engineering.path_utils import resolve_project_root
 
 router = APIRouter()
 
@@ -57,7 +58,7 @@ async def get_doc(request: Request, doc: str, project: str = Query(None)):
     if doc not in ("verify", "test"):
         return JSONResponse({"error": "doc 必须是 verify 或 test"}, status_code=400)
 
-    pr = _get_project_root(request, project)
+    pr = resolve_project_root(project=project, request=request)
     filename = "VERIFY.md" if doc == "verify" else "TEST.md"
     filepath = os.path.join(_verify_dir(pr), filename)
 
@@ -81,7 +82,7 @@ async def save_doc(request: Request, doc: str, project: str = Query(None)):
     if doc not in ("verify", "test"):
         return JSONResponse({"error": "doc 必须是 verify 或 test"}, status_code=400)
 
-    pr = _get_project_root(request, project)
+    pr = resolve_project_root(project=project, request=request)
 
     body = await request.json()
     content = body.get("content", "")
@@ -96,14 +97,3 @@ async def save_doc(request: Request, doc: str, project: str = Query(None)):
         f.write(content)
 
     return {"ok": True, "path": filepath}
-
-
-def _get_project_root(request, project_q):
-    """从 query param 或 request 或 env 获取项目根目录."""
-    if project_q:
-        return project_q
-    if request:
-        q = request.query_params.get("project")
-        if q:
-            return q
-    return os.environ.get("LOOP_PROJECT_ROOT", os.getcwd())

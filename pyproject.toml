@@ -18,6 +18,9 @@ ui = [
     "uvicorn>=0.23",
     "python-multipart>=0.0.5",
 ]
+test = [
+    "pytest>=7.0",
+]
 
 [project.scripts]
 loop = "loop_engineering.cli:main"
