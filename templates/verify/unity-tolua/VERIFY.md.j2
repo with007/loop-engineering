@@ -1,10 +1,10 @@
 # 验证指南 — {{ project_name }}
 
-> 项目类型: {{ preset_display_name }}
+> 项目类型: Unity + ToLua
 >
 > 本文件定义项目特定的自动化验证步骤。verifier 子代理按此执行。
 > 验证范围由变更驱动 — 只执行涉及模块的步骤，未涉及的跳过。
-> 你可以编辑步骤中的具体命令。重新运行 `loop setup` 会覆盖 — 有自定义内容请备份。
+> 重新运行 `loop setup` 会覆盖 — 有自定义内容请备份。
 
 ## 测试工具
 
@@ -18,11 +18,7 @@
 
 ## 自动化验证手段
 
-以下是 verifier 可用的自动化验证方法。
-
 ### 1. 编译检查
-
-触发 Unity 编译并检查 Console 输出。
 
 - **工具**: MCP `refresh_unity(wait_for_ready=true)` → `read_console`
 - **超时**: 120s
@@ -33,12 +29,12 @@
 当 diff 中包含新增的 `.lua` 文件时执行。
 
 - **触发条件**: diff 中有新增 `.lua` 文件
-- **命令**: python scripts/genLuaPath.py
+- **命令**: <填写 Lua 路径生成脚本>
 - **通过条件**: exit code 0
 
 ### 3. Lua 运行时测试
 
-在 Play Mode 中执行注册的 Lua 自动测试。测试用例通过 `[AUTO TEST: 名称] PASS/FAIL` 标记输出到 Console。
+在 Play Mode 中执行注册的 Lua 自动测试。
 
 - **工具**: `runtime-test` skill
 - **超时**: 30s
@@ -55,13 +51,15 @@
 
 以下是各模块的自动化验证示例。verifier **只运行变更涉及模块**的步骤。
 
+> 项目初始化时 `loop-test-init` 会根据项目实际模块填充以下示例。
+
 ### C# 脚本
 
 **触发条件**: 变更涉及 `.cs` 文件。
 
 **验证步骤**:
 1. MCP `refresh_unity` → `read_console`，确认 0 error
-2. 如有新增 `.lua` 文件，运行 `python scripts/genLuaPath.py`
+2. 如有新增 `.lua` 文件，运行 Lua 路径生成脚本
 
 ### Lua 逻辑
 

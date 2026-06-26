@@ -388,18 +388,6 @@ def deploy_verify_docs(config):
     agent_dir = os.path.join(agent_workspace, project_name)
     project_type = config.get("type", "generic")
 
-    from loop_engineering.presets import get_verify_template_vars
-    vars_ = get_verify_template_vars(project_type)
-    if vars_ is None:
-        print(f"  WARNING: 未知预设类型 '{project_type}'，fallback 到 generic")
-        vars_ = get_verify_template_vars("generic")
-        project_type = "generic"
-
-    # 注入运行时路径
-    vars_["project_name"] = project_name
-    vars_["project_root"] = project_root.replace("\\", "/")
-    vars_["agent_dir"] = agent_dir.replace("\\", "/")
-
     pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     templates_dir = os.path.join(os.path.dirname(pkg_dir), "templates", "verify", project_type)
 
@@ -409,8 +397,14 @@ def deploy_verify_docs(config):
         if not os.path.isdir(templates_dir):
             print(f"  [FAIL] generic 模板目录也不存在，跳过验证文档部署")
             return
+        project_type = "generic"
 
     target_dir = project_root
+
+    # 只注入项目标识和路径，其他内容由模板自带占位符，loop-test-init 后续定制
+    vars_ = {
+        "project_name": project_name,
+    }
 
     env = Environment(loader=FileSystemLoader(templates_dir))
     for doc_name in ["VERIFY.md", "TEST.md"]:

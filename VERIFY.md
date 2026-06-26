@@ -156,7 +156,7 @@ kill $SERVER_PID 2>/dev/null
 **验证步骤**:
 1. 用 jinja2 Environment + FileSystemLoader 渲染变更的模板
 2. Python assert 检查渲染结果包含关键字段
-3. 确认模板变量在 `presets.py` 的 `get_verify_template_vars()` 中有定义
+3. 确认模板变量在 `presets.py` 的 `PRESETS` 中有对应类型定义
 
 > 如果变更涉及以上未列出的新模块，参照"自动化验证手段"推导合适的验证步骤。
 > 验证通过后建议将新模块的验证示例添加到本文档。

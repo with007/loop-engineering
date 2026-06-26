@@ -1,13 +1,12 @@
 # 验证指南 — {{ project_name }}
 
-> 项目类型: {{ preset_display_name }}
+> 项目类型: Python Server
 >
 > 本文件定义项目特定的自动化验证步骤。verifier 子代理按此执行。
 > 验证范围由变更驱动 — 只执行涉及模块的步骤，未涉及的跳过。
-> 你可以编辑步骤中的具体命令。重新运行 `loop setup` 会覆盖 — 有自定义内容请备份。
+> 重新运行 `loop setup` 会覆盖 — 有自定义内容请备份。
 >
-> 通用验证（diff 审查、变更范围确认等）由 task-runner 框架统一处理，
-> 不需要在这里重复。
+> 通用验证（diff 审查、变更范围确认等）由 task-runner 框架统一处理。
 
 ## 测试工具
 
@@ -17,19 +16,17 @@
 | WebFetch | 加载页面，确认关键元素存在 |
 | Python -c | 内联脚本，assert 检查返回值 |
 | Jinja2 渲染 | 用真实数据渲染模板，验证输出内容 |
-| pytest | 测试框架，执行项目测试用例 |
+| <填写测试框架> | <填写测试框架用途> |
 | Bash 命令 | CLI 验证（--help）、进程管理（启动/停止服务） |
 
 ## 自动化验证手段
 
-以下是 verifier 可用的自动化验证方法。
-
 ### 1. 运行测试
 
-执行项目的测试命令。如果项目没有配置测试（无 test_*.py 文件或 pytest 配置），verifier 自动跳过。
-
-- **命令**: python -m pytest || echo skipped
-- **通过条件**: exit code 0
+```bash
+<填写测试命令>
+```
+- **通过条件**: <填写通过条件，如 exit code 0>
 
 ### 2. 代码逻辑检查
 
@@ -54,88 +51,55 @@ HTML 模板变更时额外检查：
 #### 4a. 安装依赖
 
 ```bash
-pip install -e ".[ui]"     # 带可选依赖
-# 或 pip install -e .      # 仅核心依赖
+<填写安装命令>
 ```
 exit code 0 = 通过。
 
 #### 4b. CLI 验证
 
 ```bash
-{{ test_serve }} --help    # 确认子命令列表完整，exit code 0
+<填写 CLI 入口命令> --help
+<填写核心子命令验证>
 ```
-执行核心子命令验证输出。
 
 #### 4c. Web 服务
 
-{% if test_serve %}
 ```bash
 # 后台启动服务
-{{ test_serve }} &
+<填写启动命令> &
 SERVER_PID=$!
 sleep 3
 ```
-{% endif %}
 
 API 端点（curl 检查）：
 ```bash
-# 关键端点
-curl -s -o /dev/null -w "%{http_code}" {{ test_url }}/api/...
+curl -s -o /dev/null -w "%{http_code}" <填写关键 API URL>
 # 期望: 200
 ```
 
 Web 页面（WebFetch 检查关键元素）：
-- `{{ test_url }}` — 确认首页含关键元素
+- `<填写页面 URL>` — 确认含 `<填写关键元素>`
 
 停止服务：
 ```bash
 kill $SERVER_PID 2>/dev/null
 ```
 
-{% if not test_serve %}
-纯库项目，跳过运行时验证。
-{% endif %}
-
 ## 模块验证示例
 
 以下是各模块的自动化验证示例。verifier **只运行变更涉及模块**的步骤。
 
-### Web 页面
+> 项目初始化时 `loop-test-init` 会根据项目实际模块填充以下示例。
+> 下面是一个 Web 页面的通用示例模板：
 
-**触发条件**: 变更涉及 HTML 模板、前端 JS、页面路由。
+### <填写模块名>
 
-**验证步骤**:
-1. 读 diff，确认新增的前端指令/变量有对应实现
-2. `pip install -e .` 后启动服务
-3. curl 关键 API 端点确认 200
-4. WebFetch 关键页面确认元素存在
-5. 停止服务
-
-### CLI 命令
-
-**触发条件**: 变更涉及 CLI 参数解析、子命令。
+**触发条件**: <填写触发条件，如"变更涉及 HTML 模板、前端 JS、页面路由">
 
 **验证步骤**:
-1. `pip install -e .`
-2. `--help` — exit code 0
-3. 执行核心子命令验证输出
-
-### API 端点
-
-**触发条件**: 变更涉及 API 路由、请求处理、数据模型。
-
-**验证步骤**:
-1. `pip install -e .` 后启动服务
-2. curl 变更涉及的端点，检查状态码和返回结构
+1. `<填写验证步骤>`
+2. `<填写验证步骤>`
 3. 停止服务
-
-### 模板渲染
-
-**触发条件**: 变更涉及 Jinja2 模板文件。
-
-**验证步骤**:
-1. 用 jinja2 Environment + FileSystemLoader 渲染变更的模板
-2. Python assert 检查渲染结果包含关键字段
 
 > 如果变更涉及以上未列出的新模块，参照"自动化验证手段"推导合适的验证步骤。
 > 验证通过后建议将新模块的验证示例添加到本文档。
