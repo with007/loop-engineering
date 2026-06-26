@@ -25,6 +25,7 @@ src/loop_engineering/server/api/__init__.py
 src/loop_engineering/server/api/branches.py
 src/loop_engineering/server/api/config.py
 src/loop_engineering/server/api/control.py
+src/loop_engineering/server/api/docs.py
 src/loop_engineering/server/api/projects.py
 src/loop_engineering/server/api/runs.py
 src/loop_engineering/server/api/tasks.py

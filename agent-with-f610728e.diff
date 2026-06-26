@@ -1,0 +1,2274 @@
+diff --git a/pyproject.toml b/pyproject.toml
+index 9ae77a1..b0820bc 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -6,20 +6,23 @@ build-backend = "setuptools.build_meta"
+ name = "loop-engineering"
+ version = "0.1.0"
+ description = "Agent 自主任务执行系统 - 可复用 CLI 工具"
+ requires-python = ">=3.9"
+ dependencies = [
+     "pyyaml>=6.0",
+     "jinja2>=3.0",
+ ]
+ 
+ [project.optional-dependencies]
++test = [
++    "pytest>=7.0",
++]
+ ui = [
+     "fastapi>=0.100",
+     "uvicorn>=0.23",
+     "python-multipart>=0.0.5",
+ ]
+ 
+ [project.scripts]
+ loop = "loop_engineering.cli:main"
+ 
+ [tool.setuptools.packages.find]
+diff --git a/src/loop_engineering/server/app.py b/src/loop_engineering/server/app.py
+index 3267cda..a94df18 100644
+--- a/src/loop_engineering/server/app.py
++++ b/src/loop_engineering/server/app.py
+@@ -1,756 +1,40 @@
+ """Loop Engineering Dashboard — FastAPI 应用."""
+ 
+ import os
+-import re
+-import webbrowser
+-from urllib.parse import quote
+-import subprocess
+-
+-from fastapi import FastAPI, Request, Form, Query
+-from fastapi.responses import RedirectResponse, Response
+-from fastapi.templating import Jinja2Templates
+-from loop_engineering.task_id import parse_task_id, extract_task_id_from_branch
++from fastapi import FastAPI
+ 
+ app = FastAPI(title="Loop Engineering Dashboard")
+ 
+-_tpl_dir = os.path.join(os.path.dirname(__file__), "templates")
+-templates = Jinja2Templates(directory=_tpl_dir)
+-templates.env.cache = None
+-
+-
+-def _project_root(request: Request = None, q: str = None):
+-    """获取当前项目根目录。优先 query param，否则 env var."""
+-    if q:
+-        return q
+-    if request:
+-        q = request.query_params.get("project")
+-        if q:
+-            return q
+-    return os.environ.get("LOOP_PROJECT_ROOT", os.getcwd())
+-
+-
+-def _read_tasks(pr):
+-    tp = os.path.join(pr, "tasks.md")
+-    if not os.path.exists(tp):
+-        return []
+-    # 收集已有的 agent 分支名（task_id -> branch_name）
+-    agent_branches = {}
+-    try:
+-        r = subprocess.run('git branch --list "agent/*"', shell=True, capture_output=True, text=True,
+-                           encoding='utf-8', errors='replace', cwd=pr, timeout=5)
+-        for line in r.stdout.strip().split("\n"):
+-            b = line.strip().lstrip("*+ ")
+-            if b:
+-                tid = extract_task_id_from_branch(b)
+-                if tid:
+-                    agent_branches[tid] = b
+-    except Exception:
+-        pass
+-
+-    # 收集已合入 master 的分支名（用于区分 done vs pending_merge）
+-    merged_branches = set()
+-    try:
+-        r = subprocess.run('git branch --merged master --list "agent/*"', shell=True,
+-                           capture_output=True, text=True,
+-                           encoding='utf-8', errors='replace', cwd=pr, timeout=5)
+-        for line in r.stdout.strip().split("\n"):
+-            b = line.strip().lstrip("*+ ")
+-            if b:
+-                merged_branches.add(b)
+-    except Exception:
+-        pass
+-
+-    result = []
+-    current_task = None
+-    with open(tp, "r", encoding="utf-8") as f:
+-        for line in f:
+-            # 先匹配 checkbox
+-            m = re.match(r'^- \[(.)\]\s+(.+)', line)
+-            if m:
+-                current_task = None  # new task starts
+-                status_char = m.group(1)
+-                rest = m.group(2).strip()
+-
+-                # 提取 (→ assignee) — 可能在 meta 前或后
+-                assignee = ""
+-                m_assignee = re.search(r'\(→\s*(\w+)\)', rest)
+-                if m_assignee:
+-                    assignee = m_assignee.group(1)
+-                    rest = (rest[:m_assignee.start()] + rest[m_assignee.end():]).strip()
+-
+-                # 提取 — meta
+-                meta = ""
+-                m_meta = re.search(r'\s+—\s+(.+)$', rest)
+-                if m_meta:
+-                    meta = m_meta.group(1).strip()
+-                    rest = rest[:m_meta.start()].strip()
+-
+-                desc = rest
+-                # 去掉 [task-id] 后缀（如果有），保持描述干净
+-                desc = re.sub(r'\s+\[[a-f0-9]{8}\]\s*$', '', desc).strip()
+-                tid = parse_task_id(line) or ""
+-                if status_char == "x" and tid and tid in agent_branches:
+-                    # 分支存在但可能已经合入 — 检查是否已在 master 中
+-                    if agent_branches[tid] in merged_branches:
+-                        status = "done"
+-                    else:
+-                        status = "pending_merge"
+-                else:
+-                    s = {" ": "pending", "~": "in_progress", "x": "done", "r": "reopen"}
+-                    status = s.get(status_char, "pending")
+-                current_task = {
+-                    "description": desc,
+-                    "task_id": tid,
+-                    "status": status,
+-                    "assignee": assignee,
+-                    "meta": meta,
+-                    "feedback": [],
+-                }
+-                result.append(current_task)
+-            elif re.match(r'^\s{2,}\S', line) and current_task:
+-                # indented continuation line = feedback
+-                current_task["feedback"].append(line.strip())
+-    return result
+-
+-
+-def _agent_name(pr):
+-    from loop_engineering.config import read_config
+-    cfg = read_config(pr)
+-    return cfg.get("agent", {}).get("name", "")
+-
+-
+-def _filter_agent_workspace_copies(project_list):
+-    """过滤掉 agent workspace 拷贝：loop-config.yaml 里的 project.root 和自身路径不一致."""
+-    from loop_engineering.config import read_config as _read_cfg
+-    result = []
+-    for p in project_list:
+-        try:
+-            cfg = _read_cfg(p["root"])
+-            cfg_root = cfg.get("project", {}).get("root", "")
+-            if cfg_root and os.path.normcase(os.path.abspath(cfg_root)) != os.path.normcase(os.path.abspath(p["root"])):
+-                continue
+-        except Exception:
+-            pass
+-        result.append(p)
+-    return result
+-
+-
+-def _is_htmx(request: Request):
+-    return request.headers.get("HX-Request", "") == "true"
+-
+-
+-def _render(request: Request, template_name: str, context: dict):
+-    if _is_htmx(request):
+-        resp = templates.TemplateResponse(request, template_name, context)
+-    else:
+-        content_html = templates.get_template(template_name).render(context)
+-        resp = templates.TemplateResponse(request, "base.html", {
+-            "request": request,
+-            "content": content_html,
+-        })
+-    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+-    resp.headers["Pragma"] = "no-cache"
+-    resp.headers["Expires"] = "0"
+-    return resp
+-
+-
+-def _build_projects_context(request: Request, current_pr: str, agent_filter: str = ""):
+-    """构建项目列表 + 当前项目信息。仅包含有 loop-config.yaml 的项目."""
+-    from loop_engineering.registry import list_projects, register_project
+-    projects = list_projects()
+-
+-    # 自动注册当前项目（仅当 loop-config.yaml 存在时）
+-    from loop_engineering.config import is_project_dir
+-    if is_project_dir(current_pr) and not any(os.path.normcase(p["root"]) == os.path.normcase(current_pr) for p in projects):
+-        register_project(current_pr)
+-        projects = list_projects()
+-
+-    # 过滤掉没有 loop-config.yaml 的孤项目
+-    projects = [p for p in projects if is_project_dir(p["root"])]
+-    # 过滤掉 agent workspace 拷贝（loop-config.yaml 里的 project.root 和自身路径不一致）
+-    projects = _filter_agent_workspace_copies(projects)
+-
+-    # 构建详情
+-    result = []
+-    for p in projects:
+-        pr = p["root"]
+-        cfg = {}
+-        from loop_engineering.config import read_config
+-        try:
+-            cfg = read_config(pr)
+-        except Exception:
+-            pass
+-        tasks = _read_tasks(pr)
+-        from loop_engineering.runlog import get_pass_rate
+-        passed, total, rate = get_pass_rate(pr, days=7)
+-
+-        # branches — 用 git for-each-ref 获取 agent 分支，按提交时间降序（最新在前）
+-        branches_list = []
+-        seen = set()
+-        try:
+-            r = subprocess.run(
+-                'git for-each-ref --sort=-committerdate --format="%(refname:short)" refs/heads/agent/ refs/remotes/origin/agent/',
+-                shell=True, capture_output=True, text=True,
+-                encoding='utf-8', errors='replace', cwd=pr, timeout=5
+-            )
+-            for line in r.stdout.strip().split("\n"):
+-                ref = line.strip()
+-                if not ref:
+-                    continue
+-                b = ref.replace("origin/", "")
+-                if b in seen:
+-                    continue
+-                seen.add(b)
+-
+-                # 按 agent 名筛选（分支名格式: agent/<whoami>/<task_id>-<slug>）
+-                if agent_filter:
+-                    parts = b.split("/")
+-                    if len(parts) < 2 or parts[0] != "agent" or parts[1] != agent_filter:
+-                        continue
+-
+-                # 检查合入状态
+-                if ref.startswith("origin/"):
+-                    r2 = subprocess.run(
+-                        f"git merge-base --is-ancestor {ref} origin/master",
+-                        shell=True, capture_output=True, cwd=pr, timeout=5
+-                    )
+-                    branches_list.append({"name": b, "merged": r2.returncode == 0})
+-                else:
+-                    r_merged = subprocess.run(
+-                        f"git branch --merged master --list {b}", shell=True, capture_output=True,
+-                        text=True, encoding='utf-8', errors='replace', cwd=pr, timeout=5
+-                    )
+-                    branches_list.append({"name": b, "merged": r_merged.stdout.strip() != ""})
+-        except Exception:
+-            pass
+-
+-        result.append({
+-            "name": p["name"],
+-            "root": pr,
+-            "is_current": pr == current_pr,
+-            "tasks": {
+-                "pending": sum(1 for t in tasks if t["status"] == "pending"),
+-                "in_progress": sum(1 for t in tasks if t["status"] in ("in_progress", "pending_merge", "reopen")),
+-                "done": sum(1 for t in tasks if t["status"] == "done"),
+-                "pending_merge": sum(1 for t in tasks if t["status"] == "pending_merge"),
+-            },
+-            "pass_rate": {"passed": passed, "total": total, "rate": round(rate * 100, 1)},
+-            "branches": branches_list,
+-        })
+-
+-    return result
+-
+-
+ # ── API routes ──
+ from .api import control, projects, tasks, runs, branches, config, docs  # noqa: E402
+ app.include_router(control.router, prefix="/api/control", tags=["control"])
+ app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
+ app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
+ app.include_router(runs.router, prefix="/api/runs", tags=["runs"])
+ app.include_router(branches.router, prefix="/api/branches", tags=["branches"])
+ app.include_router(config.router, prefix="/api/config", tags=["config"])
+ app.include_router(docs.router, prefix="/api/docs", tags=["docs"])
+ 
++# ── Page routes (full pages, wrapped in base.html) ──
++from .routers import pages  # noqa: E402
++app.include_router(pages.router)
+ 
+-@app.get("/api/projects/switcher")
+-async def project_switcher(request: Request, project: str = Query(None)):
+-    """返回项目切换器 HTML 片段."""
+-    pr = _project_root(q=project)
+-    from loop_engineering.registry import list_projects
+-    from loop_engineering.config import is_project_dir
+-    projects = list_projects()
+-    projects = [p for p in projects if is_project_dir(p["root"])]
+-    projects = _filter_agent_workspace_copies(projects)
+-
+-    html = '<select onchange="switchProject(this.value)" style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 6px 12px; border-radius: 7px; font-size: 13px; max-width: 200px;">'
+-    if not projects:
+-        html += '<option>No projects</option>'
+-    else:
+-        for p in projects:
+-            sel = ' selected' if p["root"] == pr else ''
+-            html += f'<option value="{p["root"]}"{sel}>{p["name"]}</option>'
+-    html += '</select>'
+-    html += '''<script>
+-        function switchProject(root) {
+-            var url = window.location.pathname + '?project=' + encodeURIComponent(root);
+-            htmx.ajax('GET', url, {target: '#content', swap: 'innerHTML'});
+-            history.pushState({}, '', url);
+-        }
+-    </script>'''
+-    from fastapi.responses import HTMLResponse
+-    return HTMLResponse(content=html)
+-
+-
+-# ── Page routes ──
+-
+-@app.get("/")
+-async def dashboard(request: Request, project: str = Query(None), filter: str = Query("")):
+-    pr = _project_root(request, q=project)
+-    from loop_engineering.registry import list_projects
+-    from loop_engineering.config import is_project_dir
+-
+-    # If current dir is not a project, fall back to a registered one
+-    if not is_project_dir(pr):
+-        projects = list_projects()
+-        # Filter to only those with loop-config.yaml
+-        valid = [p for p in projects if is_project_dir(p["root"])]
+-        if valid:
+-            redir = f"/?project={quote(valid[0]['root'])}"
+-            if filter:
+-                redir += f"&filter={quote(filter)}"
+-            return RedirectResponse(redir, status_code=303)
+-        else:
+-            return RedirectResponse("/setup", status_code=303)
+-
+-    all_projects = _build_projects_context(request, pr, agent_filter=filter)
+-    current = next((p for p in all_projects if p["is_current"]), all_projects[0] if all_projects else None)
+-    return _render(request, "dashboard.html", {
+-        "request": request,
+-        "projects": all_projects,
+-        "current_root": pr,
+-        "current": current,
+-        "filter": filter,
+-    })
+-
+-
+-@app.get("/tasks")
+-async def tasks_page(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query("")):
+-    pr = _project_root(request, q=project)
+-    tasks = _read_tasks(pr)
+-    allowed = [s.strip() for s in status.split(",") if s.strip()]
+-    # "in_progress" filter also includes "pending_merge" and "reopen"
+-    if "in_progress" in allowed:
+-        allowed.extend(["pending_merge", "reopen"])
+-    # "done" filter also includes "pending_merge" (completed but branch not yet merged)
+-    if "done" in allowed:
+-        allowed.append("pending_merge")
+-    tasks = [t for t in tasks if t["status"] in allowed]
+-    # 按 agent 名筛选
+-    if filter:
+-        f_lower = filter.strip().lower()
+-        tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
+-    if order == "desc":
+-        tasks = list(reversed(tasks))
+-    return _render(request, "tasks.html", {
+-        "request": request,
+-        "tasks": tasks,
+-        "agent_name": _agent_name(pr),
+-        "current_root": pr,
+-        "order": order,
+-        "status": status,
+-        "filter": filter,
+-    })
+-
+-
+-@app.get("/tasks/list")
+-async def tasks_list(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query("")):
+-    """返回完整任务区域（控件 + 列表），供控件操作后刷新."""
+-    pr = _project_root(request, q=project)
+-    tasks = _read_tasks(pr)
+-    allowed = [s.strip() for s in status.split(",") if s.strip()]
+-    # "in_progress" filter also includes "pending_merge" and "reopen"
+-    if "in_progress" in allowed:
+-        allowed.extend(["pending_merge", "reopen"])
+-    # "done" filter also includes "pending_merge" (completed but branch not yet merged)
+-    if "done" in allowed:
+-        allowed.append("pending_merge")
+-    tasks = [t for t in tasks if t["status"] in allowed]
+-    # 按 agent 名筛选
+-    if filter:
+-        f_lower = filter.strip().lower()
+-        tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
+-    if order == "desc":
+-        tasks = list(reversed(tasks))
+-    return templates.TemplateResponse(request, "_tasks_list.html", {
+-        "request": request,
+-        "tasks": tasks,
+-        "agent_name": _agent_name(pr),
+-        "order": order,
+-        "status": status,
+-        "filter": filter,
+-    })
+-
+-
+-@app.get("/tasks/list-items")
+-async def tasks_list_items(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query("")):
+-    """返回仅任务条目（进度条 + 卡片），供 30s 轮询刷新."""
+-    pr = _project_root(request, q=project)
+-    tasks = _read_tasks(pr)
+-    allowed = [s.strip() for s in status.split(",") if s.strip()]
+-    # "in_progress" filter also includes "pending_merge" and "reopen"
+-    if "in_progress" in allowed:
+-        allowed.extend(["pending_merge", "reopen"])
+-    if "done" in allowed:
+-        allowed.append("pending_merge")
+-    tasks = [t for t in tasks if t["status"] in allowed]
+-    # 按 agent 名筛选
+-    if filter:
+-        f_lower = filter.strip().lower()
+-        tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
+-    if order == "desc":
+-        tasks = list(reversed(tasks))
+-    return templates.TemplateResponse(request, "_tasks_items.html", {
+-        "request": request,
+-        "tasks": tasks,
+-        "agent_name": _agent_name(pr),
+-        "order": order,
+-        "status": status,
+-        "filter": filter,
+-    })
+-
+-
+-@app.post("/tasks/add")
+-async def tasks_add(request: Request, description: str = Form(...), assignee: str = Form(...), task_id: str = Form(""), project: str = Form(None), order: str = Form("desc"), status: str = Form("pending,in_progress"), filter: str = Form("")):
+-    pr = _project_root(request, q=project)
+-    tp = os.path.join(pr, "tasks.md")
+-    from loop_engineering.task_id import generate_task_id
+-    tid = task_id if task_id and re.match(r'^[a-f0-9]{8}$', task_id) else generate_task_id(description)
+-    line = f"- [ ] {description} (→ {assignee}) [{tid}]\n"
+-    if os.path.exists(tp):
+-        with open(tp, "a", encoding="utf-8") as f:
+-            f.write(line)
+-    else:
+-        with open(tp, "w", encoding="utf-8") as f:
+-            f.write("# Tasks\n\n")
+-            f.write(line)
+-    tasks = _read_tasks(pr)
+-    allowed = [s.strip() for s in status.split(",") if s.strip()]
+-    # "in_progress" filter also includes "pending_merge" and "reopen"
+-    if "in_progress" in allowed:
+-        allowed.extend(["pending_merge", "reopen"])
+-    # "done" filter also includes "pending_merge" (completed but branch not yet merged)
+-    if "done" in allowed:
+-        allowed.append("pending_merge")
+-    tasks = [t for t in tasks if t["status"] in allowed]
+-    # 按 agent 名筛选
+-    if filter:
+-        f_lower = filter.strip().lower()
+-        tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
+-    if order == "desc":
+-        tasks = list(reversed(tasks))
+-    return templates.TemplateResponse(request, "_tasks_list.html", {
+-        "request": request,
+-        "tasks": tasks,
+-        "agent_name": _agent_name(pr),
+-        "order": order,
+-        "status": status,
+-        "filter": filter,
+-    })
+-
+-
+-@app.get("/runs")
+-async def runs_page(request: Request, whoami: str = "", project: str = Query(None)):
+-    from loop_engineering.runlog import list_runs, get_pass_rate
+-    pr = _project_root(request, q=project)
+-    entries = list_runs(pr, whoami=whoami or None, limit=100)
+-    passed, total, rate = get_pass_rate(pr, days=7)
+-    agents = list(set(e.get("whoami", "") for e in entries if e.get("whoami")))
+-    return _render(request, "runs.html", {
+-        "request": request,
+-        "runs": entries,
+-        "pass_rate": {"passed": passed, "total": total, "rate": round(rate * 100, 1)},
+-        "agents": agents,
+-        "filter_whoami": whoami,
+-        "current_root": pr,
+-    })
+-
+-
+-@app.get("/control")
+-async def control_page(request: Request, project: str = Query(None)):
+-    from loop_engineering.control import get_status
+-    pr = _project_root(request, q=project)
+-    return _render(request, "control.html", {
+-        "request": request,
+-        "status": get_status(pr),
+-        "current_root": pr,
+-    })
+-
+-
+-@app.get("/control/status-fragment")
+-async def control_status_fragment(request: Request, project: str = Query(None)):
+-    """Control 页的 Loop 状态 + 按钮片段（供 5s polling 刷新）."""
+-    from loop_engineering.control import get_status
+-    pr = _project_root(request, q=project)
+-    status = get_status(pr)
+-    is_running = status.get("running", False)
+-    paused = status.get("paused", False)
+-    html = f'''<div id="control-status" hx-get="/control/status-fragment" hx-trigger="every 5s" hx-swap="outerHTML">
+-        <div class="card" style="margin-bottom: 20px;">
+-            <div class="status-indicator" style="margin-bottom: 16px;">
+-                <span class="status-dot {"active" if is_running else ("paused" if paused else "")}"></span>
+-                <span style="font-weight: 600; font-size: 18px;">
+-                    {"Loop 运行中" if is_running else ("已暂停" if paused else "空闲")}
+-                </span>
+-                <span style="color: var(--dim); font-size: 13px; margin-left: auto;">
+-                    {f'HB: <span id="hb-time" data-iso="{status["heartbeat"]}">{status["heartbeat"][:19].replace("T", " ")}</span>' if status.get("heartbeat") else "无心跳"}
+-                </span>
+-            </div>
+-            <div class="controls" style="margin-bottom: 16px;">'''
+-    if is_running:
+-        html += '''<button class="btn btn-danger"
+-                        hx-post="/api/control/stop"
+-                        hx-target="#control-status"
+-                        hx-swap="outerHTML">停止 Loop</button>
+-                <button class="btn btn-sm"
+-                        hx-post="/api/control/focus"
+-                        hx-swap="none"
+-                        style="background: var(--surface2); color: var(--text); border: 1px solid var(--border);">🔍 聚焦窗口</button>'''
+-        if paused:
+-            html += '''<button class="btn btn-primary"
+-                        hx-delete="/api/control/pause"
+-                        hx-target="#control-status"
+-                        hx-swap="outerHTML">恢复</button>'''
+-        else:
+-            html += '''<button class="btn btn-warn"
+-                        hx-post="/api/control/pause"
+-                        hx-target="#control-status"
+-                        hx-swap="outerHTML">暂停</button>'''
+-    else:
+-        html += '''<button class="btn btn-success"
+-                        hx-post="/api/control/start"
+-                        hx-target="#control-status"
+-                        hx-swap="outerHTML">启动 Loop</button>'''
+-        if status.get("pid") and status.get("pid_alive"):
+-            html += '''<button class="btn btn-sm"
+-                        hx-post="/api/control/focus"
+-                        hx-swap="none"
+-                        style="background: var(--surface2); color: var(--text); border: 1px solid var(--border); margin-left: 8px;">🔍 聚焦窗口</button>'''
+-    html += '''</div></div></div>
+-    <script>
+-        (function() {
+-            var el = document.getElementById('hb-time');
+-            if (!el) return;
+-            var iso = el.getAttribute('data-iso');
+-            if (!iso) return;
+-            var d = new Date(iso);
+-            var now = new Date();
+-            var sec = Math.floor((now - d) / 1000);
+-            if (sec < 60) el.textContent = sec + 's ago';
+-            else if (sec < 3600) el.textContent = Math.floor(sec/60) + 'm ago';
+-            else el.textContent = Math.floor(sec/3600) + 'h ago';
+-        })();
+-    </script>'''
+-    from fastapi.responses import HTMLResponse
+-    return HTMLResponse(content=html)
+-
+-
+-@app.get("/control/info-fragment")
+-async def control_info_fragment(request: Request, project: str = Query(None)):
+-    """Control 页的信号文件 + 工作原理片段（供 5s polling 刷新）."""
+-    from loop_engineering.control import get_status
+-    pr = _project_root(request, q=project)
+-    status = get_status(pr)
+-    is_running = status.get("running", False)
+-    paused = status.get("paused", False)
+-    hb_color = "var(--pass)" if is_running else "#64748b"
+-    pause_color = "var(--active)" if paused else "#64748b"
+-    html = f'''<div id="control-info" hx-get="/control/info-fragment" hx-trigger="every 5s" hx-swap="outerHTML">
+-        <div class="grid grid-2">
+-            <div class="card">
+-                <h3>信号文件</h3>
+-                <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-family: monospace;">
+-                    <div style="display: flex; justify-content: space-between;">
+-                        <span>control/heartbeat</span>
+-                        <span style="color: {hb_color}">{status.get("heartbeat") or "无"}</span>
+-                    </div>
+-                    <div style="display: flex; justify-content: space-between;">
+-                        <span>control/pause</span>
+-                        <span style="color: {pause_color}">{"ON" if paused else "关"}</span>
+-                    </div>
+-                    <div style="display: flex; justify-content: space-between;">
+-                        <span>control/throttle</span>
+-                        <span style="color: var(--dim);">{status.get("throttle", "")}</span>
+-                    </div>
+-                    <div style="display: flex; justify-content: space-between;">
+-                        <span>control/loop.pid</span>
+-                        <span style="color: var(--dim);">{status.get("pid") or "无"}</span>
+-                    </div>
+-                </div>
+-            </div>
+-            <div class="card">
+-                <h3>工作原理</h3>
+-                <p style="color: var(--muted); font-size: 13px; line-height: 1.6;">
+-                    <strong>Start</strong> 打开终端窗口运行<br>
+-                    <code style="color: var(--blue);">claude --dangerously-skip-permissions -p '/runloop'</code>
+-                </p>
+-                <p style="color: var(--muted); font-size: 13px; line-height: 1.6; margin-top: 8px;">
+-                    Dashboard 通过以下方式检测 Loop 状态：<br>
+-                    • 心跳文件（每轮更新）<br>
+-                    • 进程 ID（终端窗口存活）
+-                </p>
+-            </div>
+-        </div>
+-    </div>'''
+-    from fastapi.responses import HTMLResponse
+-    return HTMLResponse(content=html)
+-
+-
+-@app.get("/settings")
+-async def settings_page(request: Request, project: str = Query(None)):
+-    from loop_engineering.config import read_config
+-    from loop_engineering.presets import list_presets
+-
+-    pr = _project_root(request, q=project)
+-    from loop_engineering.config import is_project_dir
+-    if not is_project_dir(pr):
+-        return RedirectResponse("/setup", status_code=303)
+-
+-    cfg = read_config(pr)
+-    presets = [{"key": k, "name": n, "desc": d} for k, n, d in list_presets()]
+-
+-    return _render(request, "settings.html", {
+-        "request": request,
+-        "current_root": pr,
+-        "config": cfg,
+-        "presets": presets,
+-    })
+-
+-
+-@app.get("/setup")
+-async def setup_page(request: Request):
+-    import subprocess
+-    git_user = ""
+-    try:
+-        r = subprocess.run("git config user.name", shell=True, capture_output=True, text=True,
+-                           encoding='utf-8', errors='replace', timeout=5)
+-        git_user = r.stdout.strip()
+-    except Exception:
+-        pass
+-    return _render(request, "setup.html", {"request": request, "git_user": git_user})
+-
+-
+-@app.post("/setup/run")
+-async def setup_run(request: Request, project_root: str = Form(...), agent_name: str = Form(None),
+-                    agent_workspace: str = Form(None), main_port: int = Form(8080),
+-                    agent_port: int = Form(9080), type: str = Form("")):
+-    from loop_engineering.registry import register_project
+-
+-    if not os.path.isdir(project_root):
+-        return _render(request, "setup.html", {
+-            "request": request,
+-            "error": f"目录不存在: {project_root}",
+-        })
+-
+-    if not os.path.isdir(os.path.join(project_root, ".git")):
+-        return _render(request, "setup.html", {
+-            "request": request,
+-            "error": f"不是 Git 仓库: {project_root}\n请先用 git init 或 git clone 初始化项目",
+-        })
+-
+-    # 确定 agent name
+-    if not agent_name:
+-        try:
+-            r = subprocess.run("git config user.name", shell=True, capture_output=True, text=True,
+-                               encoding='utf-8', errors='replace', cwd=project_root, timeout=5)
+-            agent_name = r.stdout.strip()
+-        except Exception:
+-            agent_name = ""
+-
+-    # 构建配置
+-    from loop_engineering.config import detect_config
+-    config = detect_config(project_root)
+-    config["agent"]["name"] = agent_name or config["agent"].get("name", "")
+-    if agent_workspace:
+-        config["agent"]["workspace"] = os.path.abspath(agent_workspace)
+-    config["main"]["mcp_port"] = main_port
+-    config["agent"]["mcp_port"] = agent_port
+-    if type:
+-        from loop_engineering.presets import apply_preset
+-        config = apply_preset(config, type)
+-
+-    try:
+-        from loop_engineering.setup import run_setup
+-        run_setup(config, force=True)
+-        register_project(project_root, config["project"]["name"])
+-        return Response(status_code=200, headers={"HX-Redirect": f"/?project={quote(project_root)}"})
+-    except Exception as e:
+-        return _render(request, "setup.html", {
+-            "request": request,
+-            "error": str(e),
+-        })
+-
+-
+-@app.get("/api/setup/browse")
+-async def browse_dirs(path: str = ""):
+-    """浏览目录结构."""
+-    import platform as _plat
+-    if not path or not os.path.exists(path):
+-        if _plat.system() == "Windows":
+-            import string
+-            drives = []
+-            for d in string.ascii_uppercase:
+-                dp = f"{d}:/"
+-                if os.path.exists(dp):
+-                    drives.append({"name": dp, "path": dp, "is_drive": True})
+-            return {"path": "", "entries": drives}
+-        else:
+-            path = "/"
+-    entries = []
+-    try:
+-        for name in sorted(os.listdir(path)):
+-            full = os.path.join(path, name)
+-            if os.path.isdir(full) and not name.startswith("."):
+-                entries.append({"name": name, "path": full.replace("\\", "/"), "is_dir": True})
+-    except PermissionError:
+-        pass
+-    parent = os.path.dirname(path).replace("\\", "/")
+-    if parent == path:
+-        parent = ""
+-    return {"path": path.replace("\\", "/"), "parent": parent, "entries": entries}
+-
+-
+-@app.get("/api/setup/pickfolder")
+-async def pick_folder():
+-    """VBS COM 原生文件夹选择器."""
+-    import platform as _plat, tempfile, time as _time
+-    if _plat.system() != "Windows":
+-        return {"path": ""}
+-
+-    vbs = tempfile.mktemp(suffix=".vbs")
+-    out = tempfile.mktemp(suffix=".txt")
+-    with open(vbs, "w") as f:
+-        f.write(f"""
+-Set objShell = CreateObject("Shell.Application")
+-Set objFolder = objShell.BrowseForFolder(0, "Select Folder", 0, 0)
+-Set fso = CreateObject("Scripting.FileSystemObject")
+-Set out = fso.CreateTextFile("{out.replace(chr(92), chr(92)+chr(92))}", True)
+-If Not objFolder Is Nothing Then
+-    out.Write objFolder.Self.Path
+-End If
+-out.Close
+-""")
+-    try:
+-        # 不捕获输出，让 cscript 正常显示对话框
+-        subprocess.run(
+-            ["cscript", "//Nologo", vbs],
+-            timeout=300
+-        )
+-        _time.sleep(0.5)
+-        if os.path.exists(out):
+-            with open(out) as f:
+-                path = f.read().strip()
+-            os.remove(out)
+-        else:
+-            path = ""
+-    except Exception:
+-        path = ""
+-    try:
+-        os.remove(vbs)
+-    except Exception:
+-        pass
+-    return {"path": path}
++# ── HTMX fragment routes (partials for dynamic updates) ──
++from .routers import fragments  # noqa: E402
++app.include_router(fragments.router)
+ 
+ 
+ # ── Startup ──
+ 
+ def start_server(project_root, port=8765, open_browser=True):
+     os.environ["LOOP_PROJECT_ROOT"] = project_root
+ 
+-    # 首次启动时注册当前项目
++    # Register current project on first launch
+     from loop_engineering.registry import register_project
+     register_project(project_root)
+ 
++    import webbrowser
+     import uvicorn
+     if open_browser:
+         webbrowser.open(f"http://localhost:{port}")
+     uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
+diff --git a/src/loop_engineering/server/dependencies.py b/src/loop_engineering/server/dependencies.py
+new file mode 100644
+index 0000000..10c6492
+--- /dev/null
++++ b/src/loop_engineering/server/dependencies.py
+@@ -0,0 +1,48 @@
++"""Shared dependencies for server routes."""
++
++import os
++from fastapi import Request
++from fastapi.templating import Jinja2Templates
++
++_tpl_dir = os.path.join(os.path.dirname(__file__), "templates")
++templates = Jinja2Templates(directory=_tpl_dir)
++templates.env.cache = None
++
++
++def get_project_root(request: Request = None, q: str = None):
++    """Get current project root. Priority: explicit param > query param > env var."""
++    if q:
++        return q
++    if request:
++        q = request.query_params.get("project")
++        if q:
++            return q
++    return os.environ.get("LOOP_PROJECT_ROOT", os.getcwd())
++
++
++def get_agent_name(pr):
++    """Read agent name from loop-config.yaml."""
++    from loop_engineering.config import read_config
++    cfg = read_config(pr)
++    return cfg.get("agent", {}).get("name", "")
++
++
++def is_htmx(request: Request):
++    """Check if request is an HTMX request."""
++    return request.headers.get("HX-Request", "") == "true"
++
++
++def render(request: Request, template_name: str, context: dict):
++    """Render a template, wrapping in base.html for non-HTMX requests."""
++    if is_htmx(request):
++        resp = templates.TemplateResponse(request, template_name, context)
++    else:
++        content_html = templates.get_template(template_name).render(context)
++        resp = templates.TemplateResponse(request, "base.html", {
++            "request": request,
++            "content": content_html,
++        })
++    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
++    resp.headers["Pragma"] = "no-cache"
++    resp.headers["Expires"] = "0"
++    return resp
+diff --git a/src/loop_engineering/server/routers/__init__.py b/src/loop_engineering/server/routers/__init__.py
+new file mode 100644
+index 0000000..4866b7d
+--- /dev/null
++++ b/src/loop_engineering/server/routers/__init__.py
+@@ -0,0 +1 @@
++"""Server routers."""
+diff --git a/src/loop_engineering/server/routers/fragments.py b/src/loop_engineering/server/routers/fragments.py
+new file mode 100644
+index 0000000..13219a0
+--- /dev/null
++++ b/src/loop_engineering/server/routers/fragments.py
+@@ -0,0 +1,386 @@
++"""HTMX fragment routes — partial responses for dynamic page updates."""
++
++import os
++import re
++from urllib.parse import quote
++
++from fastapi import APIRouter, Form, Query, Request
++from fastapi.responses import HTMLResponse, Response
++
++from ..dependencies import get_project_root, get_agent_name, templates, render
++from ..services.task_parser import parse_tasks, filter_tasks
++
++router = APIRouter()
++
++
++# ── Control fragments ──
++
++@router.get("/control/status-fragment")
++async def control_status_fragment(request: Request, project: str = Query(None)):
++    """Control page loop status + buttons fragment (5s polling)."""
++    from loop_engineering.control import get_status
++
++    pr = get_project_root(request, q=project)
++    status = get_status(pr)
++    is_running = status.get("running", False)
++    paused = status.get("paused", False)
++    html = f'''<div id="control-status" hx-get="/control/status-fragment" hx-trigger="every 5s" hx-swap="outerHTML">
++        <div class="card" style="margin-bottom: 20px;">
++            <div class="status-indicator" style="margin-bottom: 16px;">
++                <span class="status-dot {"active" if is_running else ("paused" if paused else "")}"></span>
++                <span style="font-weight: 600; font-size: 18px;">
++                    {"Loop 运行中" if is_running else ("已暂停" if paused else "空闲")}
++                </span>
++                <span style="color: var(--dim); font-size: 13px; margin-left: auto;">
++                    {f'HB: <span id="hb-time" data-iso="{status["heartbeat"]}">{status["heartbeat"][:19].replace("T", " ")}</span>' if status.get("heartbeat") else "无心跳"}
++                </span>
++            </div>
++            <div class="controls" style="margin-bottom: 16px;">'''
++    if is_running:
++        html += '''<button class="btn btn-danger"
++                        hx-post="/api/control/stop"
++                        hx-target="#control-status"
++                        hx-swap="outerHTML">停止 Loop</button>
++                <button class="btn btn-sm"
++                        hx-post="/api/control/focus"
++                        hx-swap="none"
++                        style="background: var(--surface2); color: var(--text); border: 1px solid var(--border);">🔍 聚焦窗口</button>'''
++        if paused:
++            html += '''<button class="btn btn-primary"
++                        hx-delete="/api/control/pause"
++                        hx-target="#control-status"
++                        hx-swap="outerHTML">恢复</button>'''
++        else:
++            html += '''<button class="btn btn-warn"
++                        hx-post="/api/control/pause"
++                        hx-target="#control-status"
++                        hx-swap="outerHTML">暂停</button>'''
++    else:
++        html += '''<button class="btn btn-success"
++                        hx-post="/api/control/start"
++                        hx-target="#control-status"
++                        hx-swap="outerHTML">启动 Loop</button>'''
++        if status.get("pid") and status.get("pid_alive"):
++            html += '''<button class="btn btn-sm"
++                        hx-post="/api/control/focus"
++                        hx-swap="none"
++                        style="background: var(--surface2); color: var(--text); border: 1px solid var(--border); margin-left: 8px;">🔍 聚焦窗口</button>'''
++    html += '''</div></div></div>
++    <script>
++        (function() {
++            var el = document.getElementById('hb-time');
++            if (!el) return;
++            var iso = el.getAttribute('data-iso');
++            if (!iso) return;
++            var d = new Date(iso);
++            var now = new Date();
++            var sec = Math.floor((now - d) / 1000);
++            if (sec < 60) el.textContent = sec + 's ago';
++            else if (sec < 3600) el.textContent = Math.floor(sec/60) + 'm ago';
++            else el.textContent = Math.floor(sec/3600) + 'h ago';
++        })();
++    </script>'''
++    return HTMLResponse(content=html)
++
++
++@router.get("/control/info-fragment")
++async def control_info_fragment(request: Request, project: str = Query(None)):
++    """Control page signal files + working principle fragment (5s polling)."""
++    from loop_engineering.control import get_status
++
++    pr = get_project_root(request, q=project)
++    status = get_status(pr)
++    is_running = status.get("running", False)
++    paused = status.get("paused", False)
++    hb_color = "var(--pass)" if is_running else "#64748b"
++    pause_color = "var(--active)" if paused else "#64748b"
++    html = f'''<div id="control-info" hx-get="/control/info-fragment" hx-trigger="every 5s" hx-swap="outerHTML">
++        <div class="grid grid-2">
++            <div class="card">
++                <h3>信号文件</h3>
++                <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-family: monospace;">
++                    <div style="display: flex; justify-content: space-between;">
++                        <span>control/heartbeat</span>
++                        <span style="color: {hb_color}">{status.get("heartbeat") or "无"}</span>
++                    </div>
++                    <div style="display: flex; justify-content: space-between;">
++                        <span>control/pause</span>
++                        <span style="color: {pause_color}">{"ON" if paused else "关"}</span>
++                    </div>
++                    <div style="display: flex; justify-content: space-between;">
++                        <span>control/throttle</span>
++                        <span style="color: var(--dim);">{status.get("throttle", "")}</span>
++                    </div>
++                    <div style="display: flex; justify-content: space-between;">
++                        <span>control/loop.pid</span>
++                        <span style="color: var(--dim);">{status.get("pid") or "无"}</span>
++                    </div>
++                </div>
++            </div>
++            <div class="card">
++                <h3>工作原理</h3>
++                <p style="color: var(--muted); font-size: 13px; line-height: 1.6;">
++                    <strong>Start</strong> 打开终端窗口运行<br>
++                    <code style="color: var(--blue);">claude --dangerously-skip-permissions -p '/runloop'</code>
++                </p>
++                <p style="color: var(--muted); font-size: 13px; line-height: 1.6; margin-top: 8px;">
++                    Dashboard 通过以下方式检测 Loop 状态：<br>
++                    • 心跳文件（每轮更新）<br>
++                    • 进程 ID（终端窗口存活）
++                </p>
++            </div>
++        </div>
++    </div>'''
++    return HTMLResponse(content=html)
++
++
++# ── Task list fragments ──
++
++@router.get("/tasks/list")
++async def tasks_list(
++    request: Request,
++    project: str = Query(None),
++    order: str = Query("desc"),
++    status: str = Query("pending,in_progress"),
++    filter: str = Query(""),
++):
++    """Return full task area (controls + list) for control operation refresh."""
++    pr = get_project_root(request, q=project)
++    tasks = parse_tasks(pr)
++    tasks = filter_tasks(tasks, status=status, order=order, filter_name=filter)
++    return templates.TemplateResponse(request, "_tasks_list.html", {
++        "request": request,
++        "tasks": tasks,
++        "agent_name": get_agent_name(pr),
++        "order": order,
++        "status": status,
++        "filter": filter,
++    })
++
++
++@router.get("/tasks/list-items")
++async def tasks_list_items(
++    request: Request,
++    project: str = Query(None),
++    order: str = Query("desc"),
++    status: str = Query("pending,in_progress"),
++    filter: str = Query(""),
++):
++    """Return task items only (progress bar + cards) for 30s polling."""
++    pr = get_project_root(request, q=project)
++    tasks = parse_tasks(pr)
++    tasks = filter_tasks(tasks, status=status, order=order, filter_name=filter)
++    return templates.TemplateResponse(request, "_tasks_items.html", {
++        "request": request,
++        "tasks": tasks,
++        "agent_name": get_agent_name(pr),
++        "order": order,
++        "status": status,
++        "filter": filter,
++    })
++
++
++# ── Task add (form submission) ──
++
++@router.post("/tasks/add")
++async def tasks_add(
++    request: Request,
++    description: str = Form(...),
++    assignee: str = Form(...),
++    task_id: str = Form(""),
++    project: str = Form(None),
++    order: str = Form("desc"),
++    status: str = Form("pending,in_progress"),
++    filter: str = Form(""),
++):
++    pr = get_project_root(request, q=project)
++    tp = os.path.join(pr, "tasks.md")
++    from loop_engineering.task_id import generate_task_id
++
++    tid = task_id if task_id and re.match(r'^[a-f0-9]{8}$', task_id) else generate_task_id(description)
++    line = f"- [ ] {description} (→ {assignee}) [{tid}]\n"
++    if os.path.exists(tp):
++        with open(tp, "a", encoding="utf-8") as f:
++            f.write(line)
++    else:
++        with open(tp, "w", encoding="utf-8") as f:
++            f.write("# Tasks\n\n")
++            f.write(line)
++    tasks = parse_tasks(pr)
++    tasks = filter_tasks(tasks, status=status, order=order, filter_name=filter)
++    return templates.TemplateResponse(request, "_tasks_list.html", {
++        "request": request,
++        "tasks": tasks,
++        "agent_name": get_agent_name(pr),
++        "order": order,
++        "status": status,
++        "filter": filter,
++    })
++
++
++# ── Setup fragments ──
++
++@router.post("/setup/run")
++async def setup_run(
++    request: Request,
++    project_root: str = Form(...),
++    agent_name: str = Form(None),
++    agent_workspace: str = Form(None),
++    main_port: int = Form(8080),
++    agent_port: int = Form(9080),
++    type: str = Form(""),
++):
++    import subprocess
++    from loop_engineering.registry import register_project
++
++    if not os.path.isdir(project_root):
++        return render(request, "setup.html", {
++            "request": request,
++            "error": f"目录不存在: {project_root}",
++        })
++
++    if not os.path.isdir(os.path.join(project_root, ".git")):
++        return render(request, "setup.html", {
++            "request": request,
++            "error": f"不是 Git 仓库: {project_root}\n请先用 git init 或 git clone 初始化项目",
++        })
++
++    # Determine agent name
++    if not agent_name:
++        try:
++            r = subprocess.run(
++                "git config user.name", shell=True, capture_output=True, text=True,
++                encoding='utf-8', errors='replace', cwd=project_root, timeout=5
++            )
++            agent_name = r.stdout.strip()
++        except Exception:
++            agent_name = ""
++
++    # Build config
++    from loop_engineering.config import detect_config
++    config = detect_config(project_root)
++    config["agent"]["name"] = agent_name or config["agent"].get("name", "")
++    if agent_workspace:
++        config["agent"]["workspace"] = os.path.abspath(agent_workspace)
++    config["main"]["mcp_port"] = main_port
++    config["agent"]["mcp_port"] = agent_port
++    if type:
++        from loop_engineering.presets import apply_preset
++        config = apply_preset(config, type)
++
++    try:
++        from loop_engineering.setup import run_setup
++        run_setup(config, force=True)
++        register_project(project_root, config["project"]["name"])
++        return Response(status_code=200, headers={"HX-Redirect": f"/?project={quote(project_root)}"})
++    except Exception as e:
++        return render(request, "setup.html", {
++            "request": request,
++            "error": str(e),
++        })
++
++
++# ── Project switcher / setup helpers ──
++
++@router.get("/api/projects/switcher")
++async def project_switcher(request: Request, project: str = Query(None)):
++    """Return project switcher HTML fragment."""
++    pr = get_project_root(q=project)
++    from loop_engineering.registry import list_projects
++    from loop_engineering.config import is_project_dir
++    from ..services.project_context import _filter_agent_workspace_copies
++
++    projects = list_projects()
++    projects = [p for p in projects if is_project_dir(p["root"])]
++    projects = _filter_agent_workspace_copies(projects)
++
++    html = '<select onchange="switchProject(this.value)" style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 6px 12px; border-radius: 7px; font-size: 13px; max-width: 200px;">'
++    if not projects:
++        html += '<option>No projects</option>'
++    else:
++        for p in projects:
++            sel = ' selected' if p["root"] == pr else ''
++            html += f'<option value="{p["root"]}"{sel}>{p["name"]}</option>'
++    html += '</select>'
++    html += '''<script>
++        function switchProject(root) {
++            var url = window.location.pathname + '?project=' + encodeURIComponent(root);
++            htmx.ajax('GET', url, {target: '#content', swap: 'innerHTML'});
++            history.pushState({}, '', url);
++        }
++    </script>'''
++    return HTMLResponse(content=html)
++
++
++@router.get("/api/setup/browse")
++async def browse_dirs(path: str = ""):
++    """Browse directory structure."""
++    import platform as _plat
++    if not path or not os.path.exists(path):
++        if _plat.system() == "Windows":
++            import string
++            drives = []
++            for d in string.ascii_uppercase:
++                dp = f"{d}:/"
++                if os.path.exists(dp):
++                    drives.append({"name": dp, "path": dp, "is_drive": True})
++            return {"path": "", "entries": drives}
++        else:
++            path = "/"
++    entries = []
++    try:
++        for name in sorted(os.listdir(path)):
++            full = os.path.join(path, name)
++            if os.path.isdir(full) and not name.startswith("."):
++                entries.append({"name": name, "path": full.replace("\\", "/"), "is_dir": True})
++    except PermissionError:
++        pass
++    parent = os.path.dirname(path).replace("\\", "/")
++    if parent == path:
++        parent = ""
++    return {"path": path.replace("\\", "/"), "parent": parent, "entries": entries}
++
++
++@router.get("/api/setup/pickfolder")
++async def pick_folder():
++    """VBS COM native folder picker."""
++    import platform as _plat
++    import tempfile
++    import time as _time
++    import subprocess
++
++    if _plat.system() != "Windows":
++        return {"path": ""}
++
++    vbs = tempfile.mktemp(suffix=".vbs")
++    out = tempfile.mktemp(suffix=".txt")
++    with open(vbs, "w") as f:
++        f.write(f"""
++Set objShell = CreateObject("Shell.Application")
++Set objFolder = objShell.BrowseForFolder(0, "Select Folder", 0, 0)
++Set fso = CreateObject("Scripting.FileSystemObject")
++Set out = fso.CreateTextFile("{out.replace(chr(92), chr(92)+chr(92))}", True)
++If Not objFolder Is Nothing Then
++    out.Write objFolder.Self.Path
++End If
++out.Close
++""")
++    try:
++        subprocess.run(
++            ["cscript", "//Nologo", vbs],
++            timeout=300
++        )
++        _time.sleep(0.5)
++        if os.path.exists(out):
++            with open(out) as f:
++                path = f.read().strip()
++            os.remove(out)
++        else:
++            path = ""
++    except Exception:
++        path = ""
++    try:
++        os.remove(vbs)
++    except Exception:
++        pass
++    return {"path": path}
+diff --git a/src/loop_engineering/server/routers/pages.py b/src/loop_engineering/server/routers/pages.py
+new file mode 100644
+index 0000000..bfc61a4
+--- /dev/null
++++ b/src/loop_engineering/server/routers/pages.py
+@@ -0,0 +1,131 @@
++"""Page routes — full-page responses (wrapped in base.html for non-HTMX)."""
++
++import os
++from urllib.parse import quote
++
++from fastapi import APIRouter, Query, Request
++from fastapi.responses import RedirectResponse
++
++from ..dependencies import get_project_root, get_agent_name, render
++from ..services.task_parser import parse_tasks, filter_tasks
++from ..services.project_context import build_projects_context
++
++router = APIRouter()
++
++
++@router.get("/")
++async def dashboard(request: Request, project: str = Query(None), filter: str = Query("")):
++    pr = get_project_root(request, q=project)
++    from loop_engineering.registry import list_projects
++    from loop_engineering.config import is_project_dir
++
++    # If current dir is not a project, fall back to a registered one
++    if not is_project_dir(pr):
++        projects = list_projects()
++        valid = [p for p in projects if is_project_dir(p["root"])]
++        if valid:
++            redir = f"/?project={quote(valid[0]['root'])}"
++            if filter:
++                redir += f"&filter={quote(filter)}"
++            return RedirectResponse(redir, status_code=303)
++        else:
++            return RedirectResponse("/setup", status_code=303)
++
++    all_projects = build_projects_context(pr, agent_filter=filter)
++    current = next((p for p in all_projects if p["is_current"]), all_projects[0] if all_projects else None)
++    return render(request, "dashboard.html", {
++        "request": request,
++        "projects": all_projects,
++        "current_root": pr,
++        "current": current,
++        "filter": filter,
++    })
++
++
++@router.get("/tasks")
++async def tasks_page(
++    request: Request,
++    project: str = Query(None),
++    order: str = Query("desc"),
++    status: str = Query("pending,in_progress"),
++    filter: str = Query(""),
++):
++    pr = get_project_root(request, q=project)
++    tasks = parse_tasks(pr)
++    tasks = filter_tasks(tasks, status=status, order=order, filter_name=filter)
++    return render(request, "tasks.html", {
++        "request": request,
++        "tasks": tasks,
++        "agent_name": get_agent_name(pr),
++        "current_root": pr,
++        "order": order,
++        "status": status,
++        "filter": filter,
++    })
++
++
++@router.get("/runs")
++async def runs_page(request: Request, whoami: str = "", project: str = Query(None)):
++    from loop_engineering.runlog import list_runs, get_pass_rate
++
++    pr = get_project_root(request, q=project)
++    entries = list_runs(pr, whoami=whoami or None, limit=100)
++    passed, total, rate = get_pass_rate(pr, days=7)
++    agents = list(set(e.get("whoami", "") for e in entries if e.get("whoami")))
++    return render(request, "runs.html", {
++        "request": request,
++        "runs": entries,
++        "pass_rate": {"passed": passed, "total": total, "rate": round(rate * 100, 1)},
++        "agents": agents,
++        "filter_whoami": whoami,
++        "current_root": pr,
++    })
++
++
++@router.get("/control")
++async def control_page(request: Request, project: str = Query(None)):
++    from loop_engineering.control import get_status
++
++    pr = get_project_root(request, q=project)
++    return render(request, "control.html", {
++        "request": request,
++        "status": get_status(pr),
++        "current_root": pr,
++    })
++
++
++@router.get("/settings")
++async def settings_page(request: Request, project: str = Query(None)):
++    from loop_engineering.config import read_config
++    from loop_engineering.presets import list_presets
++
++    pr = get_project_root(request, q=project)
++    from loop_engineering.config import is_project_dir
++    if not is_project_dir(pr):
++        return RedirectResponse("/setup", status_code=303)
++
++    cfg = read_config(pr)
++    presets = [{"key": k, "name": n, "desc": d} for k, n, d in list_presets()]
++
++    return render(request, "settings.html", {
++        "request": request,
++        "current_root": pr,
++        "config": cfg,
++        "presets": presets,
++    })
++
++
++@router.get("/setup")
++async def setup_page(request: Request):
++    import subprocess
++
++    git_user = ""
++    try:
++        r = subprocess.run(
++            "git config user.name", shell=True, capture_output=True, text=True,
++            encoding='utf-8', errors='replace', timeout=5
++        )
++        git_user = r.stdout.strip()
++    except Exception:
++        pass
++    return render(request, "setup.html", {"request": request, "git_user": git_user})
+diff --git a/src/loop_engineering/server/services/__init__.py b/src/loop_engineering/server/services/__init__.py
+new file mode 100644
+index 0000000..63ece29
+--- /dev/null
++++ b/src/loop_engineering/server/services/__init__.py
+@@ -0,0 +1 @@
++"""Server services."""
+diff --git a/src/loop_engineering/server/services/project_context.py b/src/loop_engineering/server/services/project_context.py
+new file mode 100644
+index 0000000..07874d5
+--- /dev/null
++++ b/src/loop_engineering/server/services/project_context.py
+@@ -0,0 +1,115 @@
++"""Project context service — build project list context for Dashboard."""
++
++import os
++import subprocess
++from loop_engineering.registry import list_projects, register_project
++from loop_engineering.config import is_project_dir, read_config
++from loop_engineering.runlog import get_pass_rate
++from .task_parser import parse_tasks
++
++
++def _filter_agent_workspace_copies(project_list):
++    """Filter out agent workspace copies: loop-config.yaml project.root != actual path."""
++    result = []
++    for p in project_list:
++        try:
++            cfg = read_config(p["root"])
++            cfg_root = cfg.get("project", {}).get("root", "")
++            if cfg_root and os.path.normcase(os.path.abspath(cfg_root)) != os.path.normcase(os.path.abspath(p["root"])):
++                continue
++        except Exception:
++            pass
++        result.append(p)
++    return result
++
++
++def build_projects_context(current_pr, agent_filter=""):
++    """Build project list + current project info. Only includes projects with loop-config.yaml.
++
++    Args:
++        current_pr: current project root path.
++        agent_filter: optional agent name to filter branches by.
++
++    Returns:
++        list of project dicts with tasks, pass_rate, branches info.
++    """
++    projects = list_projects()
++
++    # Auto-register current project (only if loop-config.yaml exists)
++    if is_project_dir(current_pr) and not any(
++        os.path.normcase(p["root"]) == os.path.normcase(current_pr) for p in projects
++    ):
++        register_project(current_pr)
++        projects = list_projects()
++
++    # Filter out projects without loop-config.yaml
++    projects = [p for p in projects if is_project_dir(p["root"])]
++    # Filter out agent workspace copies
++    projects = _filter_agent_workspace_copies(projects)
++
++    result = []
++    for p in projects:
++        pr = p["root"]
++        cfg = {}
++        try:
++            cfg = read_config(pr)
++        except Exception:
++            pass
++        tasks = parse_tasks(pr)
++        passed, total, rate = get_pass_rate(pr, days=7)
++
++        # Branches — use git for-each-ref, sorted by commit time desc
++        branches_list = []
++        seen = set()
++        try:
++            r = subprocess.run(
++                'git for-each-ref --sort=-committerdate --format="%(refname:short)" refs/heads/agent/ refs/remotes/origin/agent/',
++                shell=True, capture_output=True, text=True,
++                encoding='utf-8', errors='replace', cwd=pr, timeout=5
++            )
++            for line in r.stdout.strip().split("\n"):
++                ref = line.strip()
++                if not ref:
++                    continue
++                b = ref.replace("origin/", "")
++                if b in seen:
++                    continue
++                seen.add(b)
++
++                # Filter by agent name (branch format: agent/<whoami>/<task_id>-<slug>)
++                if agent_filter:
++                    parts = b.split("/")
++                    if len(parts) < 2 or parts[0] != "agent" or parts[1] != agent_filter:
++                        continue
++
++                # Check merge status
++                if ref.startswith("origin/"):
++                    r2 = subprocess.run(
++                        f"git merge-base --is-ancestor {ref} origin/master",
++                        shell=True, capture_output=True, cwd=pr, timeout=5
++                    )
++                    branches_list.append({"name": b, "merged": r2.returncode == 0})
++                else:
++                    r_merged = subprocess.run(
++                        f"git branch --merged master --list {b}", shell=True, capture_output=True,
++                        text=True, encoding='utf-8', errors='replace', cwd=pr, timeout=5
++                    )
++                    branches_list.append({"name": b, "merged": r_merged.stdout.strip() != ""})
++        except Exception:
++            pass
++
++        result.append({
++            "name": p["name"],
++            "root": pr,
++            "is_current": pr == current_pr,
++            "tasks": {
++                "pending": sum(1 for t in tasks if t["status"] == "pending"),
++                "in_progress": sum(1 for t in tasks if t["status"] in ("in_progress", "pending_merge", "reopen")),
++                "done": sum(1 for t in tasks if t["status"] == "done"),
++                "pending_merge": sum(1 for t in tasks if t["status"] == "pending_merge"),
++            },
++            "pass_rate": {"passed": passed, "total": total, "rate": round(rate * 100, 1)},
++            "branches": branches_list,
++        })
++
++    return result
+diff --git a/src/loop_engineering/server/services/task_parser.py b/src/loop_engineering/server/services/task_parser.py
+new file mode 100644
+index 0000000..1525dbb
+--- /dev/null
++++ b/src/loop_engineering/server/services/task_parser.py
+@@ -0,0 +1,149 @@
++"""Task parser service — unified tasks.md 解析 and filtering."""
++
++import os
++import re
++import subprocess
++from loop_engineering.task_id import parse_task_id, extract_task_id_from_branch
++
++
++def parse_tasks(project_root):
++    """Parse tasks.md into a list of task dicts.
++
++    Each dict includes: description, task_id, status, assignee, meta, feedback.
++
++    Status resolution considers git branch state:
++    - [x] with unmerged branch → "pending_merge"
++    - [x] with merged branch → "done"
++    """
++    tp = os.path.join(project_root, "tasks.md")
++    if not os.path.exists(tp):
++        return []
++
++    # Collect existing agent branch names (task_id -> branch_name)
++    agent_branches = {}
++    try:
++        r = subprocess.run(
++            'git branch --list "agent/*"',
++            shell=True, capture_output=True, text=True,
++            encoding='utf-8', errors='replace', cwd=project_root, timeout=5
++        )
++        for line in r.stdout.strip().split("\n"):
++            b = line.strip().lstrip("*+ ")
++            if b:
++                tid = extract_task_id_from_branch(b)
++                if tid:
++                    agent_branches[tid] = b
++    except Exception:
++        pass
++
++    # Collect merged branches (to distinguish done vs pending_merge)
++    merged_branches = set()
++    try:
++        r = subprocess.run(
++            'git branch --merged master --list "agent/*"',
++            shell=True, capture_output=True, text=True,
++            encoding='utf-8', errors='replace', cwd=project_root, timeout=5
++        )
++        for line in r.stdout.strip().split("\n"):
++            b = line.strip().lstrip("*+ ")
++            if b:
++                merged_branches.add(b)
++    except Exception:
++        pass
++
++    result = []
++    current_task = None
++    with open(tp, "r", encoding="utf-8") as f:
++        for line in f:
++            # Match checkbox
++            m = re.match(r'^- \[(.)\]\s+(.+)', line)
++            if m:
++                current_task = None  # new task starts
++                status_char = m.group(1)
++                rest = m.group(2).strip()
++
++                # Extract (→ assignee) — may be before or after meta
++                assignee = ""
++                m_assignee = re.search(r'\(→\s*(\w+)\)', rest)
++                if m_assignee:
++                    assignee = m_assignee.group(1)
++                    rest = (rest[:m_assignee.start()] + rest[m_assignee.end():]).strip()
++
++                # Extract — meta
++                meta = ""
++                m_meta = re.search(r'\s+—\s+(.+)$', rest)
++                if m_meta:
++                    meta = m_meta.group(1).strip()
++                    rest = rest[:m_meta.start()].strip()
++
++                desc = rest
++                # Remove [task-id] suffix
++                desc = re.sub(r'\s+\[[a-f0-9]{8}\]\s*$', '', desc).strip()
++                tid = parse_task_id(line) or ""
++                if status_char == "x" and tid and tid in agent_branches:
++                    if agent_branches[tid] in merged_branches:
++                        status = "done"
++                    else:
++                        status = "pending_merge"
++                else:
++                    s = {" ": "pending", "~": "in_progress", "x": "done", "r": "reopen"}
++                    status = s.get(status_char, "pending")
++                current_task = {
++                    "description": desc,
++                    "task_id": tid,
++                    "status": status,
++                    "assignee": assignee,
++                    "meta": meta,
++                    "feedback": [],
++                }
++                result.append(current_task)
++            elif re.match(r'^\s{2,}\S', line) and current_task:
++                # Indented continuation line = feedback
++                current_task["feedback"].append(line.strip())
++    return result
++
++
++def filter_tasks(tasks, status="pending,in_progress", order="desc", filter_name=""):
++    """Filter and sort tasks by status, assignee name, and order.
++
++    Args:
++        tasks: list of task dicts (from parse_tasks).
++        status: comma-separated status values; "in_progress" also includes
++                "pending_merge" and "reopen"; "done" also includes "pending_merge".
++        order: "desc" (newest first) or "asc" (oldest first).
++        filter_name: if non-empty, only include tasks whose assignee matches
++                     (case-insensitive).
++
++    Returns:
++        Filtered and sorted list of task dicts.
++    """
++    allowed = [s.strip() for s in status.split(",") if s.strip()]
++    # "in_progress" filter also includes "pending_merge" and "reopen"
++    if "in_progress" in allowed:
++        allowed.extend(["pending_merge", "reopen"])
++    # "done" filter also includes "pending_merge"
++    if "done" in allowed:
++        allowed.append("pending_merge")
++    tasks = [t for t in tasks if t["status"] in allowed]
++    # Filter by agent (assignee) name
++    if filter_name:
++        f_lower = filter_name.strip().lower()
++        tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
++    if order == "desc":
++        tasks = list(reversed(tasks))
++    return tasks
++
++
++def tasklines_to_dicts(tasklines):
++    """Convert taskline objects (dicts or future TaskLine objects) to dicts.
++
++    Currently a pass-through for dicts; will handle TaskLine.format() when
++    TaskLine dataclass is introduced.
++    """
++    if not tasklines:
++        return []
++    # If already dicts, return as-is
++    if isinstance(tasklines[0], dict):
++        return tasklines
++    # Future: if TaskLine objects, convert via format()
++    return tasklines
+diff --git a/tests/conftest.py b/tests/conftest.py
+new file mode 100644
+index 0000000..279d88b
+--- /dev/null
++++ b/tests/conftest.py
+@@ -0,0 +1,48 @@
++"""Shared test fixtures."""
++
++import os
++import tempfile
++import pytest
++
++
++@pytest.fixture
++def tmp_dir():
++    """Create a temporary directory for file-based tests. Cleans up after test."""
++    with tempfile.TemporaryDirectory() as d:
++        yield d
++
++
++@pytest.fixture
++def tmp_project(tmp_dir):
++    """Create a minimal loop project directory with .git and .loop-engineering/."""
++    # Create .git directory
++    git_dir = os.path.join(tmp_dir, ".git")
++    os.makedirs(git_dir)
++
++    # Create .loop-engineering directory
++    le_dir = os.path.join(tmp_dir, ".loop-engineering")
++    os.makedirs(le_dir)
++
++    return tmp_dir
++
++
++@pytest.fixture
++def tmp_project_with_config(tmp_project):
++    """Create a project with a minimal loop-config.yaml."""
++    import yaml
++
++    config = {
++        "project": {"name": "test-project", "root": tmp_project},
++        "agent": {
++            "name": "test-agent",
++            "workspace": os.path.join(os.path.dirname(tmp_project), "test-agent"),
++            "mcp_port": 9080,
++        },
++        "main": {"mcp_port": 8080},
++    }
++    config_dir = os.path.join(tmp_project, ".loop-engineering")
++    config_path = os.path.join(config_dir, "loop-config.yaml")
++    with open(config_path, "w", encoding="utf-8") as f:
++        yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
++
++    return tmp_project
+diff --git a/tests/test_config.py b/tests/test_config.py
+new file mode 100644
+index 0000000..079ce38
+--- /dev/null
++++ b/tests/test_config.py
+@@ -0,0 +1,100 @@
++"""Tests for config module."""
++
++import os
++import pytest
++
++
++class TestIsProjectDir:
++    def test_with_config(self, tmp_project_with_config):
++        from loop_engineering.config import is_project_dir
++        assert is_project_dir(tmp_project_with_config) is True
++
++    def test_without_config(self, tmp_project):
++        from loop_engineering.config import is_project_dir
++        assert is_project_dir(tmp_project) is False
++
++    def test_empty_dir(self, tmp_dir):
++        from loop_engineering.config import is_project_dir
++        assert is_project_dir(tmp_dir) is False
++
++
++class TestReadConfig:
++    def test_reads_config(self, tmp_project_with_config):
++        from loop_engineering.config import read_config
++        cfg = read_config(tmp_project_with_config)
++        assert cfg["project"]["name"] == "test-project"
++        assert cfg["agent"]["name"] == "test-agent"
++
++    def test_empty_when_no_config(self, tmp_project):
++        from loop_engineering.config import read_config
++        cfg = read_config(tmp_project)
++        assert cfg == {}
++
++
++class TestWriteConfig:
++    def test_creates_file(self, tmp_project):
++        from loop_engineering.config import write_config, read_config
++        cfg = {"project": {"name": "written"}}
++        path = write_config(tmp_project, cfg)
++        assert os.path.exists(path)
++        read_back = read_config(tmp_project)
++        assert read_back["project"]["name"] == "written"
++
++
++class TestMergeConfig:
++    def test_adds_new_keys(self, tmp_project_with_config):
++        from loop_engineering.config import merge_config
++        new_cfg, changed = merge_config(
++            tmp_project_with_config,
++            {"project": {"description": "test desc"}}
++        )
++        assert "project.description" in changed
++        assert new_cfg["project"]["description"] == "test desc"
++
++    def test_updates_existing(self, tmp_project_with_config):
++        from loop_engineering.config import merge_config
++        new_cfg, changed = merge_config(
++            tmp_project_with_config,
++            {"agent": {"name": "updated-agent"}}
++        )
++        assert "agent.name" in changed
++        assert new_cfg["agent"]["name"] == "updated-agent"
++
++    def test_deletes_keys(self, tmp_project_with_config):
++        from loop_engineering.config import merge_config
++        new_cfg, changed = merge_config(
++            tmp_project_with_config,
++            {"agent": {"name": None}}
++        )
++        assert "agent.name" in changed
++        assert "name" not in new_cfg["agent"]
++
++    def test_nested_merge_preserves_siblings(self, tmp_project_with_config):
++        from loop_engineering.config import merge_config
++        new_cfg, changed = merge_config(
++            tmp_project_with_config,
++            {"agent": {"mcp_port": 9999}}
++        )
++        assert new_cfg["agent"]["name"] == "test-agent"  # preserved
++        assert new_cfg["agent"]["mcp_port"] == 9999
++
++    def test_no_change_returns_empty_set(self, tmp_project_with_config):
++        from loop_engineering.config import merge_config
++        new_cfg, changed = merge_config(
++            tmp_project_with_config,
++            {"agent": {"name": "test-agent"}}
++        )
++        assert changed == set()
++
++
++class TestDetectConfig:
++    def test_detects_project_name(self, tmp_project):
++        from loop_engineering.config import detect_config
++        cfg = detect_config(tmp_project)
++        assert "project" in cfg
++        assert "name" in cfg["project"]
++
++    def test_detects_root(self, tmp_project):
++        from loop_engineering.config import detect_config
++        cfg = detect_config(tmp_project)
++        assert cfg["project"]["root"] == tmp_project
+diff --git a/tests/test_control.py b/tests/test_control.py
+new file mode 100644
+index 0000000..13fc546
+--- /dev/null
++++ b/tests/test_control.py
+@@ -0,0 +1,96 @@
++"""Tests for control module — heartbeat, pause, throttle state machine."""
++
++import os
++import time
++from datetime import datetime, timezone, timedelta
++import pytest
++
++
++class TestHeartbeat:
++    def test_write_heartbeat_creates_file(self, tmp_project):
++        from loop_engineering.control import write_heartbeat
++        write_heartbeat(tmp_project)
++        hb_path = os.path.join(tmp_project, ".loop-engineering", "control", "heartbeat")
++        assert os.path.exists(hb_path)
++
++    def test_read_heartbeat_returns_none_when_no_file(self, tmp_project):
++        from loop_engineering.control import read_heartbeat
++        assert read_heartbeat(tmp_project) is None
++
++    def test_read_heartbeat_returns_datetime(self, tmp_project):
++        from loop_engineering.control import write_heartbeat, read_heartbeat
++        write_heartbeat(tmp_project)
++        hb = read_heartbeat(tmp_project)
++        assert hb is not None
++        assert isinstance(hb, datetime)
++
++    def test_is_loop_running_false_when_no_heartbeat(self, tmp_project):
++        from loop_engineering.control import is_loop_running
++        assert is_loop_running(tmp_project) is False
++
++    def test_is_loop_running_true_with_recent_heartbeat(self, tmp_project):
++        from loop_engineering.control import write_heartbeat, is_loop_running
++        write_heartbeat(tmp_project)
++        assert is_loop_running(tmp_project, threshold_minutes=10) is True
++
++
++class TestPause:
++    def test_set_pause_creates_file(self, tmp_project):
++        from loop_engineering.control import set_pause, is_paused
++        set_pause(tmp_project, True)
++        assert is_paused(tmp_project) is True
++
++    def test_set_pause_removes_file(self, tmp_project):
++        from loop_engineering.control import set_pause, is_paused
++        set_pause(tmp_project, True)
++        set_pause(tmp_project, False)
++        assert is_paused(tmp_project) is False
++
++    def test_is_paused_false_by_default(self, tmp_project):
++        from loop_engineering.control import is_paused
++        assert is_paused(tmp_project) is False
++
++
++class TestThrottle:
++    def test_get_throttle_returns_default(self, tmp_project):
++        from loop_engineering.control import get_throttle
++        assert get_throttle(tmp_project) == "2m"
++
++    def test_get_throttle_custom_default(self, tmp_project):
++        from loop_engineering.control import get_throttle
++        assert get_throttle(tmp_project, default="5m") == "5m"
++
++    def test_set_and_get_throttle(self, tmp_project):
++        from loop_engineering.control import set_throttle, get_throttle
++        set_throttle(tmp_project, "30s")
++        assert get_throttle(tmp_project) == "30s"
++
++
++class TestStatus:
++    def test_get_status_returns_dict(self, tmp_project):
++        from loop_engineering.control import get_status
++        status = get_status(tmp_project)
++        assert isinstance(status, dict)
++        assert "running" in status
++        assert "paused" in status
++        assert "throttle" in status
++        assert "heartbeat" in status
++        assert "pid" in status
++
++    def test_get_status_no_heartbeat(self, tmp_project):
++        from loop_engineering.control import get_status
++        status = get_status(tmp_project)
++        assert status["running"] is False
++        assert status["heartbeat"] is None
++
++
++class TestLoopStartedAt:
++    def test_write_loop_started_at_creates_file(self, tmp_project):
++        from loop_engineering.control import write_loop_started_at
++        write_loop_started_at(tmp_project)
++        ls_path = os.path.join(tmp_project, ".loop-engineering", "control", "loop_started_at")
++        assert os.path.exists(ls_path)
++
++    def test_read_loop_started_at_returns_none_when_no_file(self, tmp_project):
++        from loop_engineering.control import read_loop_started_at
++        assert read_loop_started_at(tmp_project) is None
+diff --git a/tests/test_runlog.py b/tests/test_runlog.py
+new file mode 100644
+index 0000000..252cf1e
+--- /dev/null
++++ b/tests/test_runlog.py
+@@ -0,0 +1,198 @@
++"""Tests for runlog module — write, query, filter."""
++
++import os
++import pytest
++
++
++class TestWriteRunLog:
++    def test_creates_file(self, tmp_project):
++        from loop_engineering.runlog import write_run_log
++        entry = {
++            "task_id": "abc12345",
++            "imp_round": 1,
++            "vfy_round": 1,
++            "phase": "verify",
++            "result": "PASS",
++        }
++        path = write_run_log(tmp_project, entry)
++        assert os.path.exists(path)
++        assert "abc12345" in path
++        assert "IMP1" in path
++        assert "VFY1" in path
++
++    def test_adds_defaults(self, tmp_project):
++        from loop_engineering.runlog import write_run_log
++        import json
++        entry = {
++            "task_id": "def67890",
++            "imp_round": 2,
++            "vfy_round": 1,
++            "phase": "implement",
++            "result": "FAIL",
++        }
++        path = write_run_log(tmp_project, entry)
++        with open(path, "r", encoding="utf-8") as f:
++            saved = json.load(f)
++        assert saved["whoami"] == ""
++        assert saved["version"] == 1
++        assert saved["task_desc"] == ""
++        assert "completed" in saved
++        assert "started" in saved
++
++
++class TestListRuns:
++    def test_returns_entries(self, tmp_project):
++        from loop_engineering.runlog import write_run_log, list_runs
++        for i in range(3):
++            write_run_log(tmp_project, {
++                "task_id": f"task{i:08d}",
++                "imp_round": 1,
++                "vfy_round": 1,
++                "phase": "verify",
++                "result": "PASS",
++            })
++        entries = list_runs(tmp_project)
++        assert len(entries) == 3
++
++    def test_empty_when_no_runs(self, tmp_project):
++        from loop_engineering.runlog import list_runs
++        entries = list_runs(tmp_project)
++        assert entries == []
++
++    def test_filters_by_whoami(self, tmp_project):
++        from loop_engineering.runlog import write_run_log, list_runs
++        write_run_log(tmp_project, {
++            "task_id": "task00001",
++            "imp_round": 1,
++            "vfy_round": 1,
++            "phase": "verify",
++            "result": "PASS",
++            "whoami": "alice",
++        })
++        write_run_log(tmp_project, {
++            "task_id": "task00002",
++            "imp_round": 1,
++            "vfy_round": 1,
++            "phase": "verify",
++            "result": "PASS",
++            "whoami": "bob",
++        })
++        alice = list_runs(tmp_project, whoami="alice")
++        assert len(alice) == 1
++        assert alice[0]["whoami"] == "alice"
++
++    def test_filters_by_result(self, tmp_project):
++        from loop_engineering.runlog import write_run_log, list_runs
++        write_run_log(tmp_project, {
++            "task_id": "task00001",
++            "imp_round": 1,
++            "vfy_round": 1,
++            "phase": "verify",
++            "result": "PASS",
++        })
++        write_run_log(tmp_project, {
++            "task_id": "task00002",
++            "imp_round": 1,
++            "vfy_round": 1,
++            "phase": "verify",
++            "result": "FAIL",
++        })
++        passed = list_runs(tmp_project, result="PASS")
++        assert len(passed) == 1
++        assert passed[0]["result"] == "PASS"
++
++    def test_orders_by_completed_desc(self, tmp_project):
++        from loop_engineering.runlog import write_run_log, list_runs
++        write_run_log(tmp_project, {
++            "task_id": "task00001",
++            "imp_round": 1,
++            "vfy_round": 1,
++            "phase": "verify",
++            "result": "PASS",
++        })
++        import time
++        time.sleep(0.1)
++        write_run_log(tmp_project, {
++            "task_id": "task00002",
++            "imp_round": 1,
++            "vfy_round": 1,
++            "phase": "verify",
++            "result": "PASS",
++        })
++        entries = list_runs(tmp_project)
++        # Latest first
++        assert entries[0]["task_id"] == "task00002"
++
++    def test_respects_limit(self, tmp_project):
++        from loop_engineering.runlog import write_run_log, list_runs
++        for i in range(10):
++            write_run_log(tmp_project, {
++                "task_id": f"task{i:08d}",
++                "imp_round": 1,
++                "vfy_round": 1,
++                "phase": "verify",
++                "result": "PASS",
++            })
++        entries = list_runs(tmp_project, limit=3)
++        assert len(entries) == 3
++
++
++class TestPassRate:
++    def test_returns_tuple(self, tmp_project):
++        from loop_engineering.runlog import get_pass_rate
++        passed, total, rate = get_pass_rate(tmp_project)
++        assert passed == 0
++        assert total == 0
++        assert rate == 0.0
++
++    def test_calculates_rate(self, tmp_project):
++        from loop_engineering.runlog import write_run_log, get_pass_rate
++        write_run_log(tmp_project, {
++            "task_id": "task00001",
++            "imp_round": 1,
++            "vfy_round": 1,
++            "phase": "verify",
++            "result": "PASS",
++        })
++        write_run_log(tmp_project, {
++            "task_id": "task00002",
++            "imp_round": 1,
++            "vfy_round": 1,
++            "phase": "verify",
++            "result": "FAIL",
++        })
++        passed, total, rate = get_pass_rate(tmp_project, days=365)
++        assert passed == 1
++        assert total == 2
++        assert rate == 0.5
++
++    def test_only_counts_verify_phase(self, tmp_project):
++        from loop_engineering.runlog import write_run_log, get_pass_rate
++        write_run_log(tmp_project, {
++            "task_id": "task00001",
++            "imp_round": 1,
++            "vfy_round": 1,
++            "phase": "implement",
++            "result": "PASS",
++        })
++        passed, total, rate = get_pass_rate(tmp_project, days=365)
++        assert total == 0  # implement phase not counted
++        assert rate == 0.0
++
++    def test_skips_corrupt_files(self, tmp_project):
++        from loop_engineering.runlog import write_run_log, get_pass_rate
++        # Write a corrupt JSON file
++        runs_dir = os.path.join(tmp_project, ".loop-engineering", "runs")
++        os.makedirs(runs_dir, exist_ok=True)
++        with open(os.path.join(runs_dir, "corrupt.json"), "w") as f:
++            f.write("not json")
++        write_run_log(tmp_project, {
++            "task_id": "task00001",
++            "imp_round": 1,
++            "vfy_round": 1,
++            "phase": "verify",
++            "result": "PASS",
++        })
++        passed, total, rate = get_pass_rate(tmp_project, days=365)
++        assert passed == 1
++        assert total == 1
+diff --git a/tests/test_task_parser.py b/tests/test_task_parser.py
+new file mode 100644
+index 0000000..95edafc
+--- /dev/null
++++ b/tests/test_task_parser.py
+@@ -0,0 +1,131 @@
++"""Tests for task_parser service — parse_tasks, filter_tasks, tasklines_to_dicts."""
++
++import os
++import pytest
++
++
++class TestParseTasks:
++    def test_empty_when_no_tasks_md(self, tmp_project):
++        from loop_engineering.server.services.task_parser import parse_tasks
++        tasks = parse_tasks(tmp_project)
++        assert tasks == []
++
++    def test_parses_pending_task(self, tmp_project):
++        from loop_engineering.server.services.task_parser import parse_tasks
++        _write_tasks_md(tmp_project, "- [ ] Fix login bug [abc12345]\n")
++        tasks = parse_tasks(tmp_project)
++        assert len(tasks) == 1
++        assert tasks[0]["status"] == "pending"
++        assert tasks[0]["task_id"] == "abc12345"
++        assert "Fix login bug" in tasks[0]["description"]
++
++    def test_parses_done_task(self, tmp_project):
++        from loop_engineering.server.services.task_parser import parse_tasks
++        _write_tasks_md(tmp_project, "- [x] Add new feature [def67890]\n")
++        tasks = parse_tasks(tmp_project)
++        assert len(tasks) == 1
++        assert tasks[0]["status"] == "done"
++        assert tasks[0]["task_id"] == "def67890"
++
++    def test_parses_in_progress_task(self, tmp_project):
++        from loop_engineering.server.services.task_parser import parse_tasks
++        _write_tasks_md(tmp_project, "- [~] Working on it (→ alice) [11112222]\n")
++        tasks = parse_tasks(tmp_project)
++        assert len(tasks) == 1
++        assert tasks[0]["status"] == "in_progress"
++        assert tasks[0]["assignee"] == "alice"
++        assert tasks[0]["task_id"] == "11112222"
++
++    def test_parses_task_with_meta(self, tmp_project):
++        from loop_engineering.server.services.task_parser import parse_tasks
++        _write_tasks_md(tmp_project, "- [ ] Refactor module [aaabbbb1] — priority:high\n")
++        tasks = parse_tasks(tmp_project)
++        assert tasks[0]["meta"] == "priority:high"
++
++    def test_parses_feedback_lines(self, tmp_project):
++        from loop_engineering.server.services.task_parser import parse_tasks
++        _write_tasks_md(tmp_project,
++            "- [x] Old task [ccc11111]\n"
++            "  Feedback line 1\n"
++            "  Feedback line 2\n"
++            "- [ ] New task [ddd22222]\n"
++        )
++        tasks = parse_tasks(tmp_project)
++        assert len(tasks[0]["feedback"]) == 2
++        assert tasks[0]["feedback"][0] == "Feedback line 1"
++
++    def test_parses_multiple_tasks(self, tmp_project):
++        from loop_engineering.server.services.task_parser import parse_tasks
++        _write_tasks_md(tmp_project,
++            "- [ ] Task one [11111111]\n"
++            "- [~] Task two (→ bob) [22222222]\n"
++            "- [x] Task three [33333333]\n"
++        )
++        tasks = parse_tasks(tmp_project)
++        assert len(tasks) == 3
++
++
++class TestFilterTasks:
++    @pytest.fixture
++    def sample_tasks(self):
++        return [
++            {"description": "Task A", "task_id": "11111111", "status": "pending", "assignee": "", "meta": "", "feedback": []},
++            {"description": "Task B", "task_id": "22222222", "status": "done", "assignee": "alice", "meta": "", "feedback": []},
++            {"description": "Task C", "task_id": "33333333", "status": "in_progress", "assignee": "bob", "meta": "", "feedback": []},
++            {"description": "Task D", "task_id": "44444444", "status": "done", "assignee": "", "meta": "", "feedback": []},
++        ]
++
++    def test_filters_by_status(self, sample_tasks):
++        from loop_engineering.server.services.task_parser import filter_tasks
++        filtered = filter_tasks(sample_tasks, status="done")
++        assert len(filtered) == 2
++        assert all(t["status"] == "done" for t in filtered)
++
++    def test_filters_multiple_status(self, sample_tasks):
++        from loop_engineering.server.services.task_parser import filter_tasks
++        filtered = filter_tasks(sample_tasks, status="pending,done")
++        assert len(filtered) == 3
++
++    def test_in_progress_includes_pending_merge_and_reopen(self):
++        from loop_engineering.server.services.task_parser import filter_tasks
++        tasks = [
++            {"description": "A", "task_id": "1", "status": "in_progress", "assignee": "", "meta": "", "feedback": []},
++            {"description": "B", "task_id": "2", "status": "pending_merge", "assignee": "", "meta": "", "feedback": []},
++            {"description": "C", "task_id": "3", "status": "reopen", "assignee": "", "meta": "", "feedback": []},
++        ]
++        filtered = filter_tasks(tasks, status="in_progress")
++        assert len(filtered) == 3
++
++    def test_filters_by_agent_name(self, sample_tasks):
++        from loop_engineering.server.services.task_parser import filter_tasks
++        filtered = filter_tasks(sample_tasks, status="pending,in_progress,done", filter_name="alice")
++        assert len(filtered) == 1
++        assert filtered[0]["task_id"] == "22222222"
++
++    def test_orders_desc(self, sample_tasks):
++        from loop_engineering.server.services.task_parser import filter_tasks
++        filtered = filter_tasks(sample_tasks, status="pending,in_progress,done", order="desc")
++        assert filtered[0]["task_id"] == "44444444"
++        assert filtered[-1]["task_id"] == "11111111"
++
++    def test_orders_asc(self, sample_tasks):
++        from loop_engineering.server.services.task_parser import filter_tasks
++        filtered = filter_tasks(sample_tasks, status="pending,in_progress,done", order="asc")
++        assert filtered[0]["task_id"] == "11111111"
++
++
++class TestTasklinesToDicts:
++    def test_empty_list(self):
++        from loop_engineering.server.services.task_parser import tasklines_to_dicts
++        assert tasklines_to_dicts([]) == []
++
++    def test_pass_through_for_dicts(self):
++        from loop_engineering.server.services.task_parser import tasklines_to_dicts
++        tasks = [{"description": "Test", "task_id": "1", "status": "pending"}]
++        assert tasklines_to_dicts(tasks) == tasks
++
++
++def _write_tasks_md(project_root, content):
++    path = os.path.join(project_root, "tasks.md")
++    with open(path, "w", encoding="utf-8") as f:
++        f.write(content)

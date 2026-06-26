@@ -1,34 +1,25 @@
-"""Page routes — 返回完整页面的路由（/, /tasks, /runs, /control, /settings, /setup）."""
+"""Page routes — full-page responses (wrapped in base.html for non-HTMX)."""
 
 import os
 from urllib.parse import quote
 
-from fastapi import APIRouter, Request, Form, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import RedirectResponse
 
-from loop_engineering.path_utils import resolve_project_root
-from loop_engineering.server.dependencies import templates, render_page, get_agent_name
-from loop_engineering.server.services.task_parser import parse_tasks, filter_tasks, tasklines_to_dicts
-from loop_engineering.server.services.project_context import build_projects_context
+from ..dependencies import get_project_root, get_agent_name, render
+from ..services.task_parser import parse_tasks, filter_tasks
+from ..services.project_context import build_projects_context
 
 router = APIRouter()
 
 
-def _get_filtered_task_dicts(pr, status, filter_str, order):
-    """Parse, filter, and return task dicts for template rendering."""
-    tasklines = parse_tasks(pr)
-    filtered = filter_tasks(tasklines, status=status, filter_name=filter_str, order=order)
-    return tasklines_to_dicts(filtered)
-
-
-# ── Page routes ──
-
 @router.get("/")
 async def dashboard(request: Request, project: str = Query(None), filter: str = Query("")):
-    pr = resolve_project_root(project=project, request=request)
+    pr = get_project_root(request, q=project)
     from loop_engineering.registry import list_projects
     from loop_engineering.config import is_project_dir
 
+    # If current dir is not a project, fall back to a registered one
     if not is_project_dir(pr):
         projects = list_projects()
         valid = [p for p in projects if is_project_dir(p["root"])]
@@ -41,11 +32,8 @@ async def dashboard(request: Request, project: str = Query(None), filter: str = 
             return RedirectResponse("/setup", status_code=303)
 
     all_projects = build_projects_context(pr, agent_filter=filter)
-    current = next((p for p in all_projects if p.get("is_current")), all_projects[0] if all_projects else None)
-    if current is None:
-        current = {"root": pr, "name": os.path.basename(pr)}
-        current["is_current"] = True
-    return render_page(request, "dashboard.html", {
+    current = next((p for p in all_projects if p["is_current"]), all_projects[0] if all_projects else None)
+    return render(request, "dashboard.html", {
         "request": request,
         "projects": all_projects,
         "current_root": pr,
@@ -55,10 +43,17 @@ async def dashboard(request: Request, project: str = Query(None), filter: str = 
 
 
 @router.get("/tasks")
-async def tasks_page(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query("")):
-    pr = resolve_project_root(project=project, request=request)
-    tasks = _get_filtered_task_dicts(pr, status, filter, order)
-    return render_page(request, "tasks.html", {
+async def tasks_page(
+    request: Request,
+    project: str = Query(None),
+    order: str = Query("desc"),
+    status: str = Query("pending,in_progress"),
+    filter: str = Query(""),
+):
+    pr = get_project_root(request, q=project)
+    tasks = parse_tasks(pr)
+    tasks = filter_tasks(tasks, status=status, order=order, filter_name=filter)
+    return render(request, "tasks.html", {
         "request": request,
         "tasks": tasks,
         "agent_name": get_agent_name(pr),
@@ -70,73 +65,67 @@ async def tasks_page(request: Request, project: str = Query(None), order: str = 
 
 
 @router.get("/runs")
-async def runs_page(request: Request, project: str = Query(None), order: str = Query(""), filter: str = Query("")):
-    pr = resolve_project_root(project=project, request=request)
-    runs_entries = []
-    import glob, json
-    runs_dir = os.path.join(pr, ".loop-engineering", "runs")
-    if os.path.isdir(runs_dir):
-        for fpath in sorted(glob.glob(os.path.join(runs_dir, "*.json")), reverse=True):
-            try:
-                with open(fpath, "r", encoding="utf-8") as fh:
-                    entry = json.load(fh)
-                if filter and entry.get("whoami", "") != filter:
-                    continue
-                runs_entries.append({
-                    "task_id": entry.get("task_id", ""),
-                    "task_desc": entry.get("task_desc", ""),
-                    "whoami": entry.get("whoami", ""),
-                    "phase": entry.get("phase", ""),
-                    "result": entry.get("result", ""),
-                    "imp_round": entry.get("imp_round", 1),
-                    "vfy_round": entry.get("vfy_round", 1),
-                    "completed": entry.get("completed", ""),
-                })
-            except Exception:
-                pass
-    return render_page(request, "runs.html", {
+async def runs_page(request: Request, whoami: str = "", project: str = Query(None)):
+    from loop_engineering.runlog import list_runs, get_pass_rate
+
+    pr = get_project_root(request, q=project)
+    entries = list_runs(pr, whoami=whoami or None, limit=100)
+    passed, total, rate = get_pass_rate(pr, days=7)
+    agents = list(set(e.get("whoami", "") for e in entries if e.get("whoami")))
+    return render(request, "runs.html", {
         "request": request,
-        "runs": runs_entries,
+        "runs": entries,
+        "pass_rate": {"passed": passed, "total": total, "rate": round(rate * 100, 1)},
+        "agents": agents,
+        "filter_whoami": whoami,
         "current_root": pr,
-        "filter": filter,
     })
 
 
 @router.get("/control")
 async def control_page(request: Request, project: str = Query(None)):
-    pr = resolve_project_root(project=project, request=request)
-    return render_page(request, "control.html", {
+    from loop_engineering.control import get_status
+
+    pr = get_project_root(request, q=project)
+    return render(request, "control.html", {
         "request": request,
+        "status": get_status(pr),
         "current_root": pr,
     })
 
 
 @router.get("/settings")
 async def settings_page(request: Request, project: str = Query(None)):
-    pr = resolve_project_root(project=project, request=request)
-    return render_page(request, "settings.html", {
+    from loop_engineering.config import read_config
+    from loop_engineering.presets import list_presets
+
+    pr = get_project_root(request, q=project)
+    from loop_engineering.config import is_project_dir
+    if not is_project_dir(pr):
+        return RedirectResponse("/setup", status_code=303)
+
+    cfg = read_config(pr)
+    presets = [{"key": k, "name": n, "desc": d} for k, n, d in list_presets()]
+
+    return render(request, "settings.html", {
         "request": request,
         "current_root": pr,
+        "config": cfg,
+        "presets": presets,
     })
 
 
 @router.get("/setup")
-async def setup_page(request: Request, project: str = Query(None)):
-    """Setup wizard — always served standalone (no base.html wrapping)."""
-    pr = resolve_project_root(project=project)
-    from loop_engineering.config import detect_config
-    detected = detect_config(pr)
-    return templates.TemplateResponse(request, "setup.html", {
-        "request": request,
-        "detected_name": detected.get("project", {}).get("name", ""),
-        "detected_workspace": detected.get("agent", {}).get("workspace", ""),
-        "detected_user": detected.get("agent", {}).get("name", ""),
-        "detected_unity": bool(detected.get("_detected", {}).get("unity")),
-        "detected_data_repo": detected.get("data_repo", {}).get("path", ""),
-        "presets": [
-            {"key": "unity-tolua", "name": "Unity + ToLua", "desc": "PVP 卡牌项目"},
-            {"key": "python-server", "name": "Python Server", "desc": "Python CLI/Server 项目（loop-engineering 同类）"},
-            {"key": "generic", "name": "Generic", "desc": "通用项目（无特定语言/framework）"},
-        ],
-        "current_root": pr,
-    })
+async def setup_page(request: Request):
+    import subprocess
+
+    git_user = ""
+    try:
+        r = subprocess.run(
+            "git config user.name", shell=True, capture_output=True, text=True,
+            encoding='utf-8', errors='replace', timeout=5
+        )
+        git_user = r.stdout.strip()
+    except Exception:
+        pass
+    return render(request, "setup.html", {"request": request, "git_user": git_user})

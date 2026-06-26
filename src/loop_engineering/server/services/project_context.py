@@ -1,19 +1,19 @@
-"""项目上下文构建服务 — 纯逻辑，无路由依赖."""
+"""Project context service — build project list context for Dashboard."""
 
 import os
 import subprocess
+from loop_engineering.registry import list_projects, register_project
+from loop_engineering.config import is_project_dir, read_config
+from loop_engineering.runlog import get_pass_rate
+from .task_parser import parse_tasks
 
-from loop_engineering.task_id import extract_task_id_from_branch
-from loop_engineering.server.services.task_parser import parse_tasks
 
-
-def filter_agent_workspace_copies(project_list):
-    """过滤掉 agent workspace 拷贝：loop-config.yaml 里的 project.root 和自身路径不一致."""
-    from loop_engineering.config import read_config as _read_cfg
+def _filter_agent_workspace_copies(project_list):
+    """Filter out agent workspace copies: loop-config.yaml project.root != actual path."""
     result = []
     for p in project_list:
         try:
-            cfg = _read_cfg(p["root"])
+            cfg = read_config(p["root"])
             cfg_root = cfg.get("project", {}).get("root", "")
             if cfg_root and os.path.normcase(os.path.abspath(cfg_root)) != os.path.normcase(os.path.abspath(p["root"])):
                 continue
@@ -24,32 +24,28 @@ def filter_agent_workspace_copies(project_list):
 
 
 def build_projects_context(current_pr, agent_filter=""):
-    """构建项目列表 + 当前项目信息（仅包含有 loop-config.yaml 的项目）。
+    """Build project list + current project info. Only includes projects with loop-config.yaml.
 
     Args:
-        current_pr: 当前项目根目录
-        agent_filter: agent 名筛选（可选）
+        current_pr: current project root path.
+        agent_filter: optional agent name to filter branches by.
 
     Returns:
-        list of dict，每个项目包含 name, root, tasks, pass_rate, branches 等
+        list of project dicts with tasks, pass_rate, branches info.
     """
-    from loop_engineering.registry import list_projects, register_project
-    from loop_engineering.config import is_project_dir, read_config
-    from loop_engineering.runlog import get_pass_rate
-
     projects = list_projects()
 
-    # 自动注册当前项目
+    # Auto-register current project (only if loop-config.yaml exists)
     if is_project_dir(current_pr) and not any(
         os.path.normcase(p["root"]) == os.path.normcase(current_pr) for p in projects
     ):
         register_project(current_pr)
         projects = list_projects()
 
-    # 过滤掉没有 loop-config.yaml 的孤项目
+    # Filter out projects without loop-config.yaml
     projects = [p for p in projects if is_project_dir(p["root"])]
-    # 过滤掉 agent workspace 拷贝
-    projects = filter_agent_workspace_copies(projects)
+    # Filter out agent workspace copies
+    projects = _filter_agent_workspace_copies(projects)
 
     result = []
     for p in projects:
@@ -62,7 +58,7 @@ def build_projects_context(current_pr, agent_filter=""):
         tasks = parse_tasks(pr)
         passed, total, rate = get_pass_rate(pr, days=7)
 
-        # branches — 用 git for-each-ref 获取 agent 分支
+        # Branches — use git for-each-ref, sorted by commit time desc
         branches_list = []
         seen = set()
         try:
@@ -80,28 +76,37 @@ def build_projects_context(current_pr, agent_filter=""):
                     continue
                 seen.add(b)
 
+                # Filter by agent name (branch format: agent/<whoami>/<task_id>-<slug>)
                 if agent_filter:
                     parts = b.split("/")
                     if len(parts) < 2 or parts[0] != "agent" or parts[1] != agent_filter:
                         continue
 
-                tid = extract_task_id_from_branch(b)
-                branches_list.append({
-                    "name": b,
-                    "task_id": tid or "",
-                })
+                # Check merge status
+                if ref.startswith("origin/"):
+                    r2 = subprocess.run(
+                        f"git merge-base --is-ancestor {ref} origin/master",
+                        shell=True, capture_output=True, cwd=pr, timeout=5
+                    )
+                    branches_list.append({"name": b, "merged": r2.returncode == 0})
+                else:
+                    r_merged = subprocess.run(
+                        f"git branch --merged master --list {b}", shell=True, capture_output=True,
+                        text=True, encoding='utf-8', errors='replace', cwd=pr, timeout=5
+                    )
+                    branches_list.append({"name": b, "merged": r_merged.stdout.strip() != ""})
         except Exception:
             pass
 
         result.append({
-            "name": cfg.get("project", {}).get("name", os.path.basename(pr)),
+            "name": p["name"],
             "root": pr,
+            "is_current": pr == current_pr,
             "tasks": {
-                "pending": sum(1 for t in tasks if t.status == " "),
-                "in_progress": sum(1 for t in tasks if t.status == "~"),
-                "done": sum(1 for t in tasks if t.status == "x"),
-                "reopen": sum(1 for t in tasks if t.status == "r"),
-                "total": len(tasks),
+                "pending": sum(1 for t in tasks if t["status"] == "pending"),
+                "in_progress": sum(1 for t in tasks if t["status"] in ("in_progress", "pending_merge", "reopen")),
+                "done": sum(1 for t in tasks if t["status"] == "done"),
+                "pending_merge": sum(1 for t in tasks if t["status"] == "pending_merge"),
             },
             "pass_rate": {"passed": passed, "total": total, "rate": round(rate * 100, 1)},
             "branches": branches_list,

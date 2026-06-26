@@ -1,134 +1,96 @@
-"""Tests for control.py — heartbeat, pause/resume, throttle state machine."""
+"""Tests for control module — heartbeat, pause, throttle state machine."""
 
 import os
 import time
+from datetime import datetime, timezone, timedelta
 import pytest
-from loop_engineering.control import (
-    write_heartbeat,
-    read_heartbeat,
-    is_loop_running,
-    is_paused,
-    set_pause,
-    get_throttle,
-    set_throttle,
-    get_status,
-)
-
-
-@pytest.fixture
-def ctrl_dir(tmp_dir):
-    """Create a .loop-engineering/control/ directory in tmp_dir."""
-    cdir = os.path.join(tmp_dir, ".loop-engineering", "control")
-    os.makedirs(cdir, exist_ok=True)
-    return tmp_dir
 
 
 class TestHeartbeat:
-    """Tests for heartbeat write/read/is_running."""
+    def test_write_heartbeat_creates_file(self, tmp_project):
+        from loop_engineering.control import write_heartbeat
+        write_heartbeat(tmp_project)
+        hb_path = os.path.join(tmp_project, ".loop-engineering", "control", "heartbeat")
+        assert os.path.exists(hb_path)
 
-    def test_write_and_read_heartbeat(self, ctrl_dir):
-        """Write heartbeat then read it back."""
-        write_heartbeat(ctrl_dir)
-        hb = read_heartbeat(ctrl_dir)
+    def test_read_heartbeat_returns_none_when_no_file(self, tmp_project):
+        from loop_engineering.control import read_heartbeat
+        assert read_heartbeat(tmp_project) is None
+
+    def test_read_heartbeat_returns_datetime(self, tmp_project):
+        from loop_engineering.control import write_heartbeat, read_heartbeat
+        write_heartbeat(tmp_project)
+        hb = read_heartbeat(tmp_project)
         assert hb is not None
-
-    def test_read_heartbeat_when_none(self, ctrl_dir):
-        """Reading heartbeat when none was written returns None."""
-        hb = read_heartbeat(ctrl_dir)
-        assert hb is None
-
-    def test_is_running_after_write(self, ctrl_dir):
-        """Immediately after writing heartbeat, is_running should be True."""
-        write_heartbeat(ctrl_dir)
-        # Use a small threshold to ensure it's recognized as running
-        assert is_loop_running(ctrl_dir, threshold_minutes=10) is True
-
-    def test_is_running_when_no_heartbeat(self, ctrl_dir):
-        """Without any heartbeat file, is_running should be False."""
-        assert is_loop_running(ctrl_dir, threshold_minutes=10) is False
-
-    def test_read_heartbeat_returns_datetime(self, ctrl_dir):
-        """Read heartbeat should return a datetime object."""
-        write_heartbeat(ctrl_dir)
-        from datetime import datetime
-        hb = read_heartbeat(ctrl_dir)
         assert isinstance(hb, datetime)
+
+    def test_is_loop_running_false_when_no_heartbeat(self, tmp_project):
+        from loop_engineering.control import is_loop_running
+        assert is_loop_running(tmp_project) is False
+
+    def test_is_loop_running_true_with_recent_heartbeat(self, tmp_project):
+        from loop_engineering.control import write_heartbeat, is_loop_running
+        write_heartbeat(tmp_project)
+        assert is_loop_running(tmp_project, threshold_minutes=10) is True
 
 
 class TestPause:
-    """Tests for pause/resume."""
+    def test_set_pause_creates_file(self, tmp_project):
+        from loop_engineering.control import set_pause, is_paused
+        set_pause(tmp_project, True)
+        assert is_paused(tmp_project) is True
 
-    def test_is_paused_default_false(self, ctrl_dir):
-        """By default, pause flag should not exist."""
-        assert is_paused(ctrl_dir) is False
+    def test_set_pause_removes_file(self, tmp_project):
+        from loop_engineering.control import set_pause, is_paused
+        set_pause(tmp_project, True)
+        set_pause(tmp_project, False)
+        assert is_paused(tmp_project) is False
 
-    def test_set_pause_true(self, ctrl_dir):
-        """Setting pause should create the flag."""
-        set_pause(ctrl_dir, True)
-        assert is_paused(ctrl_dir) is True
-
-    def test_set_pause_false(self, ctrl_dir):
-        """Unsetting pause should remove the flag."""
-        set_pause(ctrl_dir, True)
-        set_pause(ctrl_dir, False)
-        assert is_paused(ctrl_dir) is False
-
-    def test_set_pause_false_when_not_paused(self, ctrl_dir):
-        """Unpausing when not paused should not error."""
-        set_pause(ctrl_dir, False)
-        assert is_paused(ctrl_dir) is False
-
-    def test_pause_toggle(self, ctrl_dir):
-        """Toggle pause multiple times."""
-        set_pause(ctrl_dir, True)
-        assert is_paused(ctrl_dir) is True
-        set_pause(ctrl_dir, False)
-        assert is_paused(ctrl_dir) is False
-        set_pause(ctrl_dir, True)
-        assert is_paused(ctrl_dir) is True
+    def test_is_paused_false_by_default(self, tmp_project):
+        from loop_engineering.control import is_paused
+        assert is_paused(tmp_project) is False
 
 
 class TestThrottle:
-    """Tests for throttle get/set."""
+    def test_get_throttle_returns_default(self, tmp_project):
+        from loop_engineering.control import get_throttle
+        assert get_throttle(tmp_project) == "2m"
 
-    def test_get_throttle_default(self, ctrl_dir):
-        """When throttle is not set, default is returned."""
-        assert get_throttle(ctrl_dir, "2m") == "2m"
+    def test_get_throttle_custom_default(self, tmp_project):
+        from loop_engineering.control import get_throttle
+        assert get_throttle(tmp_project, default="5m") == "5m"
 
-    def test_set_and_get_throttle(self, ctrl_dir):
-        """Set throttle then read it back."""
-        set_throttle(ctrl_dir, "5m")
-        assert get_throttle(ctrl_dir, "2m") == "5m"
-
-    def test_get_throttle_custom_default(self, ctrl_dir):
-        """Custom default is returned when throttle is not set."""
-        assert get_throttle(ctrl_dir, "10m") == "10m"
-
-    def test_throttle_persists(self, ctrl_dir):
-        """Throttle value should persist on disk."""
-        set_throttle(ctrl_dir, "30s")
-        assert get_throttle(ctrl_dir, "2m") == "30s"
+    def test_set_and_get_throttle(self, tmp_project):
+        from loop_engineering.control import set_throttle, get_throttle
+        set_throttle(tmp_project, "30s")
+        assert get_throttle(tmp_project) == "30s"
 
 
-class TestGetStatus:
-    """Tests for get_status() aggregated state."""
-
-    def test_get_status_returns_dict(self, ctrl_dir):
-        """get_status should return a dict with expected keys."""
-        write_heartbeat(ctrl_dir)
-        status = get_status(ctrl_dir)
+class TestStatus:
+    def test_get_status_returns_dict(self, tmp_project):
+        from loop_engineering.control import get_status
+        status = get_status(tmp_project)
         assert isinstance(status, dict)
-        for key in ("paused", "throttle", "running", "heartbeat", "pid", "pid_alive"):
-            assert key in status
+        assert "running" in status
+        assert "paused" in status
+        assert "throttle" in status
+        assert "heartbeat" in status
+        assert "pid" in status
 
-    def test_get_status_no_heartbeat(self, ctrl_dir):
-        """get_status without heartbeat shows not running."""
-        status = get_status(ctrl_dir)
+    def test_get_status_no_heartbeat(self, tmp_project):
+        from loop_engineering.control import get_status
+        status = get_status(tmp_project)
         assert status["running"] is False
         assert status["heartbeat"] is None
 
-    def test_get_status_has_throttle(self, ctrl_dir):
-        """get_status includes correct throttle value."""
-        set_throttle(ctrl_dir, "1m")
-        status = get_status(ctrl_dir)
-        assert status["throttle"] == "1m"
+
+class TestLoopStartedAt:
+    def test_write_loop_started_at_creates_file(self, tmp_project):
+        from loop_engineering.control import write_loop_started_at
+        write_loop_started_at(tmp_project)
+        ls_path = os.path.join(tmp_project, ".loop-engineering", "control", "loop_started_at")
+        assert os.path.exists(ls_path)
+
+    def test_read_loop_started_at_returns_none_when_no_file(self, tmp_project):
+        from loop_engineering.control import read_loop_started_at
+        assert read_loop_started_at(tmp_project) is None

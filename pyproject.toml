@@ -13,6 +13,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+]
 ui = [
     "fastapi>=0.100",
     "uvicorn>=0.23",
