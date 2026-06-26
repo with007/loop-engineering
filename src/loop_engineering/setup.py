@@ -669,3 +669,100 @@ def _commit_setup_files(config):
 
 # ── SKILL.md 模板 ─────────────────────────────────────────────
 
+
+# ── Teardown ──────────────────────────────────────────────────
+
+def _remove_worktree(source_repo, target_dir, label, force, dry_run, _log):
+    """移除单个 git worktree。幂等。"""
+    if not os.path.exists(target_dir):
+        _log(f"移除 {label}", True, "目录已不存在")
+        return
+
+    git_file = os.path.join(target_dir, ".git")
+    if not os.path.exists(git_file):
+        _log(f"移除 {label}", True, "不是 worktree（无 .git），跳过")
+        return
+
+    if dry_run:
+        _log(f"移除 {label}", True, f"(dry-run) 将删除 {target_dir}")
+        return
+
+    code, stdout, stderr = _run(
+        f'git worktree remove --force "{target_dir}"', cwd=source_repo
+    )
+    if code != 0:
+        if force and os.path.exists(target_dir):
+            shutil.rmtree(target_dir, ignore_errors=True)
+            _run("git worktree prune", cwd=source_repo)
+            _log(f"移除 {label}", True, "强制删除目录 + prune")
+            return
+        _log(f"移除 {label}", False, stderr[:120])
+    else:
+        _run("git worktree prune", cwd=source_repo)
+        _log(f"移除 {label}", True)
+
+
+def run_teardown(project_root, force=False, dry_run=False):
+    """移除 loop-engineering 的 agent worktree 和注册表条目。
+
+    不删除主项目中的文件（.claude/、.mcp.json 等保留）。
+    返回 {"removed": bool, "steps": [...], "warnings": [...]}
+    """
+    from . import registry
+
+    steps = []
+    warnings = []
+
+    def _log(action, ok, detail=""):
+        entry = {"action": action, "ok": ok, "detail": detail}
+        steps.append(entry)
+        if ok:
+            print(f"  [OK] {action} {detail}".strip())
+        else:
+            print(f"  [WARN] {action}: {detail}")
+
+    config = cfg.read_config(project_root)
+    if not config:
+        _log("读取配置", False, "loop-config.yaml 不存在")
+        return {"removed": False, "steps": steps, "warnings": ["config not found"]}
+
+    agent_workspace = config.get("agent", {}).get("workspace", "")
+    project_name = config.get("project", {}).get("name", os.path.basename(project_root))
+
+    # 1. 移除主工程 agent worktree
+    if agent_workspace:
+        agent_dir = os.path.join(agent_workspace, project_name)
+        _remove_worktree(project_root, agent_dir, "主工程 agent worktree", force, dry_run, _log)
+
+        # 2. 移除 data repo worktree（如果有）
+        data_repo = config.get("data_repo", {}).get("path")
+        if data_repo:
+            data_name = os.path.basename(data_repo)
+            data_agent_dir = os.path.join(agent_workspace, data_name)
+            _remove_worktree(data_repo, data_agent_dir, "配表 data worktree", force, dry_run, _log)
+    else:
+        _log("agent workspace", False, "配置中没有 agent.workspace")
+
+    # 3. 删除 loop-config.yaml
+    if not dry_run:
+        config_path = os.path.join(project_root, "loop-config.yaml")
+        if os.path.exists(config_path):
+            os.remove(config_path)
+            _log("删除 loop-config.yaml", True)
+        else:
+            _log("删除 loop-config.yaml", True, "已不存在")
+    else:
+        _log("删除 loop-config.yaml", True, "(dry-run)")
+
+    # 4. 从注册表移除
+    if not dry_run:
+        registry.remove_project(project_root)
+        _log("从注册表移除", True, project_name)
+    else:
+        _log("从注册表移除", True, f"(dry-run) {project_name}")
+
+    return {
+        "removed": True,
+        "steps": steps,
+        "warnings": warnings,
+    }
