@@ -4,7 +4,9 @@
 
 ## 2026-06-26
 
-- [x] refactor-core-architecture (→ with) [f610728e] — 15:42 IMP1 VFY1 PASS · 16:45 IMP2 VFY1 PASS
+- [x] refactor-core-architecture (→ with) [f610728e] — 15:42 IMP1 VFY1 PASS · 16:45 IMP2 VFY1 PASS — 17:38 IMP3 VFY1 PASS
+  ## IMP2 反馈
+  1. pages.py 重构后缺少模板上下文变量：/control 缺少 status、/settings 缺少 config、/runs 缺少 pass_rate — 对照原 app.py 补齐
   ## IMP1 反馈
   1. routers/pages.py 和 routers/fragments.py 为空壳，路由未迁移。需从 app.py 搬入页面路由和 HTMX 片段路由，app.py 精简到仅实例+注册+start_server
   2. filter_tasks 的 order 和 filter_name 参数为 stub，需补全排序和 agent 名筛选逻辑，消除 4 个路由中的重复实现
