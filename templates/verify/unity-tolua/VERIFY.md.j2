@@ -1,9 +1,7 @@
 # 验证指南 — {{ project_name }}
 
-> 项目类型: Unity + ToLua
->
-> 本文件定义项目特定的自动化验证步骤。verifier 子代理按此执行。
-> 验证范围由变更驱动 — 只执行涉及模块的步骤，未涉及的跳过。
+> 本文件是 Unity + ToLua 类型的默认模板。`loop-test-init` 会根据项目
+> 实际情况定制所有内容：增删工具、调整手段、替换模块示例。
 > 重新运行 `loop setup` 会覆盖 — 有自定义内容请备份。
 
 ## 测试工具
@@ -15,9 +13,6 @@
 | MCP manage_editor | 控制 Play Mode 进入/退出 |
 | runtime-test skill | 执行注册的 Lua 自动测试，检查 PASS/FAIL 标记 |
 | Bash 命令 | Lua 路径生成脚本、进程管理 |
-
-> 以上为 Unity + ToLua 默认工具，loop-test-init 根据项目实际增删：
-> 如项目使用 IL2CPP 或其他 Lua 方案，调整编译和测试工具。
 
 ## 自动化验证手段
 
