@@ -41,7 +41,12 @@ pip install -e ".[ui]"
 - 关键元素正常渲染（导航、表格、图表等）
 - 核心交互流程可走通
 
-关键页面：`/`（仪表盘）、`/tasks`、`/runs`、`/control`、`/settings`
+关键页面：
+- `/` — 仪表盘首页，展示项目统计（通过率图表、近期运行记录）
+- `/tasks` — 任务列表，显示 tasks.md 中的任务状态和分配情况
+- `/runs` — 运行历史，展示所有 IMP/VFY 运行记录
+- `/control` — 循环控制，管理 agent 循环的启停和心跳状态
+- `/settings` — 配置编辑，在线编辑 VERIFY.md 和 TEST.md
 
 ### CLI 验证
 
