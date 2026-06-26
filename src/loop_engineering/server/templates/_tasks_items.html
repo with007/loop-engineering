@@ -1,6 +1,6 @@
 <!-- Task items partial: progress bar + task cards, polled every 30s -->
 <div id="tasks-items"
-     hx-get="/tasks/list-items?order={{ order }}&amp;status={{ status }}&amp;filter={{ filter | urlencode }}"
+     hx-get="/tasks/list-items?order={{ order }}&amp;status={{ status }}&amp;filter={{ filter | urlencode }}&amp;project={{ current_root | urlencode }}"
      hx-trigger="every 30s"
      hx-swap="outerHTML">
     <!-- 进度 bar -->

@@ -320,11 +320,14 @@
             }
         };
 
-        // Single htmx:configRequest — inject X-Loop-Project header
+        // Single htmx:configRequest — inject X-Loop-Project header + project query param
         document.body.addEventListener('htmx:configRequest', function(evt) {
             var proj = window.Project.current();
             if (proj) {
                 evt.detail.headers['X-Loop-Project'] = proj;
+                if (!evt.detail.path.includes('project=')) {
+                    evt.detail.path += (evt.detail.path.includes('?') ? '&' : '?') + 'project=' + encodeURIComponent(proj);
+                }
             }
         });
 

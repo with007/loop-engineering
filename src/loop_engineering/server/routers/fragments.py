@@ -174,6 +174,7 @@ async def tasks_list_items(
         "request": request,
         "tasks": tasks,
         "agent_name": get_agent_name(pr),
+        "current_root": pr,
         "order": order,
         "status": status,
         "filter": filter,
