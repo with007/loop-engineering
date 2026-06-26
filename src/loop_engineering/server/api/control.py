@@ -4,23 +4,9 @@ import os
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
+from loop_engineering.path_utils import resolve_project_root
 
 router = APIRouter()
-
-
-def _project_root(project: str = None):
-    if project:
-        return project
-    # 回退：env 或 cwd，但排除明显错误的系统目录
-    root = os.environ.get("LOOP_PROJECT_ROOT", os.getcwd())
-    # Windows 上如果跑到了 System32，说明 project 没传过来
-    system_root = os.environ.get("SystemRoot", "")
-    if system_root and root.startswith(system_root):
-        raise RuntimeError(
-            f"Project root resolved to system directory '{root}'. "
-            "Please pass ?project=<path> in the URL or set LOOP_PROJECT_ROOT."
-        )
-    return root
 
 
 class ThrottleRequest(BaseModel):
@@ -30,27 +16,27 @@ class ThrottleRequest(BaseModel):
 @router.get("/status")
 def get_status(project: str = Query(None)):
     from loop_engineering.control import get_status as ctrl_status
-    return ctrl_status(_project_root(project))
+    return ctrl_status(resolve_project_root(project=project))
 
 
 @router.post("/pause")
 def pause(project: str = Query(None)):
     from loop_engineering.control import set_pause
-    set_pause(_project_root(project), True)
+    set_pause(resolve_project_root(project=project), True)
     return Response(status_code=200, headers={"HX-Refresh": "true"})
 
 
 @router.delete("/pause")
 def resume(project: str = Query(None)):
     from loop_engineering.control import set_pause
-    set_pause(_project_root(project), False)
+    set_pause(resolve_project_root(project=project), False)
     return Response(status_code=200, headers={"HX-Refresh": "true"})
 
 
 @router.put("/throttle")
 def set_throttle(req: ThrottleRequest, project: str = Query(None)):
     from loop_engineering.control import set_throttle as ctrl_set
-    ctrl_set(_project_root(project), req.interval)
+    ctrl_set(resolve_project_root(project=project), req.interval)
     from fastapi.responses import HTMLResponse
     return HTMLResponse(content=f"<span style='color:var(--pass);font-size:13px;'>间隔设为 {req.interval}</span>")
 
@@ -58,7 +44,7 @@ def set_throttle(req: ThrottleRequest, project: str = Query(None)):
 @router.post("/start")
 def start(project: str = Query(None)):
     from loop_engineering.control import start_loop
-    result = start_loop(_project_root(project))
+    result = start_loop(resolve_project_root(project=project))
     if result.get("started"):
         return Response(status_code=200, headers={"HX-Refresh": "true"})
     return Response(
@@ -72,7 +58,7 @@ def start(project: str = Query(None)):
 @router.post("/stop")
 def stop(project: str = Query(None)):
     from loop_engineering.control import stop_loop
-    result = stop_loop(_project_root(project))
+    result = stop_loop(resolve_project_root(project=project))
     return Response(status_code=200, headers={"HX-Refresh": "true"})
 
 
@@ -81,7 +67,7 @@ def get_log(project: str = Query(None), lines: int = Query(50)):
     """返回 loop 最近输出（从 Claude session JSONL 读取）."""
     import json, re
     lines = int(lines) if isinstance(lines, (int, str)) else 50
-    pr = _project_root(project).replace("\\", "/")
+    pr = resolve_project_root(project=project).replace("\\", "/")
     claude_name = re.sub(r'^([a-z]):/', r'\1--', pr.lower())
     claude_name = re.sub(r'[^a-z0-9]', '-', claude_name)
     base = os.path.join(os.path.expanduser("~"), ".claude", "projects")
@@ -127,7 +113,7 @@ def focus_window(project: str = Query(None)):
     if platform.system() != "Windows":
         return Response(status_code=200, content="Not Windows", media_type="text/plain")
 
-    pr = _project_root(project)
+    pr = resolve_project_root(project=project)
     from loop_engineering.control import _read_pid, _pid_alive, _pid_path
     pid = _read_pid(pr)
     if not pid or not _pid_alive(pid):

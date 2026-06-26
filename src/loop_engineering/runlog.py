@@ -7,6 +7,7 @@
 import os
 import json
 from datetime import datetime, timezone
+from loop_engineering.utils import atomic_write
 
 
 def _runs_dir(project_root):
@@ -40,8 +41,8 @@ def write_run_log(project_root, entry):
     fname = f"{entry['task_id']}--IMP{entry['imp_round']}--VFY{entry['vfy_round']}.json"
     fpath = os.path.join(runs, fname)
 
-    with open(fpath, "w", encoding="utf-8") as f:
-        json.dump(entry, f, indent=2, ensure_ascii=False, default=str)
+    content = json.dumps(entry, indent=2, ensure_ascii=False, default=str)
+    atomic_write(fpath, content)
 
     return fpath
 

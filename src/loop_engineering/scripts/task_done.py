@@ -4,35 +4,15 @@
 注意：不 commit、不 push、不 checkout —— 由调用方（SKILL.md Step 5）负责。
 用法: python -m loop_engineering.scripts.task_done <username> <taskID> [IMP序号] [VFY轮数]
 """
-import subprocess, sys, re, time, os, json
+import subprocess, sys, re, time, os, json, shlex
 from datetime import datetime, timezone
-from loop_engineering.task_id import make_branch_name, parse_task_id
-from loop_engineering.config import is_project_dir
+from loop_engineering.task_id import TaskLine, make_branch_name
+from loop_engineering.path_utils import find_project_root, get_default_branch
 
 
 def run(cmd):
     return subprocess.run(cmd, shell=True, capture_output=True, text=True,
                           encoding='utf-8', errors='replace')
-
-
-def _find_project_root():
-    p = os.getcwd()
-    for _ in range(10):
-        if is_project_dir(p):
-            return p
-        parent = os.path.dirname(p)
-        if parent == p:
-            break
-        p = parent
-    return os.getcwd()
-
-
-def _default_branch():
-    """获取默认分支引用。优先级: local master > local main > origin/master > origin/main."""
-    for ref in ["master", "main", "origin/master", "origin/main"]:
-        if run(f"git rev-parse --verify {ref}").returncode == 0:
-            return ref
-    return "master"
 
 
 def update_tasks_md(task_id, whoami, imp_n, vfy_n, project_root):
@@ -50,14 +30,18 @@ def update_tasks_md(task_id, whoami, imp_n, vfy_n, project_root):
 
         with open(tasks_path, "w", encoding="utf-8") as f:
             for line in lines:
-                m = re.match(r'^(- \[[ r~]\]\s+)(.+?)(\s+\(→\s*' + re.escape(whoami) + r'\).*)$', line)
-                if m and parse_task_id(line) == task_id:
-                    if line.startswith('- [r] '):
+                tl = TaskLine.parse(line.rstrip('\n'))
+                if tl and tl.task_id == task_id and tl.assignee == whoami and tl.status in (" ", "~", "r"):
+                    if tl.status == "r":
                         # reopen 任务：追加新记录
-                        new_meta = m.group(3).rstrip() + " · " + now + f" IMP{imp_n} VFY{vfy_n} PASS"
-                        f.write(f"- [x] {m.group(2)}{new_meta}\n")
+                        old_meta = tl.meta
+                        new_meta = (old_meta + " · " + now + f" IMP{imp_n} VFY{vfy_n} PASS") if old_meta else (now + f" IMP{imp_n} VFY{vfy_n} PASS")
+                        tl.status = "x"
+                        tl.meta = new_meta
                     else:
-                        f.write(f"- [x] {m.group(2)}{m.group(3)}{record}\n")
+                        tl.status = "x"
+                        tl.meta = (tl.meta + " · " + now + f" IMP{imp_n} VFY{vfy_n} PASS") if tl.meta else (now + f" IMP{imp_n} VFY{vfy_n} PASS")
+                    f.write(tl.format() + "\n")
                     updated = True
                 else:
                     f.write(line)
@@ -85,17 +69,19 @@ def main():
     diff_file = f"agent-{whoami}-{task_id}.diff"
 
     project_root = None
+    fmt = None
     for i, arg in enumerate(sys.argv):
         if arg == "--project-root" and i + 1 < len(sys.argv):
             project_root = sys.argv[i + 1]
-            break
+        elif arg == "--format" and i + 1 < len(sys.argv):
+            fmt = sys.argv[i + 1]
     if not project_root:
-        project_root = _find_project_root()
+        project_root = find_project_root()
 
     print(f"=== 任务完成: {task_id} ===")
 
     # 生成 diff（写到主 worktree，方便人审查和 cleanup 清理）
-    base = _default_branch()
+    base = get_default_branch()
     diff_path = os.path.join(project_root, diff_file)
     run(f"git diff -U10 {base}...{branch} > {diff_path}")
     print(f"Diff: {diff_path}")
@@ -115,6 +101,13 @@ def main():
     time.sleep(2)
 
     print(f"=== {task_id} 已推送，等人合入 ===")
+
+    # --format=shell output
+    if fmt == "shell":
+        print(f"STATUS=ok")
+        print(f"TASK_ID={shlex.quote(task_id)}")
+        print(f"BRANCH={shlex.quote(branch)}")
+        print(f"DIFF={shlex.quote(diff_path)}")
 
 
 def _write_run_log(project_root, task_id, whoami, imp_n, vfy_n, branch):

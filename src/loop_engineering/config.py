@@ -69,11 +69,13 @@ def read_config(project_root):
 
 
 def write_config(project_root, config):
-    """写入 loop-config.yaml 到 .loop-engineering/ 下."""
+    """写入 loop-config.yaml 到 .loop-engineering/ 下（原子写入）."""
+    from loop_engineering.utils import atomic_write
+
     config_path = _config_path(project_root)
-    os.makedirs(os.path.dirname(config_path), exist_ok=True)
-    with open(config_path, "w", encoding="utf-8") as f:
-        yaml.dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    import yaml
+    content = yaml.dump(config, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    atomic_write(config_path, content)
     return config_path
 
 
@@ -213,3 +215,31 @@ def _detect_data_repo(project_root, project_name):
     if os.path.isdir(os.path.join(candidate, ".git")):
         return candidate
     return None
+
+
+def get_agent_dir(config):
+    """从配置计算 agent worktree 路径。
+
+    Args:
+        config: 项目配置 dict（需包含 agent.workspace 和 project.name）
+
+    Returns:
+        agent worktree 的绝对路径
+    """
+    return os.path.join(config["agent"]["workspace"], config["project"]["name"])
+
+
+def get_data_agent_dir(config):
+    """从配置计算 data agent worktree 路径（如果有 data_repo）。
+
+    Args:
+        config: 项目配置 dict
+
+    Returns:
+        data agent worktree 的绝对路径，无 data_repo 时返回 None
+    """
+    data_repo = config.get("data_repo")
+    if not data_repo or not data_repo.get("path"):
+        return None
+    data_name = os.path.basename(data_repo["path"])
+    return os.path.join(config["agent"]["workspace"], data_name)

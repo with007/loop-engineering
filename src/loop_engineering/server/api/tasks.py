@@ -5,7 +5,8 @@ import re
 import subprocess
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from loop_engineering.task_id import parse_task_id, extract_task_id_from_branch
+from loop_engineering.task_id import parse_task_id, extract_task_id_from_branch, TaskLine, generate_task_id
+from loop_engineering.path_utils import resolve_project_root
 
 router = APIRouter()
 
@@ -13,25 +14,6 @@ router = APIRouter()
 def _match_task_id(line, task_id):
     """检查 tasks.md 行是否匹配给定 task_id."""
     return parse_task_id(line) == task_id
-
-
-def _project_root(project: str = None):
-    if project:
-        return project
-    env = os.environ.get("LOOP_PROJECT_ROOT")
-    if env:
-        return env
-    from loop_engineering.config import is_project_dir
-    # 向上搜索 git 仓库根目录或 loop 项目目录（兜底：server 的 cwd 可能不是项目根）
-    d = os.getcwd()
-    for _ in range(10):
-        if os.path.exists(os.path.join(d, ".git")) or is_project_dir(d):
-            return d
-        parent = os.path.dirname(d)
-        if parent == d:
-            break
-        d = parent
-    return os.getcwd()
 
 
 class AddTaskRequest(BaseModel):
@@ -46,40 +28,32 @@ class ReopenRequest(BaseModel):
 @router.get("/list")
 def list_tasks(project: str = Query(None)):
     """解析 tasks.md 返回任务列表."""
-    pr = _project_root(project)
+    pr = resolve_project_root(project=project)
     tasks_path = os.path.join(pr, "tasks.md")
     if not os.path.exists(tasks_path):
         return {"tasks": []}
 
     tasks = []
     current_task = None
+    status_map = {" ": "pending", "~": "in_progress", "x": "done", "r": "reopen"}
     with open(tasks_path, "r", encoding="utf-8") as f:
         for line in f:
-            m = re.match(r'^- \[(.)\]\s+(.+?)(\s+\(→\s*(\w+)\))?(\s+\[[a-f0-9]{8}\])?(\s+—\s+(.+))?$', line)
-            if m:
+            tl = TaskLine.parse(line.rstrip('\n'))
+            if tl:
                 current_task = None  # new task starts, flush previous
-                status_char = m.group(1)
-                desc = m.group(2).strip()
-                assignee = m.group(4) if m.group(4) else ""
-                meta = m.group(7) if m.group(7) else ""
-
-                status_map = {" ": "pending", "~": "in_progress", "x": "done", "r": "reopen"}
-                tid = parse_task_id(line)
-                # 从描述中去除 [task_id]
-                clean_desc = desc
-                if tid:
-                    clean_desc = re.sub(r'\s+\[[a-f0-9]{8}\]\s*$', '', desc).strip()
+                clean_desc = tl.description
+                if tl.task_id:
+                    clean_desc = re.sub(r'\s+\[[a-f0-9]{8}\]\s*$', '', clean_desc).strip()
                 current_task = {
                     "description": clean_desc,
-                    "task_id": tid or "",
-                    "status": status_map.get(status_char, "pending"),
-                    "assignee": assignee,
-                    "meta": meta,
+                    "task_id": tl.task_id,
+                    "status": status_map.get(tl.status, "pending"),
+                    "assignee": tl.assignee,
+                    "meta": tl.meta,
                     "feedback": [],
                 }
                 tasks.append(current_task)
             elif re.match(r'^\s{2,}\S', line) and current_task:
-                # indented continuation line = feedback for the current task
                 current_task["feedback"].append(line.strip())
 
     return {"tasks": tasks}
@@ -87,11 +61,12 @@ def list_tasks(project: str = Query(None)):
 
 @router.post("/add")
 def add_task(req: AddTaskRequest, project: str = Query(None)):
-    """添加任务到 tasks.md."""
-    pr = _project_root(project)
+    """添加任务到 tasks.md（自动生成 task_id）."""
+    pr = resolve_project_root(project=project)
     tasks_path = os.path.join(pr, "tasks.md")
 
-    line = f"- [ ] {req.description} (→ {req.assignee})\n"
+    task_id = generate_task_id(req.description)
+    line = f"- [ ] {req.description} (→ {req.assignee}) [{task_id}]\n"
 
     if os.path.exists(tasks_path):
         with open(tasks_path, "a", encoding="utf-8") as f:
@@ -101,13 +76,13 @@ def add_task(req: AddTaskRequest, project: str = Query(None)):
             f.write("# Tasks\n\n")
             f.write(line)
 
-    return {"added": True, "description": req.description, "assignee": req.assignee}
+    return {"added": True, "description": req.description, "assignee": req.assignee, "task_id": task_id}
 
 
 @router.delete("/{task_id}")
 def delete_task(task_id: str, project: str = Query(None)):
     """删除任务及对应的 agent 分支。task_id 为 slugified description."""
-    pr = _project_root(project)
+    pr = resolve_project_root(project=project)
     tasks_path = os.path.join(pr, "tasks.md")
     if not os.path.exists(tasks_path):
         raise HTTPException(404, "tasks.md not found")
@@ -158,7 +133,7 @@ def delete_task(task_id: str, project: str = Query(None)):
 @router.put("/{task_id}/reset")
 def reset_task(task_id: str, project: str = Query(None)):
     """将进行中的任务 ([~]) 重置为待办 ([ ])，用于恢复被中断的任务."""
-    pr = _project_root(project)
+    pr = resolve_project_root(project=project)
     tasks_path = os.path.join(pr, "tasks.md")
     if not os.path.exists(tasks_path):
         raise HTTPException(404, "tasks.md not found")
@@ -192,7 +167,7 @@ def reset_task(task_id: str, project: str = Query(None)):
 @router.put("/{task_id}/reopen")
 def reopen_task(task_id: str, req: ReopenRequest, project: str = Query(None)):
     """将已完成任务 ([x]) 重新打开为返工状态 ([r])，可选追加反馈缩进行."""
-    pr = _project_root(project)
+    pr = resolve_project_root(project=project)
     tasks_path = os.path.join(pr, "tasks.md")
     if not os.path.exists(tasks_path):
         raise HTTPException(404, "tasks.md not found")
@@ -240,7 +215,7 @@ def reopen_task(task_id: str, req: ReopenRequest, project: str = Query(None)):
 @router.get("/{task_id}/report")
 def get_task_report(task_id: str, project: str = Query(None)):
     """搜索 git log 返回任务 commit 的多轮报告（markdown）。"""
-    pr = _project_root(project)
+    pr = resolve_project_root(project=project)
 
     r = subprocess.run(
         ["git", "log", "--all", f"--grep=\\[{task_id}\\]", "--format=%H%n%ai%n%B%n---REPORT-END---",

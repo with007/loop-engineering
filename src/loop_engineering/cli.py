@@ -11,6 +11,7 @@ import sys
 
 from . import config as cfg
 from . import setup
+from .path_utils import find_project_root
 
 
 def main():
@@ -241,27 +242,13 @@ def _cmd_init():
     setup.run_setup(config)
 
 
-def _find_project_root():
-    """从当前目录向上查找 loop-config.yaml，返回项目根目录路径."""
-    from loop_engineering.config import is_project_dir
-    p = os.getcwd()
-    for _ in range(10):
-        if is_project_dir(p):
-            return p
-        parent = os.path.dirname(p)
-        if parent == p:
-            break
-        p = parent
-    return None
-
-
 def _cmd_config(args):
     """查看或修改项目配置."""
     pr = args.project_root
     if pr:
         pr = os.path.abspath(pr)
     else:
-        pr = _find_project_root()
+        pr = find_project_root()
 
     if not pr:
         print("错误: 未找到 loop-config.yaml，请指定 --project-root 或在项目目录下运行")
@@ -308,8 +295,8 @@ def _cmd_config(args):
             sync_to_agent(new_config)
             print("  → MCP 配置已重新生成并同步")
         if changed & {"agent.name", "project.name"}:
-            from loop_engineering.setup import render_skill_md
-            render_skill_md(new_config)
+            from loop_engineering.setup import deploy_skills
+            deploy_skills(new_config)
             print("  → task-runner SKILL.md 已重新渲染")
     else:
         # show (默认)
@@ -329,7 +316,7 @@ def _cmd_teardown(args):
     if pr:
         pr = os.path.abspath(pr)
     else:
-        pr = _find_project_root()
+        pr = find_project_root()
 
     if not pr:
         print("错误: 未找到 loop-config.yaml，请指定 --project-root 或在项目目录下运行")
@@ -400,18 +387,8 @@ def _cmd_ui(args):
 def _find_and_start_ui(args):
     """从当前目录向上查找 loop-config.yaml，启动 Dashboard."""
     from loop_engineering.server.app import start_server
-    from loop_engineering.config import is_project_dir
 
-    p = os.getcwd()
-    project_root = p
-    for _ in range(10):
-        if is_project_dir(p):
-            project_root = p
-            break
-        parent = os.path.dirname(p)
-        if parent == p:
-            break
-        p = parent
+    project_root = find_project_root()
 
     print(f"Project: {project_root}")
     print(f"Dashboard: http://localhost:{args.port}")

@@ -70,3 +70,97 @@ def make_branch_name(whoami: str, task_id: str, description: str) -> str:
     """
     slug = make_readable_slug(description)
     return f"agent/{whoami}/{task_id}-{slug}"
+
+
+# ── TaskLine: tasks.md 统一解析 ──
+
+_TASK_LINE_RE = re.compile(
+    r'^- \[(.)\]\s+'             # checkbox: - [x]
+    r'(.+?)'                      # description (non-greedy)
+    r'(?:\s+\(→\s*(\w+)\))?'     # optional assignee: (→ whoami)
+    r'(?:\s+\[([a-f0-9]{8})\])?' # optional task_id: [xxxxxxxx]
+    r'(?:\s+—\s+(.+))?'          # optional meta: — text
+    r'$'
+)
+
+
+class TaskLine:
+    """tasks.md 中单行任务的解析和格式化。
+
+    字段:
+        status: " " (pending), "~" (in_progress), "x" (done), "r" (reopen)
+        description: 任务描述文本
+        assignee: 执行人（可选）
+        task_id: 8 位十六进制 ID（可选）
+        meta: 运行记录（可选，如 "14:30 IMP1 VFY1 PASS"）
+        feedback: 缩进跟随的反馈行列表（不参与 format）
+    """
+
+    __slots__ = ("status", "description", "assignee", "task_id", "meta", "feedback")
+
+    def __init__(self, status=" ", description="", assignee="", task_id="", meta="", feedback=None):
+        self.status = status
+        self.description = description
+        self.assignee = assignee
+        self.task_id = task_id
+        self.meta = meta
+        self.feedback = feedback if feedback is not None else []
+
+    @classmethod
+    def parse(cls, line: str):
+        """从 tasks.md 行解析 TaskLine。非任务行返回 None。
+
+        >>> TaskLine.parse("- [ ] Fix login (→ with) [a1b2c3d4] — 14:30 IMP1 VFY1 PASS")
+        TaskLine(status=' ', description='Fix login', assignee='with', task_id='a1b2c3d4', meta='14:30 IMP1 VFY1 PASS')
+        >>> TaskLine.parse("- [ ] Fix login")
+        TaskLine(status=' ', description='Fix login')
+        >>> TaskLine.parse("# Tasks")
+        None
+        """
+        m = _TASK_LINE_RE.match(line)
+        if not m:
+            return None
+        return cls(
+            status=m.group(1),
+            description=m.group(2).strip(),
+            assignee=m.group(3) or "",
+            task_id=m.group(4) or "",
+            meta=m.group(5) or "",
+        )
+
+    def format(self) -> str:
+        """序列化为 tasks.md 规范格式。parse(format(x)) == x 自反性。
+
+        >>> tl = TaskLine(' ', 'Fix login', 'with', 'a1b2c3d4', '14:30 IMP1 VFY1 PASS')
+        >>> tl.format()
+        '- [ ] Fix login (→ with) [a1b2c3d4] — 14:30 IMP1 VFY1 PASS'
+        """
+        parts = [f"- [{self.status}] {self.description}"]
+        if self.assignee:
+            parts.append(f" (→ {self.assignee})")
+        if self.task_id:
+            parts.append(f" [{self.task_id}]")
+        if self.meta:
+            parts.append(f" — {self.meta}")
+        return "".join(parts)
+
+    def __repr__(self):
+        fields = [f"status={self.status!r}"]
+        if self.description:
+            fields.append(f"description={self.description!r}")
+        if self.assignee:
+            fields.append(f"assignee={self.assignee!r}")
+        if self.task_id:
+            fields.append(f"task_id={self.task_id!r}")
+        if self.meta:
+            fields.append(f"meta={self.meta!r}")
+        return f"TaskLine({', '.join(fields)})"
+
+    def __eq__(self, other):
+        if not isinstance(other, TaskLine):
+            return NotImplemented
+        return (self.status == other.status and
+                self.description == other.description and
+                self.assignee == other.assignee and
+                self.task_id == other.task_id and
+                self.meta == other.meta)

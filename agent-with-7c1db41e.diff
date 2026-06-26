@@ -1,0 +1,244 @@
+diff --git a/src/loop_engineering/server/app.py b/src/loop_engineering/server/app.py
+index 04e32a8..57e57ba 100644
+--- a/src/loop_engineering/server/app.py
++++ b/src/loop_engineering/server/app.py
+@@ -112,20 +112,38 @@ def _read_tasks(pr):
+                 current_task["feedback"].append(line.strip())
+     return result
+ 
+ 
+ def _agent_name(pr):
+     from loop_engineering.config import read_config
+     cfg = read_config(pr)
+     return cfg.get("agent", {}).get("name", "")
+ 
+ 
++def _collect_agents(pr):
++    """从 tasks.md 收集所有涉及的 agent 名。确保当前 agent 也在列表中。"""
++    tp = os.path.join(pr, "tasks.md")
++    agents = set()
++    if os.path.exists(tp):
++        with open(tp, "r", encoding="utf-8") as f:
++            for line in f:
++                if re.match(r'^- \[.\]', line):
++                    m_assignee = re.search(r'\(→\s*(\w+)\)', line)
++                    if m_assignee:
++                        agents.add(m_assignee.group(1))
++    # 确保当前 agent 也在列表中（即使尚未出现在 tasks.md 中）
++    current = _agent_name(pr)
++    if current:
++        agents.add(current)
++    return sorted(agents)
++
++
+ def _is_htmx(request: Request):
+     return request.headers.get("HX-Request", "") == "true"
+ 
+ 
+ def _render(request: Request, template_name: str, context: dict):
+     if _is_htmx(request):
+         resp = templates.TemplateResponse(request, template_name, context)
+     else:
+         content_html = templates.get_template(template_name).render(context)
+         resp = templates.TemplateResponse(request, "base.html", {
+@@ -286,89 +304,100 @@ async def dashboard(request: Request, project: str = Query(None), filter: str =
+     return _render(request, "dashboard.html", {
+         "request": request,
+         "projects": all_projects,
+         "current_root": pr,
+         "current": current,
+         "filter": filter,
+     })
+ 
+ 
+ @app.get("/tasks")
+-async def tasks_page(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query("")):
++async def tasks_page(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query(None)):
+     pr = _project_root(request, q=project)
+     tasks = _read_tasks(pr)
+     allowed = [s.strip() for s in status.split(",") if s.strip()]
+     # "in_progress" filter also includes "pending_merge" and "reopen"
+     if "in_progress" in allowed:
+         allowed.extend(["pending_merge", "reopen"])
+     # "done" filter also includes "pending_merge" (completed but branch not yet merged)
+     if "done" in allowed:
+         allowed.append("pending_merge")
+     tasks = [t for t in tasks if t["status"] in allowed]
++    # 默认按当前 agent 筛选；显式传空字符串表示"全部"
++    if filter is None:
++        filter = _agent_name(pr)
+     # 按 agent 名筛选
+     if filter:
+         f_lower = filter.strip().lower()
+         tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
+     if order == "desc":
+         tasks = list(reversed(tasks))
+     return _render(request, "tasks.html", {
+         "request": request,
+         "tasks": tasks,
+         "agent_name": _agent_name(pr),
++        "agents": _collect_agents(pr),
+         "current_root": pr,
+         "order": order,
+         "status": status,
+         "filter": filter,
+     })
+ 
+ 
+ @app.get("/tasks/list")
+-async def tasks_list(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query("")):
++async def tasks_list(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query(None)):
+     """返回完整任务区域（控件 + 列表），供控件操作后刷新."""
+     pr = _project_root(request, q=project)
+     tasks = _read_tasks(pr)
+     allowed = [s.strip() for s in status.split(",") if s.strip()]
+     # "in_progress" filter also includes "pending_merge" and "reopen"
+     if "in_progress" in allowed:
+         allowed.extend(["pending_merge", "reopen"])
+     # "done" filter also includes "pending_merge" (completed but branch not yet merged)
+     if "done" in allowed:
+         allowed.append("pending_merge")
+     tasks = [t for t in tasks if t["status"] in allowed]
++    # 默认按当前 agent 筛选；显式传空字符串表示"全部"
++    if filter is None:
++        filter = _agent_name(pr)
+     # 按 agent 名筛选
+     if filter:
+         f_lower = filter.strip().lower()
+         tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
+     if order == "desc":
+         tasks = list(reversed(tasks))
+     return templates.TemplateResponse(request, "_tasks_list.html", {
+         "request": request,
+         "tasks": tasks,
+         "agent_name": _agent_name(pr),
++        "agents": _collect_agents(pr),
+         "order": order,
+         "status": status,
+         "filter": filter,
+     })
+ 
+ 
+ @app.get("/tasks/list-items")
+-async def tasks_list_items(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query("")):
++async def tasks_list_items(request: Request, project: str = Query(None), order: str = Query("desc"), status: str = Query("pending,in_progress"), filter: str = Query(None)):
+     """返回仅任务条目（进度条 + 卡片），供 30s 轮询刷新."""
+     pr = _project_root(request, q=project)
+     tasks = _read_tasks(pr)
+     allowed = [s.strip() for s in status.split(",") if s.strip()]
+     # "in_progress" filter also includes "pending_merge" and "reopen"
+     if "in_progress" in allowed:
+         allowed.extend(["pending_merge", "reopen"])
+     if "done" in allowed:
+         allowed.append("pending_merge")
+     tasks = [t for t in tasks if t["status"] in allowed]
++    # 默认按当前 agent 筛选；显式传空字符串表示"全部"
++    if filter is None:
++        filter = _agent_name(pr)
+     # 按 agent 名筛选
+     if filter:
+         f_lower = filter.strip().lower()
+         tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
+     if order == "desc":
+         tasks = list(reversed(tasks))
+     return templates.TemplateResponse(request, "_tasks_items.html", {
+         "request": request,
+         "tasks": tasks,
+         "agent_name": _agent_name(pr),
+@@ -404,20 +433,21 @@ async def tasks_add(request: Request, description: str = Form(...), assignee: st
+     # 按 agent 名筛选
+     if filter:
+         f_lower = filter.strip().lower()
+         tasks = [t for t in tasks if t.get("assignee", "").lower() == f_lower]
+     if order == "desc":
+         tasks = list(reversed(tasks))
+     return templates.TemplateResponse(request, "_tasks_list.html", {
+         "request": request,
+         "tasks": tasks,
+         "agent_name": _agent_name(pr),
++        "agents": _collect_agents(pr),
+         "order": order,
+         "status": status,
+         "filter": filter,
+     })
+ 
+ 
+ @app.get("/runs")
+ async def runs_page(request: Request, whoami: str = "", project: str = Query(None)):
+     from loop_engineering.runlog import list_runs, get_pass_rate
+     pr = _project_root(request, q=project)
+diff --git a/src/loop_engineering/server/templates/_tasks_list.html b/src/loop_engineering/server/templates/_tasks_list.html
+index ce59e38..d4b7e5c 100644
+--- a/src/loop_engineering/server/templates/_tasks_list.html
++++ b/src/loop_engineering/server/templates/_tasks_list.html
+@@ -14,24 +14,27 @@
+                     style="font-size: 12px; padding: 4px 12px; border-radius: 16px; cursor: pointer;
+                            {% if is_active %}
+                            background: var(--active); color: #fff; border: 1px solid var(--active);
+                            {% else %}
+                            background: transparent; color: var(--dim); border: 1px solid var(--border);
+                            {% endif %}
+                            transition: all 0.15s;">
+                 {{ slabel }}
+             </button>
+             {% endfor %}
+-            <input type="text" id="task-agent-filter" name="filter"
+-                   placeholder="按 Agent 名筛选..."
+-                   value="{{ filter or '' }}"
+-                   style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 4px 10px; border-radius: 7px; font-size: 12px; width: 160px; margin-left: 8px;">
++            <select id="task-agent-filter" name="filter"
++                    style="background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 4px 10px; border-radius: 7px; font-size: 12px; margin-left: 8px;">
++                <option value="">全部</option>
++                {% for a in agents %}
++                <option value="{{ a }}" {% if filter == a %}selected{% endif %}>{{ a }}</option>
++                {% endfor %}
++            </select>
+         </div>
+         <button class="sort-btn"
+                 style="font-size: 12px; padding: 4px 12px; border-radius: 16px; cursor: pointer;
+                        background: transparent; color: var(--dim); border: 1px solid var(--border);
+                        transition: all 0.15s;">
+             {% if order == "desc" %}↓ 新→旧{% else %}↑ 旧→新{% endif %}
+         </button>
+     </div>
+ 
+     {% include "_tasks_items.html" %}
+@@ -73,28 +76,24 @@ if (!window._tasksFilterBound) {
+ 
+         // Sort button click
+         if (e.target.closest('.sort-btn')) {
+             var newOrder = (currentOrder === 'desc') ? 'asc' : 'desc';
+             htmx.ajax('GET', '/tasks/list?order=' + newOrder + '&status=' + currentStatus + '&filter=' + encodeURIComponent(document.getElementById('task-agent-filter')?.value || ''),
+                       {target: '#tasks-list-wrap'});
+             return;
+         }
+     });
+ 
+-    // Agent filter input: debounced keyup triggers refresh
+-    var filterTimer;
+-    document.addEventListener('input', function(e) {
++    // Agent filter select: change triggers refresh
++    document.addEventListener('change', function(e) {
+         if (!e.target || e.target.id !== 'task-agent-filter') return;
+-        clearTimeout(filterTimer);
+-        filterTimer = setTimeout(function() {
+-            var items = document.getElementById('tasks-items');
+-            if (!items) return;
+-            var hxUrl = items.getAttribute('hx-get') || '';
+-            var params = new URLSearchParams(hxUrl.split('?')[1] || '');
+-            var currentOrder = params.get('order') || 'desc';
+-            var currentStatus = params.get('status') || 'pending,in_progress';
+-            htmx.ajax('GET', '/tasks/list?order=' + currentOrder + '&status=' + currentStatus + '&filter=' + encodeURIComponent(e.target.value),
+-                      {target: '#tasks-list-wrap'});
+-        }, 400);
++        var items = document.getElementById('tasks-items');
++        if (!items) return;
++        var hxUrl = items.getAttribute('hx-get') || '';
++        var params = new URLSearchParams(hxUrl.split('?')[1] || '');
++        var currentOrder = params.get('order') || 'desc';
++        var currentStatus = params.get('status') || 'pending,in_progress';
++        htmx.ajax('GET', '/tasks/list?order=' + currentOrder + '&status=' + currentStatus + '&filter=' + encodeURIComponent(e.target.value),
++                  {target: '#tasks-list-wrap'});
+     });
+ }
+ </script>

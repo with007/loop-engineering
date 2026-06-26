@@ -3,21 +3,16 @@
 import os
 import subprocess
 from fastapi import APIRouter, Query
+from loop_engineering.path_utils import resolve_project_root
 
 router = APIRouter()
-
-
-def _project_root(project: str = None):
-    if project:
-        return project
-    return os.environ.get("LOOP_PROJECT_ROOT", os.getcwd())
 
 
 def _find_all_projects(pr=None):
     """扫描配置目录，发现所有 loop-config.yaml 项目."""
     from loop_engineering.config import is_project_dir
     if pr is None:
-        pr = _project_root()
+        pr = resolve_project_root()
     projects = []
     # 当前项目
     if is_project_dir(pr):
@@ -78,4 +73,4 @@ def _count_agent_branches(project_root):
 
 @router.get("/list")
 def list_projects(project: str = Query(None)):
-    return {"projects": _find_all_projects(_project_root(project))}
+    return {"projects": _find_all_projects(resolve_project_root(project=project))}
