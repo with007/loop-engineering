@@ -85,7 +85,9 @@ git diff {{ default_ref }}...<branch> --stat
 
 ### Step 3: 验证门禁 — 手动测试
 
-在真正合入 {{ default_ref }} 之前，先在 agent worktree 中预合入任务分支，按 TEST.md 协助用户跑手动测试。全部通过才允许进入后续步骤执行合入。
+在真正合入 {{ default_ref }} 之前，先在 agent worktree 中预合入任务分支，按 TEST.md 执行完整测试流程（含环境准备和测试后恢复）。全部通过才允许进入后续步骤执行合入。
+
+> **TEST.md 是测试流程的唯一权威来源。** 从环境准备、测试执行到停止服务、切回主 worktree 重新安装依赖，每一步都必须遵守 TEST.md，不可省略。
 
 #### 3a. 进入 Agent Worktree
 
@@ -249,6 +251,12 @@ git branch -D <branch>
 
 ```
 ExitWorktree(action="keep")
+```
+
+切回主 worktree 后，按 TEST.md 执行测试后恢复：
+
+```bash
+pip install -e ".[ui]"
 ```
 
 输出：
