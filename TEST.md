@@ -2,11 +2,16 @@
 
 > 项目类型: Python Server | 由 loop-test-init 定制
 >
-> 本文件是手动测试清单，在合入前按此检查。标有 🤖 的步骤
-> verifier 已自动执行，你可以复核结果或重新执行。
+> 本文件是**测试方法论参考**，不是必须全部执行的清单。
+> 说明项目中可用的测试手段，并提供各模块的测试示例。
+> 合入时根据变更涉及哪些模块，选择相关手段来测试。
 > 重新运行 `loop setup` 会覆盖 — 有自定义内容请备份。
 
-## 环境准备
+## 测试手段
+
+以下是本项目中可用的测试方法。合入时根据变更模块选择相关手段。
+
+### 环境准备
 
 ```bash
 pip install -e ".[ui]"
@@ -14,62 +19,55 @@ pip install -e ".[ui]"
 
 项目依赖：`pyyaml`、`jinja2`（核心）；`fastapi`、`uvicorn`、`python-multipart`（可选，仪表盘需要）。
 
-> 🤖 verifier 执行时会自动 pip install。测试完成后记得
-> 切回主 worktree 重新 `pip install -e ".[ui]"`。
+### 启动服务
 
-## 启动项目
+| 入口 | 命令 | 说明 |
+|------|------|------|
+| Web 仪表盘 | `loop ui start --port 8765` | 启动后浏览器打开 http://127.0.0.1:8765 |
+| CLI 工具 | `loop --help` | 验证 CLI 子命令可用 |
 
-项目有两个入口：
+### API 端点验证
 
-**Web 仪表盘**（主要）:
 ```bash
-loop ui start --port 8765
-```
-服务地址: http://127.0.0.1:8765
-
-**CLI 工具**:
-```bash
-loop --help
-loop config show
+# 通用模式：curl + 检查状态码和返回结构
+curl -s <url>                    # 查看完整响应
+curl -s -o /dev/null -w "%{http_code}" <url>  # 仅看状态码
 ```
 
-> 🤖 verifier 在验证时会后台启动服务、请求 API 端点、然后停止。
+常用端点：
+- `http://127.0.0.1:8765/api/projects/overview` — 项目总览
+- `http://127.0.0.1:8765/api/tasks/list` — 任务列表
 
-## 运行时验证
+### Web 页面验证
 
-### Web 仪表盘
+- **自动**: 用 WebFetch 加载页面，检查关键元素是否存在
+- **手动**: 浏览器打开，确认无白屏/500，走核心流程
 
-1. 浏览器打开 http://127.0.0.1:8765
-2. 确认仪表盘首页正常加载（项目统计、通过率图表）
-3. 导航到各页面：
-   - `/tasks` — 任务列表正常显示
-   - `/runs` — 运行历史正常显示
-   - `/control` — 循环控制界面正常显示
-   - `/settings` — 配置编辑页面正常显示
-4. 用 curl 检查关键 API：
-   ```bash
-   curl http://127.0.0.1:8765/api/projects/overview
-   curl http://127.0.0.1:8765/api/tasks/list
-   ```
+关键页面：`/`（仪表盘）、`/tasks`、`/runs`、`/control`、`/settings`
 
-### CLI 工具
+### CLI 验证
 
-1. `loop --help` — 确认所有子命令正常显示
-2. `loop config show` — 确认能读取并显示项目配置
-3. `loop setup --help` — 确认参数列表完整
+```bash
+loop --help           # 确认子命令列表完整
+loop config show      # 确认能读取配置
+loop <子命令> --help   # 确认参数列表完整
+```
 
 ## 测试完成后
 
-1. 停止服务（Ctrl+C）
-2. 检查终端无异常日志
-3. **切回主 worktree 重新安装依赖**：
+1. 停止服务（Ctrl+C 或 kill 进程）
+2. 切回主 worktree 重新安装依赖：
    ```bash
    pip install -e ".[ui]"
    ```
 
-## 测试清单
+## 模块测试示例
 
-### 1. 仪表盘页面加载
+以下是各模块的测试示例。合入时**只执行变更涉及模块**的测试，未涉及的跳过。
+
+### 仪表盘页面
+
+**适用场景**: 变更涉及仪表盘 HTML 模板、前端 JS、页面路由时执行。
 
 **步骤**:
 1. 运行 `loop ui start --port 8765`
@@ -79,7 +77,9 @@ loop config show
 
 **预期**: 所有页面正常加载，无白屏或 500 错误
 
-### 2. CLI 基础功能
+### CLI 命令
+
+**适用场景**: 变更涉及 CLI 参数解析、子命令、配置读写时执行。
 
 **步骤**:
 1. 运行 `loop --help`
@@ -88,7 +88,9 @@ loop config show
 
 **预期**: CLI 命令正常执行，输出格式正确
 
-### 3. API 端点响应
+### API 端点
+
+**适用场景**: 变更涉及 API 路由、请求处理、数据模型时执行。
 
 **步骤**:
 1. 启动 `loop ui start --port 8765 --no-browser`
@@ -97,3 +99,6 @@ loop config show
 4. 停止服务
 
 **预期**: API 返回 200，JSON 结构正确
+
+> 如果变更涉及以上未列出的新模块，参照"测试手段"中的方法推导合适的测试步骤。
+> 测试通过后建议将新模块的测试示例添加到本文档。

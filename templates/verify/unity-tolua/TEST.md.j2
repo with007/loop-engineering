@@ -2,33 +2,36 @@
 
 > 项目类型: {{ preset_display_name }}
 >
-> 本文件是手动测试清单，在合入前按此检查。标有 🤖 的步骤
-> verifier 已自动通过 MCP 工具执行，你可以复核结果或重新执行。
+> 本文件是**测试方法论参考**，不是必须全部执行的清单。
+> 说明项目中可用的测试手段，并提供各模块的测试示例。
+> 合入时根据变更涉及哪些模块，选择相关手段来测试。
 > 重新运行 `loop setup` 会覆盖 — 有自定义内容请备份。
 
-## 环境准备
+## 测试手段
+
+以下是本项目中可用的测试方法。合入时根据变更模块选择相关手段。
+
+### 环境准备
 
 测试在 agent worktree 中执行。启动前确认：
 
 1. Unity Editor 已打开对应 worktree 的项目
 2. 项目运行时配置就绪
-   - 检查 `config.json` 中的开关是否正确（如 `autoTestBattle`、
-     `useDotsBattle` 等）
+   - 检查 `config.json` 中的开关是否正确（如 `autoTestBattle`、`useDotsBattle` 等）
    - 依赖的外部服务是否可访问
 
-> 🤖 verifier 已通过 MCP `refresh_unity` 触发编译并确认无 error。
+### 编译检查
 
-## 启动项目
+通过 MCP `refresh_unity` 触发编译，`read_console` 确认无 error。
+
+### 启动项目
 
 Unity 项目通常在 Editor 中运行，没有统一的命令行启动方式。
 {{ test_serve }}
 
-> 🤖 verifier 已通过 MCP 进入 Play Mode。
+通过 MCP 进入 Play Mode 或手动点击 Play。
 
-## 运行时验证
-
-verifier 已自动检查编译、Console error 和 Lua 自动测试。
-以下只关注 verifier 无法判断的部分。
+### 运行时验证
 
 1. 走一遍本次变更涉及的核心 UI 流程
    - 战斗相关变更：进入战斗，确认画面表现正常、无穿模或显示异常
@@ -37,6 +40,10 @@ verifier 已自动检查编译、Console error 和 Lua 自动测试。
 2. 关注帧率是否有明显下降
 3. 关注是否有加载卡顿或异常等待
 
+### Lua 自动测试
+
+通过 `runtime-test` 技能运行注册的 Lua 测试，检查 `[AUTO TEST: xx] PASS/FAIL` 控制台标记。
+
 ## 测试完成后
 
 1. 退出 Play Mode
@@ -44,10 +51,14 @@ verifier 已自动检查编译、Console error 和 Lua 自动测试。
 3. 如果测试期间修改了 `config.json` 的调试开关，恢复原值
 4. 确认主 worktree 项目文件未被修改
 
-## 测试清单
+## 模块测试示例
+
+以下是各模块的测试示例。合入时**只执行变更涉及模块**的测试，未涉及的跳过。
 
 {% for s in test_scenarios %}
-### {{ loop.index }}. {{ s.name }}
+### {{ s.name }}
+
+**适用场景**: 变更涉及 {{ s.name }} 相关代码时执行。
 
 **步骤**:
 {% for step in s.steps %}
@@ -57,3 +68,6 @@ verifier 已自动检查编译、Console error 和 Lua 自动测试。
 **预期**: {{ s.expected }}
 
 {% endfor %}
+
+> 如果变更涉及以上未列出的新模块，参照"测试手段"中的方法推导合适的测试步骤。
+> 测试通过后建议将新模块的测试示例添加到本文档。
