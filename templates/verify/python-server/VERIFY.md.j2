@@ -2,59 +2,129 @@
 
 > 项目类型: {{ preset_display_name }}
 >
-> 本文件定义项目特定的自动验证步骤。verifier 子代理按此顺序执行。
+> 本文件定义项目特定的自动化验证步骤。verifier 子代理按此执行。
+> 验证范围由变更驱动 — 只执行涉及模块的步骤，未涉及的跳过。
 > 你可以编辑步骤中的具体命令。重新运行 `loop setup` 会覆盖 — 有自定义内容请备份。
 >
 > 通用验证（diff 审查、变更范围确认等）由 task-runner 框架统一处理，
 > 不需要在这里重复。
 
-## 自动化验证流水线
+## 自动化验证手段
+
+以下是 verifier 可用的自动化验证方法。
 
 ### 1. 运行测试
 
-执行项目的测试命令。Python 项目常见方式：
-
-| 测试框架 | 命令 |
-|----------|------|
-| pytest | `python -m pytest` |
-| unittest | `python -m unittest discover` |
-| tox | `tox` |
-
-如果项目没有配置测试（没有 test_*.py 文件或 pytest 配置），
-verifier 会自动跳过这一步。没配置时 verifier 会先检测项目中
-实际存在的测试框架，再选择对应的命令。
+执行项目的测试命令。如果项目没有配置测试（无 test_*.py 文件或 pytest 配置），verifier 自动跳过。
 
 - **命令**: python -m pytest || echo skipped
 - **通过条件**: exit code 0
 
 ### 2. 代码逻辑检查
 
-检查本次变更涉及的核心逻辑是否正确：
+读变更文件的 diff，检查：
 - 条件分支覆盖边界情况
 - 函数入参/出参与调用方匹配
 - 异常路径有处理
+- 导入的模块存在且版本兼容
 
-### 3. 模板检查（涉及 HTML/Jinja2 时）
+变更涉及的模块见下方"模块验证示例"。
 
-如果变更涉及模板文件（.html / .j2）：
-- 用真实数据渲染模板，检查生成内容的关键字段
-- 确认模板中引用的 JS 函数、CSS 类、变量在代码库中存在
+### 3. 模板检查
+
+变更涉及 `.html` / `.j2` 文件时执行。用 jinja2 `Environment` + `FileSystemLoader` 渲染变更的模板，Python assert 检查渲染结果包含关键字段。
+
+HTML 模板变更时额外检查：
+- 模板中引用的 JS 函数、CSS 类、Alpine.js 指令在代码库中有对应实现
+- `x-model` / `@click` 等指令对应的 store/函数存在
 
 ### 4. 运行时验证
 
-启动服务，验证真实运行状态。
+#### 4a. 安装依赖
 
-**Web 服务**:
-- 后台启动服务，等待端口就绪
-- 用 curl 请求关键 API 端点，检查响应状态码和返回结构
-- 用 WebFetch 加载主要页面，确认关键内容存在
-- 停止服务
+```bash
+pip install -e ".[ui]"     # 带可选依赖
+# 或 pip install -e .      # 仅核心依赖
+```
+exit code 0 = 通过。
 
-**CLI 工具**:
-- 运行 `--help` 或子命令，验证基本功能正常
+#### 4b. CLI 验证
 
-**纯库**: 跳过
+```bash
+{{ test_serve }} --help    # 确认子命令列表完整，exit code 0
+```
+执行核心子命令验证输出。
 
-- **命令**: 自动检测（verifier 根据项目结构选择验证方式）
-- **通过条件**: 服务正常启动并响应
-- **非 Web/CLI 项目时**: 跳过
+#### 4c. Web 服务
+
+{% if test_serve %}
+```bash
+# 后台启动服务
+{{ test_serve }} &
+SERVER_PID=$!
+sleep 3
+```
+{% endif %}
+
+API 端点（curl 检查）：
+```bash
+# 关键端点
+curl -s -o /dev/null -w "%{http_code}" {{ test_url }}/api/...
+# 期望: 200
+```
+
+Web 页面（WebFetch 检查关键元素）：
+- `{{ test_url }}` — 确认首页含关键元素
+
+停止服务：
+```bash
+kill $SERVER_PID 2>/dev/null
+```
+
+{% if not test_serve %}
+纯库项目，跳过运行时验证。
+{% endif %}
+
+## 模块验证示例
+
+以下是各模块的自动化验证示例。verifier **只运行变更涉及模块**的步骤。
+
+### Web 页面
+
+**触发条件**: 变更涉及 HTML 模板、前端 JS、页面路由。
+
+**验证步骤**:
+1. 读 diff，确认新增的前端指令/变量有对应实现
+2. `pip install -e .` 后启动服务
+3. curl 关键 API 端点确认 200
+4. WebFetch 关键页面确认元素存在
+5. 停止服务
+
+### CLI 命令
+
+**触发条件**: 变更涉及 CLI 参数解析、子命令。
+
+**验证步骤**:
+1. `pip install -e .`
+2. `--help` — exit code 0
+3. 执行核心子命令验证输出
+
+### API 端点
+
+**触发条件**: 变更涉及 API 路由、请求处理、数据模型。
+
+**验证步骤**:
+1. `pip install -e .` 后启动服务
+2. curl 变更涉及的端点，检查状态码和返回结构
+3. 停止服务
+
+### 模板渲染
+
+**触发条件**: 变更涉及 Jinja2 模板文件。
+
+**验证步骤**:
+1. 用 jinja2 Environment + FileSystemLoader 渲染变更的模板
+2. Python assert 检查渲染结果包含关键字段
+
+> 如果变更涉及以上未列出的新模块，参照"自动化验证手段"推导合适的验证步骤。
+> 验证通过后建议将新模块的验证示例添加到本文档。

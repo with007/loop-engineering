@@ -2,17 +2,17 @@
 
 > 项目类型: {{ preset_display_name }}
 >
-> 本文件定义 verifier 子代理的自动验证流程。你可以编辑步骤中的具体命令。
-> 重新运行 `loop setup` 会覆盖 — 有自定义内容请备份。
+> 本文件定义项目特定的自动化验证步骤。verifier 子代理按此执行。
+> 验证范围由变更驱动 — 只执行涉及模块的步骤，未涉及的跳过。
+> 你可以编辑步骤中的具体命令。重新运行 `loop setup` 会覆盖 — 有自定义内容请备份。
 
-## 自动化验证流水线
+## 自动化验证手段
 
-验证子代理按以下顺序执行。非可选步骤失败则停止。
+以下是 verifier 可用的自动化验证方法。
 
 ### 1. 编译检查
 
-触发 Unity 编译并检查 Console 输出。如果项目中的 C# 代码有编译错误，
-这一步会捕获。
+触发 Unity 编译并检查 Console 输出。
 
 - **工具**: MCP `refresh_unity(wait_for_ready=true)` → `read_console`
 - **超时**: 120s
@@ -20,24 +20,15 @@
 
 ### 2. Lua 路径生成
 
-当 diff 中包含新增的 `.lua` 文件时执行。例如 PVPProject7 使用
-`scripts/genLuaPath.py` 扫描 `Assets/FW/Lua` 和 `Assets/Battle/Lua`
-目录，生成 `LuaPath.lua` 注册文件。如果你的项目使用类似的机制，
-替换为对应的脚本路径。
+当 diff 中包含新增的 `.lua` 文件时执行。
 
-- **条件**: diff 中有新增 `.lua` 文件
+- **触发条件**: diff 中有新增 `.lua` 文件
 - **命令**: python scripts/genLuaPath.py
 - **通过条件**: exit code 0
 
 ### 3. Lua 运行时测试
 
-在 Play Mode 中执行注册的 Lua 自动测试。测试用例通过
-`[AUTO TEST: 名称] PASS/FAIL` 标记输出结果到 Console。
-
-如果你的项目使用类似 PVPProject7 的 DebugConsole 注册模式：
-- 在 `config.json` 中设置 `autoTestBattle: true`
-- 测试用例通过 `register_lua_test()` 注册到 DebugConsole
-- verifier 通过 `runtime-test` skill 执行注册的测试
+在 Play Mode 中执行注册的 Lua 自动测试。测试用例通过 `[AUTO TEST: 名称] PASS/FAIL` 标记输出到 Console。
 
 - **工具**: `runtime-test` skill
 - **超时**: 30s
@@ -45,7 +36,39 @@
 
 ### 4. 代码逻辑检查
 
-检查本次变更涉及的核心逻辑是否正确：
+读变更文件的 diff，检查：
 - 条件分支覆盖边界情况
 - 函数入参/出参与调用方匹配
 - 异常路径有处理
+
+## 模块验证示例
+
+以下是各模块的自动化验证示例。verifier **只运行变更涉及模块**的步骤。
+
+### C# 脚本
+
+**触发条件**: 变更涉及 `.cs` 文件。
+
+**验证步骤**:
+1. MCP `refresh_unity` → `read_console`，确认 0 error
+2. 如有新增 `.lua` 文件，运行 `python scripts/genLuaPath.py`
+
+### Lua 逻辑
+
+**触发条件**: 变更涉及 `.lua` 文件。
+
+**验证步骤**:
+1. MCP `refresh_unity` → `read_console`，确认 0 error
+2. 进入 Play Mode，通过 `runtime-test` skill 运行注册的测试
+3. 确认 Console 中 `[AUTO TEST: xx]` 全部 PASS
+
+### UI/预制体
+
+**触发条件**: 变更涉及 `.prefab`、UI 相关文件。
+
+**验证步骤**:
+1. MCP `refresh_unity` → `read_console`，确认 0 error
+2. 进入 Play Mode，检查对应 UI 可正常打开和交互
+
+> 如果变更涉及以上未列出的新模块，参照"自动化验证手段"推导合适的验证步骤。
+> 验证通过后建议将新模块的验证示例添加到本文档。
