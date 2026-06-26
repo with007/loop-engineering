@@ -4,11 +4,13 @@ src/loop_engineering/__init__.py
 src/loop_engineering/cli.py
 src/loop_engineering/config.py
 src/loop_engineering/control.py
+src/loop_engineering/path_utils.py
 src/loop_engineering/presets.py
 src/loop_engineering/registry.py
 src/loop_engineering/runlog.py
 src/loop_engineering/setup.py
 src/loop_engineering/task_id.py
+src/loop_engineering/utils.py
 src/loop_engineering.egg-info/PKG-INFO
 src/loop_engineering.egg-info/SOURCES.txt
 src/loop_engineering.egg-info/dependency_links.txt
@@ -21,6 +23,7 @@ src/loop_engineering/scripts/task_done.py
 src/loop_engineering/scripts/task_pick.py
 src/loop_engineering/server/__init__.py
 src/loop_engineering/server/app.py
+src/loop_engineering/server/dependencies.py
 src/loop_engineering/server/api/__init__.py
 src/loop_engineering/server/api/branches.py
 src/loop_engineering/server/api/config.py
@@ -29,3 +32,14 @@ src/loop_engineering/server/api/docs.py
 src/loop_engineering/server/api/projects.py
 src/loop_engineering/server/api/runs.py
 src/loop_engineering/server/api/tasks.py
+src/loop_engineering/server/routers/__init__.py
+src/loop_engineering/server/routers/fragments.py
+src/loop_engineering/server/routers/pages.py
+src/loop_engineering/server/services/__init__.py
+src/loop_engineering/server/services/project_context.py
+src/loop_engineering/server/services/task_parser.py
+tests/test_config.py
+tests/test_control.py
+tests/test_runlog.py
+tests/test_task_id.py
+tests/test_task_parser.py
