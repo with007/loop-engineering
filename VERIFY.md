@@ -96,7 +96,7 @@ sleep 3
 API 端点（curl 检查）：
 ```bash
 # 概览 API
-curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8765/api/projects/overview
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8765/api/projects/list
 # 期望: 200
 
 # 任务列表 API
@@ -125,7 +125,7 @@ kill $SERVER_PID 2>/dev/null
 **验证步骤**:
 1. 读 diff，确认 HTML 中新增的 Alpine.js 指令/jinja2 变量有对应实现
 2. `pip install -e ".[ui]"` 后启动服务
-3. curl `/api/projects/overview` 确认 200
+3. curl `/api/projects/list` 确认 200
 4. WebFetch `/` ~ `/tasks` ~ `/settings` 三个页面，确认关键元素存在
 5. 停止服务
 
