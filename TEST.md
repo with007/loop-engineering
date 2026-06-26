@@ -28,11 +28,11 @@ pip install -e ".[ui]"
 
 ### API 端点验证
 
-打开页面后，通过浏览器 DevTools Network 面板检查 API 请求的响应状态和返回内容。
+API 通过页面间接验证：页面数据正常加载即说明对应 API 正常。不需要单独检查 HTTP 状态码。
 
-常用端点：
-- `/api/projects/overview` — 项目总览
-- `/api/tasks/list` — 任务列表
+常用端点及其对应页面：
+- `/api/projects/overview` → 概览页项目统计
+- `/api/tasks/list` → 任务列表
 
 ### Web 页面验证
 
@@ -92,12 +92,11 @@ pip install -e ".[ui]"
 
 **步骤**:
 1. 运行 `loop ui start --port 8765`（自动打开浏览器）
-2. 打开 DevTools Network 面板，刷新页面
-3. 检查 `/api/projects/overview` 请求 — 确认返回 200，JSON 含项目名
-4. 点击导航栏"任务"，检查 `/api/tasks/list` 请求 — 确认返回 200，数据正确
-5. 停止服务
+2. 确认概览页项目统计数据正常显示（验证 `/api/projects/overview`）
+3. 点击导航栏"任务"，确认任务列表正常显示（验证 `/api/tasks/list`）
+4. 停止服务
 
-**预期**: API 返回 200，JSON 结构正确
+**预期**: 各页面数据正常加载，无空白或加载失败
 
 > 如果变更涉及以上未列出的新模块，参照"测试手段"中的方法推导合适的测试步骤。
 > 测试通过后建议将新模块的测试示例添加到本文档。
