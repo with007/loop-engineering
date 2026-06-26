@@ -45,11 +45,7 @@ pip install -e ".[ui]"
 
 ### CLI 验证
 
-```bash
-loop --help           # 确认子命令列表完整
-loop config show      # 确认能读取配置
-loop <子命令> --help   # 确认参数列表完整
-```
+在终端运行 `--help` 确认子命令正常显示，执行核心子命令验证输出正确、无乱码。
 
 ## 测试完成后
 
