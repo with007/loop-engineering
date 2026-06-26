@@ -1,0 +1,74 @@
+## 1. 基础设施 — path-utils + atomic-writes
+
+- [ ] 1.1 新建 `src/loop_engineering/path_utils.py`，实现 `find_project_root(start_dir?)`、`resolve_project_root(project?, request?)`、`get_default_branch(repo_path?)`，从 `config.py` 导入 `is_project_dir`
+- [ ] 1.2 在 `config.py` 新增 `get_agent_dir(config)` 和 `get_data_agent_dir(config)`
+- [ ] 1.3 新建 `src/loop_engineering/utils.py`，实现 `atomic_write(path, content)`
+- [ ] 1.4 替换所有 `_project_root` / `_find_project_root` 调用为 `path_utils` 函数（`server/app.py`、`server/api/*.py` × 6、`scripts/*.py` × 3、`cli.py` × 2）
+- [ ] 1.5 替换所有 `_default_branch` 调用为 `path_utils.get_default_branch`（`setup.py`、`scripts/task_done.py`、`scripts/task_cleanup.py`）
+- [ ] 1.6 替换所有 `os.path.join(agent_workspace, project_name)` 为 `config.get_agent_dir(config)`（`setup.py` × 11 处）
+- [ ] 1.7 替换 `config.py:write_config`、`setup.py:_write_json_if_changed`、`runlog.py:write_run_log` 的 `open().write()` 为 `atomic_write()`
+
+## 2. TaskLine — tasks.md 解析统一
+
+- [ ] 2.1 在 `task_id.py` 新增 `TaskLine` dataclass（`parse(line) -> TaskLine | None`、`format() -> str`）
+- [ ] 2.2 改写 `server/app.py:_read_tasks` 使用 `TaskLine.parse`
+- [ ] 2.3 改写 `server/api/tasks.py:list_tasks` 使用 `TaskLine.parse`（顺带修复 `/api/tasks/add` 不生成 `[task_id]` 的 bug）
+- [ ] 2.4 改写 `scripts/task_pick.py` 使用 `TaskLine.parse`
+- [ ] 2.5 改写 `scripts/task_done.py` 使用 `TaskLine.parse` + `TaskLine.format`
+- [ ] 2.6 删除 `server/app.py` 和 `server/api/tasks.py` 中各自实现的状态过滤重复逻辑，统一到 `services/task_parser.py:filter_tasks()`
+
+## 3. 脚本协议 — --format=shell
+
+- [ ] 3.1 在 `scripts/task_pick.py` 新增 `--format` 参数，`--format=shell` 输出 `shlex.quote` 转义的 shell 变量
+- [ ] 3.2 在 `scripts/task_done.py` 新增 `--format` 参数
+- [ ] 3.3 在 `scripts/task_cleanup.py` 新增 `--format` 参数
+- [ ] 3.4 更新 SKILL.md 模板（`templates/skills/task-runner/SKILL.md.j2`，见任务 6.2）中 Step 1 的 task_pick 调用为 `--format=shell` + `eval`
+
+## 4. 测试基础设施
+
+- [ ] 4.1 在 `pyproject.toml` 新增 `[project.optional-dependencies] test = ["pytest>=7.0"]`
+- [ ] 4.2 新建 `tests/conftest.py`（`tmp_path` fixtures）
+- [ ] 4.3 新建 `tests/test_task_id.py`，覆盖 `generate_task_id`、`make_readable_slug`、`parse_task_id`、`extract_task_id_from_branch`、`make_branch_name`、`TaskLine.parse`、`TaskLine.format`
+- [ ] 4.4 运行 `python -m pytest` 确认全部通过
+
+## 5. Server 拆分
+
+- [ ] 5.1 新建 `server/services/__init__.py`
+- [ ] 5.2 新建 `server/services/task_parser.py`，提取 `parse_tasks(project_root) -> list[TaskLine]` 和 `filter_tasks(tasks, status, order, filter_name) -> list[TaskLine]`
+- [ ] 5.3 新建 `server/services/project_context.py`，提取 `build_projects_context(request, current_pr, agent_filter) -> list[dict]`
+- [ ] 5.4 新建 `server/dependencies.py`，提取 `_project_root`、`_agent_name`、`_render`、`_is_htmx` 共享依赖
+- [ ] 5.5 新建 `server/routers/__init__.py`
+- [ ] 5.6 新建 `server/routers/pages.py`，搬入页面路由（`/`、`/tasks`、`/runs`、`/control`、`/settings`、`/setup`）
+- [ ] 5.7 新建 `server/routers/fragments.py`，搬入 HTMX 片段路由（`/control/status-fragment`、`/control/info-fragment`、`/tasks/list`、`/tasks/list-items`）
+- [ ] 5.8 精简 `server/app.py` 为 FastAPI 实例 + router 注册 + `start_server()`
+- [ ] 5.9 删除 `server/app.py` 中的 `_read_tasks`、`_build_projects_context`、`_filter_agent_workspace_copies`（已迁移到 services）
+
+## 6. 模板分离
+
+- [ ] 6.1 新建 `templates/skills/task-runner/SKILL.md.j2`，内容从 `setup.py:SKILL_MD_TEMPLATE` 剪切
+- [ ] 6.2 扩展 `setup.py:deploy_skills` 支持 `.j2` 文件 Jinja2 渲染（检测 `.j2` 后缀 → 渲染 → 写入）
+- [ ] 6.3 删除 `setup.py:render_skill_md` 函数和 `SKILL_MD_TEMPLATE` 字符串
+- [ ] 6.4 更新 `setup.py:run_setup` 步骤列表，按项目类型调度函数（Unity 类型调用 `share_package_cache` + `add_unity_mcp`，其他类型跳过）
+
+## 7. 前端跨页面状态
+
+- [ ] 7.1 在 `base.html` 新增 `Project` 对象（`current()`、`bind(path)`），删除 2 个 `htmx:configRequest` 监听器，替换为 1 个写 `X-Loop-Project` header 的监听器
+- [ ] 7.2 修改 `base.html:switchProject` 为先 `pushState` 再 `htmx.ajax`
+- [ ] 7.3 更新 `base.html` 中所有 Alpine 组件（`settingsForm`、`docsEditor`）的 `fetch()` 调用使用 `Project.bind()` 或 `Project.current()`
+- [ ] 7.4 删除 `settings.html` 中的 `?project={{ current_root }}` 硬编码
+- [ ] 7.5 删除 `control.html` 中手动 `URLSearchParams` 拼接
+- [ ] 7.6 确保 `resolve_project_root` 接受 `X-Loop-Project` header（任务 1.1 已处理，此处验证）
+
+## 8. 心跳循环优化
+
+- [ ] 8.1 修改 `control.py:start_loop`，在 `subprocess.Popen` 后进入 Python 心跳 while 循环（`while proc.poll() is None: write_heartbeat(); sleep(30)`）
+- [ ] 8.2 精简 `loop.ps1` 生成逻辑，移除心跳 while 循环，仅保留终端窗口启动 + PID 写入 + SendKeys
+- [ ] 8.3 确认 `stop_loop` 和 Dashboard 控制页面行为不变
+
+## 9. 收尾验证
+
+- [ ] 9.1 运行 `python -m pytest` 确认全部测试通过
+- [ ] 9.2 运行 `pip install -e ".[ui,test]"` 确认无依赖冲突
+- [ ] 9.3 运行 `loop --help` 确认 CLI 正常
+- [ ] 9.4 启动 `loop ui start`，浏览器验证 Dashboard 所有页面加载正常、项目切换不丢 project
+- [ ] 9.5 在某个 loop-engineering 管理的项目中运行 `loop setup --type python-server`，验证 setup 全流程正常
