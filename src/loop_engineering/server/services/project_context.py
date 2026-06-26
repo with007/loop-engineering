@@ -7,7 +7,7 @@ from loop_engineering.task_id import extract_task_id_from_branch
 from loop_engineering.server.services.task_parser import parse_tasks
 
 
-def _filter_agent_workspace_copies(project_list):
+def filter_agent_workspace_copies(project_list):
     """过滤掉 agent workspace 拷贝：loop-config.yaml 里的 project.root 和自身路径不一致."""
     from loop_engineering.config import read_config as _read_cfg
     result = []
@@ -49,7 +49,7 @@ def build_projects_context(current_pr, agent_filter=""):
     # 过滤掉没有 loop-config.yaml 的孤项目
     projects = [p for p in projects if is_project_dir(p["root"])]
     # 过滤掉 agent workspace 拷贝
-    projects = _filter_agent_workspace_copies(projects)
+    projects = filter_agent_workspace_copies(projects)
 
     result = []
     for p in projects:

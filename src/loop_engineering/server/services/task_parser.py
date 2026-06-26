@@ -72,20 +72,61 @@ _STATUS_INCLUDE = {
 
 
 def filter_tasks(tasks, status=None, order=None, filter_name=None):
-    """对 TaskLine 列表进行状态过滤和排序。
+    """对 TaskLine 列表进行状态过滤、排序和 agent 名筛选。
 
     Args:
         tasks: TaskLine 列表
-        status: 过滤状态（如 "pending", "in_progress", "done", "reopen"）
-        order: 排序方式（None 保持原序，其他暂未实现）
-        filter_name: agent 名过滤（暂未实现，预留给未来）
+        status: 逗号分隔的状态名，如 "pending,in_progress"。
+                in_progress 自动包含 pending_merge 和 reopen；
+                done 自动包含 pending_merge。
+        order: "desc" 反转顺序，"asc" 或 None 保持原序
+        filter_name: agent 名（匹配 assignee，不区分大小写）
 
     Returns:
         过滤后的 TaskLine 列表
     """
     result = list(tasks)
-    if status and status in _STATUS_INCLUDE:
-        include = _STATUS_INCLUDE[status]
-        result = [t for t in result if t.status in include]
-    # order / filter_name 是未来扩展点，目前不实现具体逻辑
+
+    # Status filtering — support comma-separated statuses
+    if status:
+        allowed_chars = set()
+        for s in status.split(","):
+            s = s.strip()
+            if s in _STATUS_INCLUDE:
+                allowed_chars.update(_STATUS_INCLUDE[s])
+        if allowed_chars:
+            result = [t for t in result if t.status in allowed_chars]
+
+    # Order — "desc" reverses, default/"asc" keeps original parse order
+    if order == "desc":
+        result = list(reversed(result))
+
+    # Filter by agent name (assignee, case-insensitive)
+    if filter_name:
+        f_lower = filter_name.strip().lower()
+        result = [t for t in result if t.assignee.lower() == f_lower]
+
+    return result
+
+
+def tasklines_to_dicts(tasklines):
+    """将 TaskLine 列表转换为字典列表（用于模板渲染）。
+
+    替代原先 app.py 中的 _read_tasks_dict()。
+    """
+    result = []
+    for tl in tasklines:
+        status = tl.status
+        s = {" ": "pending", "~": "in_progress", "x": "done", "r": "reopen"}
+        desc = tl.description
+        if tl.task_id:
+            desc = re.sub(r'\s+\[[a-f0-9]{8}\]\s*$', '', desc).strip()
+        result.append({
+            "description": desc,
+            "task_id": tl.task_id,
+            "status": s.get(status, "pending"),
+            "assignee": tl.assignee,
+            "meta": tl.meta,
+            "feedback": tl.feedback,
+        })
     return result

@@ -15,7 +15,7 @@
 - [x] 2.3 改写 `server/api/tasks.py:list_tasks` 使用 `TaskLine.parse`（顺带修复 `/api/tasks/add` 不生成 `[task_id]` 的 bug）
 - [x] 2.4 改写 `scripts/task_pick.py` 使用 `TaskLine.parse`
 - [x] 2.5 改写 `scripts/task_done.py` 使用 `TaskLine.parse` + `TaskLine.format`
-- [x] 2.6 删除 `server/app.py` 和 `server/api/tasks.py` 中各自实现的状态过滤重复逻辑，统一到 `services/task_parser.py:filter_tasks()`
+- [x] 2.6 删除 `server/app.py` 和 `server/api/tasks.py` 中各自实现的状态过滤重复逻辑，统一到 `services/task_parser.py:filter_tasks()`（补全 order desc/asc、filter_name agent 名筛选、逗号分隔多状态）
 
 ## 3. 脚本协议 — --format=shell
 
@@ -30,6 +30,9 @@
 - [x] 4.2 新建 `tests/conftest.py`（`tmp_path` fixtures）
 - [x] 4.3 新建 `tests/test_task_id.py`，覆盖 `generate_task_id`、`make_readable_slug`、`parse_task_id`、`extract_task_id_from_branch`、`make_branch_name`、`TaskLine.parse`、`TaskLine.format`
 - [x] 4.4 运行 `python -m pytest` 确认全部通过
+- [x] 4.5 新建 `tests/test_config.py`，覆盖 `merge_config` deep_merge（合并/删除/变更跟踪/不修改原值）
+- [x] 4.6 新建 `tests/test_control.py`，覆盖 heartbeat write/read/is_running、pause/resume、throttle get/set、get_status
+- [x] 4.7 新建 `tests/test_runlog.py`，覆盖 `write_run_log`、`list_runs` 过滤（whoami/result/days）、`get_pass_rate` 计算
 
 ## 5. Server 拆分
 
@@ -38,9 +41,9 @@
 - [x] 5.3 新建 `server/services/project_context.py`，提取 `build_projects_context(request, current_pr, agent_filter) -> list[dict]`
 - [x] 5.4 新建 `server/dependencies.py`，提取 `_project_root`、`_agent_name`、`_render`、`_is_htmx` 共享依赖
 - [x] 5.5 新建 `server/routers/__init__.py`
-- [x] 5.6 新建 `server/routers/pages.py`（页面路由迁移目标）
-- [x] 5.7 新建 `server/routers/fragments.py`（HTMX 片段路由迁移目标）
-- [x] 5.8 精简 `server/app.py` 为 FastAPI 实例 + router 注册 + `start_server()`
+- [x] 5.6 新建 `server/routers/pages.py`（页面路由：/, /tasks, /runs, /control, /settings, /setup，已从 app.py 迁入）
+- [x] 5.7 新建 `server/routers/fragments.py`（HTMX 片段路由：/api/projects/switcher, /tasks/list, /tasks/list-items, /tasks/add, /control/status-fragment, /control/info-fragment, /api/setup/browse, /setup/run，已从 app.py 迁入）
+- [x] 5.8 精简 `server/app.py` 为 FastAPI 实例 + router 注册 + `start_server()`（所有路由已迁出）
 - [x] 5.9 删除 `server/app.py` 中的 `_read_tasks`、`_build_projects_context`、`_filter_agent_workspace_copies`（已迁移到 services）
 
 ## 6. 模板分离
