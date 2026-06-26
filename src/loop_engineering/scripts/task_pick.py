@@ -93,7 +93,12 @@ def main():
             if result.stdout.strip():
                 continue  # 跳过已有分支的新任务
 
-        open_spec = "true" if os.path.isdir(os.path.join(project_root, f"openspec/changes/{task_id}")) else "false"
+        # OpenSpec 目录用 slug 命名（如 refactor-core-architecture），不是 hash（f610728e）
+        # 优先匹配 desc（即 slug），兼容直接用 task_id 的情况
+        open_spec = "true" if (
+            os.path.isdir(os.path.join(project_root, f"openspec/changes/{desc}")) or
+            os.path.isdir(os.path.join(project_root, f"openspec/changes/{task_id}"))
+        ) else "false"
         reopen_flag = "true" if is_reopen else "false"
 
         print(f"taskID={task_id} branch={branch} desc={desc} openSpec={open_spec} reopen={reopen_flag}")
