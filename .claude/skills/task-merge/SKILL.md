@@ -253,11 +253,7 @@ git branch -D <branch>
 ExitWorktree(action="keep")
 ```
 
-切回主 worktree 后，按 TEST.md 执行测试后恢复：
-
-```bash
-pip install -e ".[ui]"
-```
+**按 TEST.md 执行测试后恢复**（如重新安装依赖等），然后再继续。
 
 输出：
 ```
