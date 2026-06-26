@@ -87,6 +87,20 @@
                 </button>
                 <span class="badge badge-active">分支待合入</span>
                 {% elif t.status == 'reopen' %}
+                <button class="btn btn-sm"
+                        onclick="viewReport('{{ t.task_id }}')"
+                        style="background: transparent; color: var(--text); border: 1px solid var(--border); font-size: 15px; padding: 4px 10px; border-radius: 6px; cursor: pointer; min-width: 34px; text-align: center;"
+                        title="查看报告">
+                    📋
+                </button>
+                <button class="btn btn-sm"
+                        data-task-id="{{ t.task_id }}"
+                        data-task-desc="{{ t.description | e }}"
+                        onclick="console.log('reopen clicked:', this.dataset.taskId); reopenTask(this.dataset.taskId, this.dataset.taskDesc)"
+                        style="background: transparent; color: var(--active); border: 1px solid var(--active); font-size: 15px; padding: 4px 10px; border-radius: 6px; cursor: pointer; min-width: 34px; text-align: center;"
+                        title="重新打开">
+                    🔄
+                </button>
                 <span class="badge badge-reopen">需返工</span>
                 {% elif t.status == 'in_progress' %}
                 <span class="badge badge-active">进行中</span>
