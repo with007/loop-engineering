@@ -2,6 +2,9 @@
 
 > 项目类型: Unity + ToLua
 >
+> 本文件是 Unity + ToLua 类型的默认模板。`loop-test-init` 会根据项目
+> 实际情况定制所有内容：增删章节、调整验证手段、替换占位符。
+>
 > 本文件是**测试方法论参考**，不是必须全部执行的清单。
 > 说明项目中可用的测试手段，并提供各模块的测试示例。
 > 合入时根据变更涉及哪些模块，选择相关手段来测试。
@@ -27,7 +30,7 @@
 
 ### 编译检查
 
-通过 MCP `refresh_unity` 触发编译，`read_console` 确认无 error。
+等待 Unity 编译完成，检查 Console 窗口无 error。
 
 ### 启动项目
 
@@ -43,7 +46,7 @@
 
 ### Lua 自动测试
 
-通过 `runtime-test` 技能运行注册的 Lua 测试，检查 `[AUTO TEST: xx] PASS/FAIL` 标记。
+确认 Console 中 `[AUTO TEST: xx]` 标记全部 PASS，无 FAIL。
 
 ## 测试完成后
 
