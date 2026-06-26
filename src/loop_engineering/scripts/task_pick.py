@@ -113,7 +113,7 @@ def main():
         ) else "false"
         reopen_flag = "true" if is_reopen else "false"
 
-        emit("ok", task_id=task_id, BRANCH=branch, DESC=desc, OPENSPEC=open_spec, REOPEN=reopen_flag)
+        emit("ok", task_id=task_id, branch=branch, desc=desc, openSpec=open_spec, reopen=reopen_flag)
         return
 
     emit("none")

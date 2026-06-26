@@ -9,32 +9,32 @@ user_invocable: true
 
 # Task Merge（任务分支合入）
 
-你是合入助手。用户说"合入 xxx 分支"或"合入 task-xxx"，你来安全地把任务分支合入 master。
+你是合入助手。用户说"合入 xxx 分支"或"合入 task-xxx"，你来安全地把任务分支合入 {{ default_ref }}。
 
 ## 关键路径
 
 | 项目 | 路径 |
 |------|------|
-| 主工作树 | `D:/work_pvp/loop-engineering` |
-| Agent 工作树 | `D:/work_pvp-agent/loop-engineering` |
+| 主工作树 | `{{ project_root }}` |
+| Agent 工作树 | `{{ agent_dir }}` |
 
 ## 原则
 
-- **先验证后合入** — 在 agent worktree 中预合入任务分支，按 TEST.md 协助用户跑手动测试，通过后才合入 master
+- **先验证后合入** — 在 agent worktree 中预合入任务分支，按 TEST.md 协助用户跑手动测试，通过后才合入 {{ default_ref }}
 - **不做 force push / force delete** — 只做安全的 merge
 - **冲突时先尝试自动分析解决** — 不要立刻交给用户，分析上下文、检查跨文件一致性后再决定。无法判定时才停止
 - **不自动 push** — 只做本地合入，push 留给用户
-- **主 worktree 只做 merge** — git checkout/reset/cherry-pick/rebase 等分支操作一律在 agent worktree 进行，主 worktree 永远保持 master，只执行 merge 和 commit
+- **主 worktree 只做 merge** — git checkout/reset/cherry-pick/rebase 等分支操作一律在 agent worktree 进行，主 worktree 永远保持 {{ default_ref }}，只执行 merge 和 commit
 - **stash 前告知用户判断依据** — 不静默 stash
 
 ## 流程
 
 ### Step 0: 无参数自动发现
 
-如果用户只说"合入"而没有指定分支名或 task ID，自动查找 agent 下尚未合入 master 的分支：
+如果用户只说"合入"而没有指定分支名或 task ID，自动查找 agent 下尚未合入 {{ default_ref }} 的分支：
 
 ```bash
-git branch --no-merged master --list "agent/*"
+git branch --no-merged {{ default_ref }} --list "agent/*"
 ```
 
 - **0 个匹配** → 输出"没有未合入的 agent 分支"，退出
@@ -43,8 +43,8 @@ git branch --no-merged master --list "agent/*"
 
 列出时显示每个分支的：
 - 分支名
-- 分支上的 commit 数（`git rev-list master..<branch> --count`）
-- 最后一个 commit 的摘要（`git log master..<branch> --oneline -1`）
+- 分支上的 commit 数（`git rev-list {{ default_ref }}..<branch> --count`）
+- 最后一个 commit 的摘要（`git log {{ default_ref }}..<branch> --oneline -1`）
 
 让用户选择（输入序号），选择后进入 Step 2。
 
@@ -74,18 +74,18 @@ git branch -a | grep "<taskID>"
 ### Step 2: 显示分支概要
 
 ```bash
-# 分支上有哪些 commit（不在 master 上的）
-git log master..<branch> --oneline
+# 分支上有哪些 commit（不在 {{ default_ref }} 上的）
+git log {{ default_ref }}..<branch> --oneline
 
 # 改动了哪些文件
-git diff master...<branch> --stat
+git diff {{ default_ref }}...<branch> --stat
 ```
 
 输出清晰的分支摘要给用户看，然后确认是否继续合入。用户确认后进入 Step 3。
 
 ### Step 3: 验证门禁 — 手动测试
 
-在真正合入 master 之前，先在 agent worktree 中预合入任务分支，按 TEST.md 协助用户跑手动测试。全部通过才允许进入后续步骤执行合入。
+在真正合入 {{ default_ref }} 之前，先在 agent worktree 中预合入任务分支，按 TEST.md 协助用户跑手动测试。全部通过才允许进入后续步骤执行合入。
 
 #### 3a. 进入 Agent Worktree
 
@@ -93,16 +93,16 @@ Agent worktree 路径已在 setup 时写入：
 
 ```bash
 # Agent 工作树路径
-echo "D:/work_pvp-agent/loop-engineering"
+echo "{{ agent_dir }}"
 ```
 
 检查 agent worktree 是否存在：
 ```bash
-test -f "D:/work_pvp-agent/loop-engineering/.git" && echo "EXISTS" || echo "NOT_FOUND"
+test -f "{{ agent_dir }}/.git" && echo "EXISTS" || echo "NOT_FOUND"
 ```
 
 - **不存在** → 报错"Agent worktree 不存在，请先运行 `loop setup`"，退出
-- **存在** → `EnterWorktree(path="D:/work_pvp-agent/loop-engineering")`
+- **存在** → `EnterWorktree(path="{{ agent_dir }}")`
 
 #### 3b. Fetch 和 Checkout 任务分支
 
@@ -117,7 +117,7 @@ git branch -r --list "origin/<branch>" | head -1
 
 分支存在 → checkout：
 ```bash
-git checkout --detach master
+git checkout --detach {{ default_ref }}
 git checkout -B <branch> origin/<branch>
 git branch --show-current
 # 必须输出 <branch>
@@ -218,8 +218,8 @@ TEST.md 说明了项目中可用的测试手段（pip install、启动服务、c
 用户回复 fail 或选择不继续：
 
 ```bash
-cd D:/work_pvp-agent/loop-engineering
-git checkout --detach master
+cd {{ agent_dir }}
+git checkout --detach {{ default_ref }}
 git branch -D <branch>
 ```
 
@@ -242,8 +242,8 @@ ExitWorktree(action="keep")
 用户回复 pass：
 
 ```bash
-cd D:/work_pvp-agent/loop-engineering
-git checkout --detach master
+cd {{ agent_dir }}
+git checkout --detach {{ default_ref }}
 git branch -D <branch>
 ```
 
@@ -273,8 +273,8 @@ git status --porcelain
 对比工作区改动文件和分支改动文件的重叠程度：
 
 ```bash
-# 分支改动的文件（相对于 master）
-git diff master...<branch> --name-only
+# 分支改动的文件（相对于 {{ default_ref }}）
+git diff {{ default_ref }}...<branch> --name-only
 
 # 工作区改动的文件
 git diff --name-only
@@ -297,17 +297,17 @@ git ls-files --others --exclude-standard
 **执行前安全检查**：
 
 ```bash
-# 合入必须在主 worktree（D:/work_pvp/loop-engineering），不在 agent worktree（D:/work_pvp-agent/loop-engineering）
-if echo "$(pwd)" | grep -q "work_pvp-agent"; then
+# 合入必须在主 worktree（{{ project_root }}），不在 agent worktree（{{ agent_dir }}）
+if echo "$(pwd)" | grep -q "{{ agent_workspace_last }}"; then
   echo "ERROR: 当前在 agent worktree，合入必须在主 worktree 执行" && exit 1
 fi
 
 # 确保在主分支
-if [ "$(git branch --show-current)" != "master" ]; then
-  echo "ERROR: 当前分支是 $(git branch --show-current)，必须在 master" && exit 1
+if [ "$(git branch --show-current)" != "{{ default_ref }}" ]; then
+  echo "ERROR: 当前分支是 $(git branch --show-current)，必须在 {{ default_ref }}" && exit 1
 fi
 
-echo "OK: 主 worktree master，可以合入"
+echo "OK: 主 worktree {{ default_ref }}，可以合入"
 ```
 
 检查通过后再根据路线执行。
@@ -441,12 +441,12 @@ Python 代码冲突时，检查：
 
 ### Step 7: 手动测试提醒
 
-合入已在 Step 3 中通过 agent worktree 验证，此处仅提醒：push 前可在 master 上快速复核。
+合入已在 Step 3 中通过 agent worktree 验证，此处仅提醒：push 前可在 {{ default_ref }} 上快速复核。
 
 如果 TEST.md 存在，简要提示：
 ```
 ## 手动测试
-已在 agent worktree 中按 TEST.md 完成手动测试并通过。push 前可在 master 上快速复核。
+已在 agent worktree 中按 TEST.md 完成手动测试并通过。push 前可在 {{ default_ref }} 上快速复核。
 ```
 
 如果 TEST.md 不存在，跳过。

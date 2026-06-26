@@ -227,20 +227,19 @@ def get_task_report(task_id: str, project: str = Query(None)):
         raise HTTPException(404, f"No commit found for task '{task_id}'")
 
     reports = []
-    blocks = r.stdout.strip().split("\n---REPORT-END---")
+    blocks = [b for b in r.stdout.strip().split("\n---REPORT-END---") if b.strip()]
     for i, block in enumerate(blocks):
-        if not block.strip():
-            continue
         lines = block.strip().split("\n", 2)
         if len(lines) < 2:
             continue
         commit_hash = lines[0]
         date = lines[1]
         body = lines[2] if len(lines) > 2 else ""
+        # git log 输出最新在前，imp_round 从 1 递增（1=最早）
         reports.append({
             "commit_hash": commit_hash,
             "date": date,
-            "imp_round": len(blocks) - i,  # 最新的 imp 号最大
+            "imp_round": len(blocks) - i,
             "body": body,
         })
 
