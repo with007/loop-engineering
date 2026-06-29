@@ -333,7 +333,7 @@ pwd  # 必须输出 D:/work_pvp-agent/loop-engineering
 ## 你的工作（只能验证，不能改代码）
 **禁止 commit、禁止修改任何文件。** 验证 = 读代码 + 跑测试 + 检查 diff，不做任何写操作。
 
-1. **读验证文档**: 如果项目根目录的 `VERIFY.md` 存在，按其中步骤逐项执行验证
+1. **读 VERIFY.md 并按其中说明执行验证**（如不存在则跳过）
 2. 读 openspec/changes/<taskID>/proposal.md 确认目标
 3. 读 openspec/changes/<taskID>/tasks.md 确认全部子任务 [x]
 4. 读完整 diff 和 implementer 报告，理解变更全貌
@@ -397,7 +397,7 @@ pwd  # 必须输出 D:/work_pvp-agent/loop-engineering
 ## 你的工作（只能验证，不能改代码）
 **禁止 commit、禁止修改任何文件。** 验证 = 读代码 + 跑测试 + 检查 diff，不做任何写操作。
 
-1. **读验证文档**: 如果项目根目录的 `VERIFY.md` 存在，按其中步骤逐项执行验证
+1. **读 VERIFY.md 并按其中说明执行验证**（如不存在则跳过）
 2. 读完整 diff 和 implementer 报告，理解变更全貌
 3. 确认变更范围正确、无多余文件
 4. 识别已知局限：哪些场景未覆盖、哪些边界条件未测试
