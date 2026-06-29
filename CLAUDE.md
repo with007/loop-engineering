@@ -30,7 +30,44 @@
 - 用与生产不同的参数或环境来"方便测试"
 - 只测 happy path 不测异常
 
-## 3. TEST.md / VERIFY.md 定位
+## 3. 模板修改规则
+
+修改 Skill / Command / Config 时，**始终改模板源，不要改部署副本**。
+
+### 源与副本
+
+| 角色 | 路径 | 说明 |
+|------|------|------|
+| **模板源** | `templates/skills/<name>/SKILL.md` 或 `.j2` | 唯一可编辑的源 |
+| **部署副本** | `.claude/skills/<name>/SKILL.md` | `loop setup` 自动生成，会被覆盖 |
+
+- `.j2` 模板通过 Jinja2 渲染生成 `.md`（变量从 `loop-config.yaml` 读取）
+- 裸 `.md` 模板直接拷贝
+- 两种情况下部署副本都是**生成产物**，手动改会在下次 `loop setup` 时丢失
+
+### 检查方法
+
+修改模板源后，渲染并对比确认一致性：
+
+```bash
+python -c "
+from jinja2 import Environment, BaseLoader
+vars = {...}  # 从 setup.py 的 j2_vars 复制
+env = Environment(loader=BaseLoader())
+with open('templates/skills/<name>/SKILL.md.j2') as f:
+    rendered = env.from_string(f.read()).render(**vars)
+with open('.claude/skills/<name>/SKILL.md') as f:
+    deployed = f.read()
+print('OK' if rendered == deployed else 'DIFF')
+"
+```
+
+### 禁止
+
+- 不要直接编辑 `.claude/skills/`、`.claude/commands/` 下的文件
+- 不要同时保留 `.j2` 和闲置 `.md`（用 `.j2` 就删 `.md`）
+
+## 4. TEST.md / VERIFY.md 定位
 
 `TEST.md` 和 `VERIFY.md` 是**方法论参考**，不是必须全部执行的死清单。
 
