@@ -34,6 +34,8 @@ user_invocable: true
 
 - **禁止 `git checkout master`** — agent worktree 永远不能 checkout master（master 被主 worktree 占用）。只用 `{{ default_ref }}` 远程引用。
 - **同步用 `git fetch origin && git reset --hard {{ default_ref }}`**（detached HEAD），或用 `git checkout -B agent/xxx {{ default_ref }}`（fork 分支）。
+- **禁止在 implementer 运行不到 30 分钟时主动 kill**
+- **禁止在新起 implementer 时用 `checkout -B ... {{ default_ref }}` 重置分支**（会丢弃 IMP 已做的工作）
 
 ## 每轮执行流程
 
@@ -307,6 +309,25 @@ pwd  # 必须输出 {{ agent_dir }}
 <是否破坏已有功能、迁移注意事项；无影响则写"无破坏性变更">
 ```
 
+### Step 3b: 等待 Implementer 完成
+
+Implementer 在后台运行，通过 `task-notification` 自动通知完成——**不需要轮询**。
+
+**正常完成**: implementer 返回报告 → 进入 Step 4 派发 verifier。
+
+**Implementer 未完成时（下个 cron 周期）**: task_pick 返回 `BUSY`（因为 tasks.md 标记 `[~]`），task-runner **直接等待，不做任何操作**。让 implementer 继续运行。
+
+**Implementer 被系统 kill（task-notification status=killed）**: 直接重新派发 implementer，prompt 与之前相同。**不修改 tasks.md**，**不重置分支**。子代理自然继承当前 worktree 和分支状态。
+
+**允许主动 kill 的条件**（必须同时满足以下三项）：
+1. IMP 已运行 **> 30 分钟**
+2. 用 `TaskOutput(task_id, block=false)` 主动检查确认 **输出已停止**（连续两次检查 output 相同且无新内容）
+3. 分支上 **无新 commit**：`git log <BRANCH> --not {{ default_ref }} --oneline` 为空
+
+**不满足任一条件 → 不 kill，等下一轮 cron。**
+
+kill 后直接重新派发 implementer，prompt 相同，不修改 tasks.md，不重置分支。
+
 ### Step 4: 派发验证子代理
 
 用 `Agent` 工具，独立上下文，只能验证不能改代码。必须显式 cd 到 agent worktree。
@@ -489,7 +510,7 @@ COMMIT_EOF
    fi
    ```
 
-**FAIL**:
+**FAIL**（Verifier 发现测试失败）:
 ```
 记录 FAIL 数 → SendMessage 当前 implementer（≤5次，每次携带 FAIL 测试点）
     ├─ FAIL 数收敛（↓）→ 继续
@@ -499,6 +520,9 @@ COMMIT_EOF
                         │   └─ 不收敛 → 下一个
                         └─ 3 个都不收敛 → 交给人
 ```
+
+**Implementer 中断**（被系统 kill / 满足条件主动 kill）:
+直接重新派发 implementer，prompt 与之前相同。**不修改 tasks.md**，**不重置分支**（不用 `checkout -B`）。新 implementer 自然继承当前 worktree 和分支状态，能看到上一轮 IMP 的 partial commit 或未提交改动。
 
 **交人时**:
 - tasks.md 行尾记录 `IMPx(未收敛)`
