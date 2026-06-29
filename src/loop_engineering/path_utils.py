@@ -101,3 +101,29 @@ def get_default_branch(repo_path=None):
         if _run(f"git rev-parse --verify {ref}"):
             return ref
     return "master"
+
+
+def resolve_control_root(project_root):
+    """解析控制信号的读写目录。
+
+    task-runner 在 agent worktree 中运行，控制信号（heartbeat/pause/throttle/loop.pid）
+    必须写入 agent worktree 的 .loop-engineering/control/，否则 Dashboard 和
+    task-runner 操作的是不同的信号文件。
+
+    如果项目配置了 agent worktree 且目录存在，返回 agent worktree 路径；
+    否则返回 project_root 本身（兼容未配置 agent worktree 的场景）。
+
+    Args:
+        project_root: 主项目根目录绝对路径
+
+    Returns:
+        控制信号目录的父目录（通常是 agent worktree 根目录）
+    """
+    from loop_engineering.config import read_config, get_agent_dir
+
+    cfg = read_config(project_root)
+    if cfg and cfg.get("agent", {}).get("workspace"):
+        agent_dir = get_agent_dir(cfg)
+        if agent_dir and os.path.isdir(agent_dir):
+            return agent_dir
+    return project_root

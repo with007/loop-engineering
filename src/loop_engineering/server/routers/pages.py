@@ -85,11 +85,13 @@ async def runs_page(request: Request, whoami: str = "", project: str = Query(Non
 @router.get("/control")
 async def control_page(request: Request, project: str = Query(None)):
     from loop_engineering.control import get_status
+    from loop_engineering.path_utils import resolve_control_root
 
     pr = get_project_root(request, q=project)
+    cr = resolve_control_root(pr)
     return render(request, "control.html", {
         "request": request,
-        "status": get_status(pr),
+        "status": get_status(cr),
         "current_root": pr,
     })
 

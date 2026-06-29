@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, Response
 
 from ..dependencies import get_project_root, get_agent_name, templates, render
 from ..services.task_parser import parse_tasks, filter_tasks
+from loop_engineering.path_utils import resolve_control_root
 
 router = APIRouter()
 
@@ -21,7 +22,8 @@ async def control_status_fragment(request: Request, project: str = Query(None)):
     from loop_engineering.control import get_status
 
     pr = get_project_root(request, q=project)
-    status = get_status(pr)
+    cr = resolve_control_root(pr)
+    status = get_status(cr)
     is_running = status.get("running", False)
     paused = status.get("paused", False)
     html = f'''<div id="control-status" hx-get="/control/status-fragment" hx-trigger="every 5s" hx-swap="outerHTML">
@@ -89,7 +91,8 @@ async def control_info_fragment(request: Request, project: str = Query(None)):
     from loop_engineering.control import get_status
 
     pr = get_project_root(request, q=project)
-    status = get_status(pr)
+    cr = resolve_control_root(pr)
+    status = get_status(cr)
     is_running = status.get("running", False)
     paused = status.get("paused", False)
     hb_color = "var(--pass)" if is_running else "#64748b"
