@@ -137,9 +137,10 @@ def generate_mcp_configs(config):
     _write_json_if_changed(os.path.join(project_root, ".mcp.json"), main_mcp, "主工程 .mcp.json")
     _ensure_gitignore(project_root, ".mcp.json")
 
-    # Agent .mcp.json
-    agent_servers = {"UnityMCP": {"type": "http", "url": f"http://127.0.0.1:{agent_port}/mcp"}}
-    agent_mcp = _merge_mcp_config(os.path.join(agent_dir, ".mcp.json"), agent_servers, "Agent .mcp.json")
+    # Agent .mcp.json — 从主工程配置派生，只改端口，保留所有用户添加的服务器
+    import copy
+    agent_mcp = copy.deepcopy(main_mcp)
+    agent_mcp["mcpServers"]["UnityMCP"]["url"] = f"http://127.0.0.1:{agent_port}/mcp"
     _write_json_if_changed(os.path.join(agent_dir, ".mcp.json"), agent_mcp, "Agent .mcp.json")
 
     # Agent McpProjectConfig.json (Unity 特定)
