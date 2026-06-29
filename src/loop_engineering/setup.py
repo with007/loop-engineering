@@ -425,6 +425,16 @@ def sync_to_agent(config):
         os.remove(old_cfg)
         print("  [OK] 清理旧 loop-config.yaml（根目录残留）")
 
+    # 同步 git 内容（skills/commands 等已在主 worktree 提交）
+    print("  同步 git 内容...")
+    try:
+        rc, _, _ = _run("git checkout --detach origin/master", cwd=agent_dir)
+        if rc != 0:
+            _run("git checkout --detach master", cwd=agent_dir)
+        print("  [OK] Agent worktree 已同步到最新")
+    except Exception as e:
+        print(f"  [OFFLINE] git 同步失败: {str(e)[:120]}")
+
 
 def add_unity_mcp(config):
     """添加 Unity MCP 包依赖到 Packages/manifest.json."""
@@ -590,8 +600,14 @@ def run_setup(config, force=False):
         ("添加 Unity MCP 依赖", lambda: add_unity_mcp(config)),
         ("部署验证文档", lambda: deploy_verify_docs(config)),
         ("注册通知协议", lambda: register_protocol(config)),
-        ("同步配置到 Agent Worktree", lambda: sync_to_agent(config)),
+        ("提交 Setup 文件", lambda: _commit_setup_files(config)),
+        ("同步到 Agent Worktree", lambda: sync_to_agent(config)),
     ]
+
+    # 写入配置文件（在提交步骤之前）
+    clean_config = {k: v for k, v in config.items() if not k.startswith("_")}
+    config_path = cfg.write_config(config["project"]["root"], clean_config)
+    _ensure_gitignore(config["project"]["root"], ".loop-engineering/")
 
     for i, (label, fn) in enumerate(steps, 1):
         print(f"\n[{i}/{len(steps)}] {label}")
@@ -603,15 +619,6 @@ def run_setup(config, force=False):
             print(f"  [FAIL] {msg}")
             if not force:
                 raise
-
-    # 写入配置文件
-    # 从 config 中移除内部字段（_detected）
-    clean_config = {k: v for k, v in config.items() if not k.startswith("_")}
-    config_path = cfg.write_config(config["project"]["root"], clean_config)
-    _ensure_gitignore(config["project"]["root"], ".loop-engineering/")
-
-    # 自动提交 setup 产生的文件
-    _commit_setup_files(config)
 
     print()
     print("=" * 50)
