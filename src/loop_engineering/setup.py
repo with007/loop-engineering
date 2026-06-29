@@ -132,26 +132,14 @@ def generate_mcp_configs(config):
     agent_port = config["agent"]["mcp_port"]
 
     # 主工程 .mcp.json
-    main_mcp = {
-        "mcpServers": {
-            "UnityMCP": {
-                "type": "http",
-                "url": f"http://127.0.0.1:{main_port}/mcp"
-            }
-        }
-    }
+    main_servers = {"UnityMCP": {"type": "http", "url": f"http://127.0.0.1:{main_port}/mcp"}}
+    main_mcp = _merge_mcp_config(os.path.join(project_root, ".mcp.json"), main_servers, "主工程 .mcp.json")
     _write_json_if_changed(os.path.join(project_root, ".mcp.json"), main_mcp, "主工程 .mcp.json")
     _ensure_gitignore(project_root, ".mcp.json")
 
     # Agent .mcp.json
-    agent_mcp = {
-        "mcpServers": {
-            "UnityMCP": {
-                "type": "http",
-                "url": f"http://127.0.0.1:{agent_port}/mcp"
-            }
-        }
-    }
+    agent_servers = {"UnityMCP": {"type": "http", "url": f"http://127.0.0.1:{agent_port}/mcp"}}
+    agent_mcp = _merge_mcp_config(os.path.join(agent_dir, ".mcp.json"), agent_servers, "Agent .mcp.json")
     _write_json_if_changed(os.path.join(agent_dir, ".mcp.json"), agent_mcp, "Agent .mcp.json")
 
     # Agent McpProjectConfig.json (Unity 特定)
@@ -195,6 +183,29 @@ def _write_json_if_changed(path, data, label):
             return
     atomic_write(path, new_content)
     print(f"  [OK] {label} 已生成")
+
+
+def _merge_mcp_config(path, managed_servers, label):
+    """读取现有 .mcp.json，合并 managed_servers，保留用户添加的条目。
+
+    只更新 loop 管理的 server key（UnityMCP），其余原样保留。
+    文件不存在时，用 managed_servers 创建。
+    """
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            try:
+                old = json.load(f)
+            except json.JSONDecodeError:
+                print(f"  [WARN] {label} JSON 解析失败，将重新生成")
+                old = {}
+        old_servers = old.get("mcpServers", {})
+    else:
+        old_servers = {}
+
+    # 合并：managed_servers 覆盖同名 key，用户添加的保留
+    merged_servers = dict(old_servers)
+    merged_servers.update(managed_servers)
+    return {"mcpServers": merged_servers}
 
 
 def _ensure_gitignore(project_dir, entry):
@@ -653,6 +664,8 @@ def _commit_setup_files(config):
         ".claude/",
         "Packages/manifest.json",
         ".gitignore",
+        "TEST.md",
+        "VERIFY.md",
     ]
     for f in files_to_add:
         full = os.path.join(project_root, f)
