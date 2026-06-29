@@ -417,7 +417,7 @@ def sync_to_agent(config):
     except Exception as e:
         print(f"  [OFFLINE] fetch 失败，仍继续同步文件: {str(e)[:120]}")
 
-    for fname in [".loop-engineering/loop-config.yaml", ".mcp.json"]:
+    for fname in [".loop-engineering/loop-config.yaml"]:
         src = os.path.join(project_root, fname)
         dst = os.path.join(agent_dir, fname)
         if not os.path.exists(src):
