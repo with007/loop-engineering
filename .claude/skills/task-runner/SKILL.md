@@ -14,8 +14,8 @@ user_invocable: true
 
 | 项目 | 路径 |
 |------|------|
-| 主工作树 | `d:/work_pvp/loop-engineering` |
-| **Agent 工作树** | `d:/work_pvp/loop-engineering/.claude/worktrees/agent-test` |
+| 主工作树 | `D:/work_pvp/loop-engineering` |
+| **Agent 工作树** | `D:/work_pvp/loop-engineering/.claude/worktrees/agent-test` |
 
 | Agent MCP 端口 | HTTP `9080` |
 
@@ -23,7 +23,7 @@ user_invocable: true
 
 ## 原则
 
-- **谁的任务谁做** — 只做 `d:/work_pvp/loop-engineering/tasks.md` 中标记 `(→ 你的名字)` 的任务
+- **谁的任务谁做** — 只做 `D:/work_pvp/loop-engineering/tasks.md` 中标记 `(→ 你的名字)` 的任务
 - **实现者不能给自己验收** — verifier 是独立子代理
 - **Agent 不能自己合入 master** — 推送后等人审查
 - **每个任务从 master fork** — 分支 `agent/[用户名]/[任务ID]`，从最新 HEAD 创建
@@ -93,7 +93,7 @@ python -m loop_engineering.scripts.task_cleanup $whoami
 **0b. 确认 agent worktree 存在**（由 `loop setup` 创建）：
 
 ```bash
-ls d:/work_pvp/loop-engineering/.claude/worktrees/agent-test/.git 2>/dev/null || {
+ls D:/work_pvp/loop-engineering/.claude/worktrees/agent-test/.git 2>/dev/null || {
   echo "Agent worktree 不存在，请先运行: loop setup"
   exit 1
 }
@@ -101,7 +101,7 @@ ls d:/work_pvp/loop-engineering/.claude/worktrees/agent-test/.git 2>/dev/null ||
 
 **0c. 进入 agent worktree**：
 
-调用 `EnterWorktree(path="d:/work_pvp/loop-engineering/.claude/worktrees/agent-test")`。
+调用 `EnterWorktree(path="D:/work_pvp/loop-engineering/.claude/worktrees/agent-test")`。
 
 此后会话切换到 agent worktree，`.mcp.json` → MCP 9080。子代理自动继承。
 
@@ -141,7 +141,7 @@ throttle=$(python -c "from loop_engineering.control import get_throttle; print(g
 **选任务**：
 
 ```bash
-python -m loop_engineering.scripts.task_pick $whoami --project-root d:/work_pvp/loop-engineering
+python -m loop_engineering.scripts.task_pick $whoami --project-root D:/work_pvp/loop-engineering
 ```
 - 输出格式: `taskID=xxx branch=agent/<whoami>/xxx-<slug> desc=... openSpec=true|false`
 - `openSpec=true` → 任务关联 `openspec/changes/<taskID>/`，implementer 按 OpenSpec apply 流程处理
@@ -171,7 +171,7 @@ fi
 
 ### Step 3: 派发实现子代理
 
-用 `Agent` 工具。子代理**不会自动继承** worktree CWD — 必须在 prompt 中显式 cd 到 `d:/work_pvp/loop-engineering/.claude/worktrees/agent-test`。
+用 `Agent` 工具。子代理**不会自动继承** worktree CWD — 必须在 prompt 中显式 cd 到 `D:/work_pvp/loop-engineering/.claude/worktrees/agent-test`。
 
 **openSpec=true** 时：
 
@@ -182,12 +182,12 @@ OpenSpec 路径: openspec/changes/<taskID>/
 reopen: <true|false>
 
 ## 工作目录
-你必须在 agent worktree 工作：**d:/work_pvp/loop-engineering/.claude/worktrees/agent-test**（不是主工程目录）。
+你必须在 agent worktree 工作：**D:/work_pvp/loop-engineering/.claude/worktrees/agent-test**（不是主工程目录）。
 
 ```bash
-cd d:/work_pvp/loop-engineering/.claude/worktrees/agent-test
+cd D:/work_pvp/loop-engineering/.claude/worktrees/agent-test
 git checkout <BRANCH>
-pwd  # 必须输出 d:/work_pvp/loop-engineering/.claude/worktrees/agent-test
+pwd  # 必须输出 D:/work_pvp/loop-engineering/.claude/worktrees/agent-test
 ```
 
 <如果 reopen=true，插入以下两节:>
@@ -253,12 +253,12 @@ pwd  # 必须输出 d:/work_pvp/loop-engineering/.claude/worktrees/agent-test
 reopen: <true|false>
 
 ## 工作目录
-你必须在 agent worktree 工作：**d:/work_pvp/loop-engineering/.claude/worktrees/agent-test**（不是主工程目录）。
+你必须在 agent worktree 工作：**D:/work_pvp/loop-engineering/.claude/worktrees/agent-test**（不是主工程目录）。
 
 ```bash
-cd d:/work_pvp/loop-engineering/.claude/worktrees/agent-test
+cd D:/work_pvp/loop-engineering/.claude/worktrees/agent-test
 git checkout <BRANCH>
-pwd  # 必须输出 d:/work_pvp/loop-engineering/.claude/worktrees/agent-test
+pwd  # 必须输出 D:/work_pvp/loop-engineering/.claude/worktrees/agent-test
 ```
 
 <如果 reopen=true，插入以下两节:>
@@ -338,12 +338,12 @@ taskID: <taskID>
 OpenSpec 路径: openspec/changes/<taskID>/
 
 ## 工作目录
-你必须在 agent worktree 工作：**d:/work_pvp/loop-engineering/.claude/worktrees/agent-test**（不是主工程目录）。
+你必须在 agent worktree 工作：**D:/work_pvp/loop-engineering/.claude/worktrees/agent-test**（不是主工程目录）。
 
 ```bash
-cd d:/work_pvp/loop-engineering/.claude/worktrees/agent-test
+cd D:/work_pvp/loop-engineering/.claude/worktrees/agent-test
 git log --oneline <BRANCH> -5  # 确认分支存在
-pwd  # 必须输出 d:/work_pvp/loop-engineering/.claude/worktrees/agent-test
+pwd  # 必须输出 D:/work_pvp/loop-engineering/.claude/worktrees/agent-test
 ```
 
 ## 变更
@@ -402,12 +402,12 @@ implementer 修复说明: <...>
 <描述 + 验收条件，来自 tasks.md>
 
 ## 工作目录
-你必须在 agent worktree 工作：**d:/work_pvp/loop-engineering/.claude/worktrees/agent-test**（不是主工程目录）。
+你必须在 agent worktree 工作：**D:/work_pvp/loop-engineering/.claude/worktrees/agent-test**（不是主工程目录）。
 
 ```bash
-cd d:/work_pvp/loop-engineering/.claude/worktrees/agent-test
+cd D:/work_pvp/loop-engineering/.claude/worktrees/agent-test
 git log --oneline <BRANCH> -5  # 确认分支存在
-pwd  # 必须输出 d:/work_pvp/loop-engineering/.claude/worktrees/agent-test
+pwd  # 必须输出 D:/work_pvp/loop-engineering/.claude/worktrees/agent-test
 ```
 
 ## 变更
@@ -482,20 +482,15 @@ COMMIT_EOF
    ```
 3. 运行收尾脚本（更新主工程 tasks.md: [~]→[x]、生成 diff、弹通知）：
    ```bash
-   python -m loop_engineering.scripts.task_done $whoami [任务ID] [IMP序号] [VFY轮数] --project-root d:/work_pvp/loop-engineering
+   python -m loop_engineering.scripts.task_done $whoami [任务ID] [IMP序号] [VFY轮数] --project-root D:/work_pvp/loop-engineering
    ```
 4. 推送：
    ```bash
    git push origin <BRANCH> 2>/dev/null || echo "无 remote，跳过推送，保留分支待合入"
    ```
-5. 清理本地分支（仅推送成功后才删）：
+5. 推送成功后回到 detached HEAD（保留本地分支）：
    ```bash
-   if git remote -v | grep -q origin; then
-     git checkout --detach HEAD
-     git branch -D <BRANCH>
-   else
-     echo "无 remote，保留分支 <BRANCH> 待手动合入 HEAD"
-   fi
+   git checkout --detach HEAD
    ```
 
 **FAIL**（Verifier 发现测试失败）:
@@ -539,15 +534,15 @@ COMMIT_EOF
 
 ```bash
 # 首次创建 worktree 后执行一次
-mkdir -p d:/work_pvp/loop-engineering/.claude/worktrees/agent-test/Library
-cmd.exe /c "mklink /J d:/work_pvp/loop-engineering/.claude/worktrees/agent-test\\Library\\PackageCache d:/work_pvp/loop-engineering\\Library\\PackageCache"
+mkdir -p D:/work_pvp/loop-engineering/.claude/worktrees/agent-test/Library
+cmd.exe /c "mklink /J D:/work_pvp/loop-engineering/.claude/worktrees/agent-test\\Library\\PackageCache D:/work_pvp/loop-engineering\\Library\\PackageCache"
 ```
 
 ### 手动清理
 
 ```bash
-cd d:/work_pvp/loop-engineering
-git worktree remove --force d:/work_pvp/loop-engineering/.claude/worktrees/agent-test
+cd D:/work_pvp/loop-engineering
+git worktree remove --force D:/work_pvp/loop-engineering/.claude/worktrees/agent-test
 git worktree prune
 ```
 

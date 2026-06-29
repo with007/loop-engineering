@@ -500,14 +500,9 @@ COMMIT_EOF
    ```bash
    git push origin <BRANCH> 2>/dev/null || echo "无 remote，跳过推送，保留分支待合入"
    ```
-5. 清理本地分支（仅推送成功后才删）：
+5. 推送成功后回到 detached HEAD（保留本地分支）：
    ```bash
-   if git remote -v | grep -q origin; then
-     git checkout --detach {{ default_ref }}
-     git branch -D <BRANCH>
-   else
-     echo "无 remote，保留分支 <BRANCH> 待手动合入 {{ default_ref }}"
-   fi
+   git checkout --detach {{ default_ref }}
    ```
 
 **FAIL**（Verifier 发现测试失败）:
