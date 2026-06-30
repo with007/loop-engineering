@@ -50,6 +50,14 @@ def sync_deploy(project: str = Query(None)):
     except Exception as e:
         results.append(f"MCP 失败: {e}")
 
+    # 同步到 Agent worktree
+    try:
+        from loop_engineering.setup import sync_to_agent
+        sync_to_agent(cfg)
+        results.append("Agent")
+    except Exception as e:
+        results.append(f"Agent 同步失败: {e}")
+
     ok = [r for r in results if "失败" not in r]
     fail = [r for r in results if "失败" in r]
 
