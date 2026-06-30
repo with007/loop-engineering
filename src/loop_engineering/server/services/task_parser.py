@@ -3,7 +3,7 @@
 import os
 import re
 import subprocess
-from loop_engineering.task_id import parse_task_id, extract_task_id_from_branch
+from loop_engineering.task_id import parse_task_id, extract_task_id_from_branch, FEEDBACK_LINE_RE
 from loop_engineering.git_utils import is_merged
 
 
@@ -101,7 +101,7 @@ def parse_tasks(project_root):
                     "feedback": [],
                 }
                 result.append(current_task)
-            elif re.match(r'^\s{2,}\S', line) and current_task:
+            elif FEEDBACK_LINE_RE.match(line) and current_task:
                 # Indented continuation line = feedback
                 current_task["feedback"].append(line.strip())
     return result

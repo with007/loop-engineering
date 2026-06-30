@@ -5,7 +5,7 @@ import re
 import subprocess
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from loop_engineering.task_id import parse_task_id, extract_task_id_from_branch, TaskLine, generate_task_id
+from loop_engineering.task_id import parse_task_id, extract_task_id_from_branch, TaskLine, generate_task_id, FEEDBACK_LINE_RE, write_feedback_to_task
 from loop_engineering.path_utils import resolve_project_root
 
 router = APIRouter()
@@ -53,7 +53,7 @@ def list_tasks(project: str = Query(None)):
                     "feedback": [],
                 }
                 tasks.append(current_task)
-            elif re.match(r'^\s{2,}\S', line) and current_task:
+            elif FEEDBACK_LINE_RE.match(line) and current_task:
                 current_task["feedback"].append(line.strip())
 
     return {"tasks": tasks}
@@ -166,7 +166,7 @@ def reset_task(task_id: str, project: str = Query(None)):
 
 @router.put("/{task_id}/reopen")
 def reopen_task(task_id: str, req: ReopenRequest, project: str = Query(None)):
-    """将已完成任务 ([x]) 重新打开为返工状态 ([r])，可选追加反馈缩进行."""
+    """将已完成任务 ([x]) 重新打开为返工状态 ([r])，可选追加反馈（含 IMP 标题头）."""
     pr = resolve_project_root(project=project)
     tasks_path = os.path.join(pr, "tasks.md")
     if not os.path.exists(tasks_path):
@@ -189,27 +189,28 @@ def reopen_task(task_id: str, req: ReopenRequest, project: str = Query(None)):
             raise HTTPException(400, "Only completed tasks can be reopened")
         lines[i] = line.replace("- [x] ", "- [r] ", 1)
         found = True
-
-        # 在任务行后追加反馈缩进行
-        if req.feedback.strip():
-            feedback_lines = [f"  {fl}\n" for fl in req.feedback.strip().split("\n") if fl.strip()]
-            # 找到插入位置：任务行之后、下一个非缩进非空行之前
-            insert_at = i + 1
-            while insert_at < len(lines) and (lines[insert_at].strip() == "" or lines[insert_at].startswith("  ")):
-                insert_at += 1
-            # 移除旧的缩进行（如果有）
-            del lines[i + 1:insert_at]
-            for j, fl in enumerate(feedback_lines):
-                lines.insert(i + 1 + j, fl)
         break
 
     if not found:
         raise HTTPException(404, f"Completed task '{task_id}' not found")
 
+    # 先写入状态变更
     with open(tasks_path, "w", encoding="utf-8") as f:
         f.writelines(lines)
 
-    return {"reopened": True, "task_id": task_id, "message": f"Task '{task_id}' reopened as [r]"}
+    # 有反馈时通过 write_feedback_to_task 写入（自动统计 IMP 编号并追加标题头）
+    imp_num = None
+    if req.feedback.strip():
+        try:
+            imp_num = write_feedback_to_task(tasks_path, task_id, req.feedback)
+        except (FileNotFoundError, ValueError) as e:
+            # 反馈写入失败不阻断 reopen 本身
+            pass
+
+    msg = f"Task '{task_id}' reopened as [r]"
+    if imp_num:
+        msg += f", IMP{imp_num} feedback written"
+    return {"reopened": True, "task_id": task_id, "imp_num": imp_num, "message": msg}
 
 
 @router.get("/{task_id}/report")
