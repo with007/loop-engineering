@@ -5,44 +5,13 @@
 """
 import subprocess, sys, os, shlex
 from loop_engineering.task_id import extract_task_id_from_branch
-from loop_engineering.path_utils import find_project_root, get_default_branch
+from loop_engineering.path_utils import find_project_root
+from loop_engineering.git_utils import is_merged
 
 
 def run(cmd):
     return subprocess.run(cmd, shell=True, capture_output=True, text=True,
                           encoding='utf-8', errors='replace')
-
-
-def is_merged(branch, is_remote=True):
-    """判断分支是否已合入默认主分支.
-
-    Args:
-        branch: 分支名（远程如 'origin/agent/with/task-xxx'，本地如 'agent/with/task-xxx'）
-        is_remote: True 表示远程分支，False 表示本地分支
-    """
-    base = get_default_branch()
-    if is_remote:
-        r = run(f"git branch -r --merged origin/{base}")
-        if branch in [l.strip() for l in r.stdout.strip().split('\n')]:
-            return True
-        short = branch.replace('origin/', '')
-        r = run(f"git branch --merged {base}")
-        if short in [l.strip().replace('* ', '') for l in r.stdout.strip().split('\n')]:
-            return True
-        r = run(f"git merge-base --is-ancestor origin/{branch} origin/{base}")
-        if r.returncode == 0:
-            return True
-        r = run(f"git merge-base --is-ancestor origin/{branch} {base}")
-        if r.returncode == 0:
-            return True
-    else:
-        r = run(f"git branch --merged {base}")
-        if branch in [l.strip().replace('* ', '') for l in r.stdout.strip().split('\n')]:
-            return True
-        r = run(f"git merge-base --is-ancestor {branch} {base}")
-        if r.returncode == 0:
-            return True
-    return False
 
 
 def main():
@@ -91,9 +60,9 @@ def main():
     merged = []
     for short_name, info in all_branches.items():
         if info['remote']:
-            if is_merged(info['remote'], is_remote=True):
+            if is_merged(info['remote'], is_remote=True, repo_path=project_root):
                 merged.append((short_name, info))
-        elif is_merged(short_name, is_remote=False):
+        elif is_merged(short_name, is_remote=False, repo_path=project_root):
             merged.append((short_name, info))
 
     if not merged:

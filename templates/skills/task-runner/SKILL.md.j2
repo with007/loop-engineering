@@ -74,14 +74,12 @@ fi
 git fetch origin --prune 2>/dev/null || true
 # 如果当前在某个 agent 分支上，先 detach
 git checkout --detach {{ default_ref }} 2>/dev/null
-# 删掉已合入 {{ default_ref }} 的 agent 分支（不是全部删除）
-git branch --list "agent/*" --merged {{ default_ref }} | xargs -r git branch -d 2>/dev/null
 ```
 
 **检查已合入的远程分支**：
 
 ```bash
-python -m loop_engineering.scripts.task_cleanup $whoami
+python .claude/scripts/task_cleanup.py $whoami
 ```
 
 然后直接进入 Step 1 选任务。子代理自动继承当前 worktree 上下文 + agent MCP。
@@ -118,7 +116,7 @@ git branch --list "agent/*" | xargs -r git branch -D 2>/dev/null
 **0e. 检查已合入的远程分支**：
 
 ```bash
-python -m loop_engineering.scripts.task_cleanup $whoami
+python .claude/scripts/task_cleanup.py $whoami
 ```
 
 > **注意**：Step 6 完成后必须 `ExitWorktree(action="keep")` 回到主 worktree。

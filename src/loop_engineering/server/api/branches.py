@@ -4,6 +4,7 @@ import os
 import subprocess
 from fastapi import APIRouter, Query
 from loop_engineering.path_utils import resolve_project_root
+from loop_engineering.git_utils import is_merged
 
 router = APIRouter()
 
@@ -37,7 +38,7 @@ def list_branches(project: str = Query(None), filter: str = Query("")):
                 continue
 
         # 检查是否已合入
-        merged = _is_merged(pr, branch)
+        merged = is_merged(f"origin/{branch}", is_remote=True, repo_path=pr)
 
         branches.append({
             "name": branch,
@@ -45,23 +46,3 @@ def list_branches(project: str = Query(None), filter: str = Query("")):
         })
 
     return {"branches": branches}
-
-
-def _is_merged(project_root, branch):
-    """判断远程分支是否已合入 master."""
-    import subprocess as sp
-    try:
-        r = sp.run(
-            f"git merge-base --is-ancestor origin/{branch} origin/master",
-            shell=True, capture_output=True, cwd=project_root, timeout=10
-        )
-        if r.returncode == 0:
-            return True
-        r = sp.run(
-            f"git branch -r --merged origin/master",
-            shell=True, capture_output=True, text=True,
-            encoding='utf-8', errors='replace', cwd=project_root, timeout=10
-        )
-        return branch in [l.strip() for l in r.stdout.strip().split("\n")]
-    except Exception:
-        return False
