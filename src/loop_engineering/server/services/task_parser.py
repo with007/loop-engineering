@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 from loop_engineering.task_id import parse_task_id, extract_task_id_from_branch
+from loop_engineering.git_utils import is_merged
 
 
 def parse_tasks(project_root):
@@ -19,7 +20,8 @@ def parse_tasks(project_root):
     if not os.path.exists(tp):
         return []
 
-    # Collect existing agent branch names (task_id -> branch_name)
+    # Collect all agent branch names (local + remote) keyed by task_id
+    # Local branches
     agent_branches = {}
     try:
         r = subprocess.run(
@@ -31,23 +33,24 @@ def parse_tasks(project_root):
             b = line.strip().lstrip("*+ ")
             if b:
                 tid = extract_task_id_from_branch(b)
-                if tid:
+                if tid and tid not in agent_branches:
                     agent_branches[tid] = b
     except Exception:
         pass
 
-    # Collect merged branches (to distinguish done vs pending_merge)
-    merged_branches = set()
+    # Remote branches (only if no local match)
     try:
         r = subprocess.run(
-            'git branch --merged master --list "agent/*"',
+            'git branch -r --list "origin/agent/*"',
             shell=True, capture_output=True, text=True,
             encoding='utf-8', errors='replace', cwd=project_root, timeout=5
         )
         for line in r.stdout.strip().split("\n"):
-            b = line.strip().lstrip("*+ ")
+            b = line.strip()
             if b:
-                merged_branches.add(b)
+                tid = extract_task_id_from_branch(b)
+                if tid and tid not in agent_branches:
+                    agent_branches[tid] = b
     except Exception:
         pass
 
@@ -81,7 +84,8 @@ def parse_tasks(project_root):
                 desc = re.sub(r'\s+\[[a-f0-9]{8}\]\s*$', '', desc).strip()
                 tid = parse_task_id(line) or ""
                 if status_char == "x" and tid and tid in agent_branches:
-                    if agent_branches[tid] in merged_branches:
+                    branch = agent_branches[tid]
+                    if is_merged(branch, is_remote=branch.startswith("origin/"), repo_path=project_root):
                         status = "done"
                     else:
                         status = "pending_merge"
