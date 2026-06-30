@@ -6,7 +6,7 @@ from fastapi import FastAPI
 app = FastAPI(title="Loop Engineering Dashboard")
 
 # ── API routes ──
-from .api import control, projects, tasks, runs, branches, config, docs  # noqa: E402
+from .api import control, projects, tasks, runs, branches, config, docs, sync  # noqa: E402
 app.include_router(control.router, prefix="/api/control", tags=["control"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
@@ -14,6 +14,7 @@ app.include_router(runs.router, prefix="/api/runs", tags=["runs"])
 app.include_router(branches.router, prefix="/api/branches", tags=["branches"])
 app.include_router(config.router, prefix="/api/config", tags=["config"])
 app.include_router(docs.router, prefix="/api/docs", tags=["docs"])
+app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
 
 # ── Page routes (full pages, wrapped in base.html) ──
 from .routers import pages  # noqa: E402
