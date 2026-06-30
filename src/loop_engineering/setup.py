@@ -448,6 +448,20 @@ def sync_to_agent(config):
         print(f"  [OFFLINE] git 同步失败: {str(e)[:120]}")
 
 
+
+def deploy_managed_files(config):
+    """重新部署所有 loop 管理的文件到 .claude/ 和 agent worktree.
+
+    与 run_setup 的模板部署逻辑完全一致，供 UI / API 复用。
+    包含：skills, commands, settings, scripts, docs, MCP, agent sync。
+    """
+    deploy_skills(config)
+    deploy_scripts(config)
+    deploy_verify_docs(config)
+    generate_mcp_configs(config)
+    sync_to_agent(config)
+
+
 def add_unity_mcp(config):
     """添加 Unity MCP 包依赖到 Packages/manifest.json."""
     print("--- Unity MCP 依赖 ---")

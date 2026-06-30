@@ -72,22 +72,13 @@ def update_config(
 
     # 副作用
     actions = []
-    if changed & {"agent.mcp_port", "main.mcp_port"}:
+    if changed & {"agent.mcp_port", "main.mcp_port", "agent.name", "project.name"}:
         try:
-            from loop_engineering.setup import generate_mcp_configs, sync_to_agent
-            generate_mcp_configs(new_config)
-            sync_to_agent(new_config)
-            actions.append("MCP config regenerated & synced")
+            from loop_engineering.setup import deploy_managed_files
+            deploy_managed_files(new_config)
+            actions.append("templates & MCP redeployed")
         except Exception as e:
-            actions.append(f"MCP update failed: {e}")
-
-    if changed & {"agent.name", "project.name"}:
-        try:
-            from loop_engineering.setup import deploy_skills
-            deploy_skills(new_config)
-            actions.append("task-runner SKILL.md re-rendered")
-        except Exception as e:
-            actions.append(f"SKILL.md update failed: {e}")
+            actions.append(f"deploy failed: {e}")
 
     if "agent.workspace" in changed:
         actions.append("agent.workspace changed; existing worktrees not moved")
