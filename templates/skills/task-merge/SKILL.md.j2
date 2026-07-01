@@ -244,8 +244,9 @@ write_feedback_to_task(tasks_path, "<task_id>", "<反馈文本>")
 ```bash
 cd {{ agent_dir }}
 git checkout --detach {{ default_ref }}
-git branch -D <branch>
 ```
+
+> **不要 `git branch -D <branch>`**：agent worktree 和主 worktree 共享 git refs（`git worktree` 机制），删分支会同时影响主 worktree，导致 Step 6 找不到分支。
 
 ```
 ExitWorktree(action="keep")
@@ -269,8 +270,9 @@ ExitWorktree(action="keep")
 ```bash
 cd {{ agent_dir }}
 git checkout --detach {{ default_ref }}
-git branch -D <branch>
 ```
+
+> **不要 `git branch -D <branch>`**：agent worktree 和主 worktree 共享 git refs，删分支会导致 Step 6 找不到分支。
 
 ```
 ExitWorktree(action="keep")
