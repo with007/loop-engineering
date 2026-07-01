@@ -7,9 +7,14 @@ edition = "2021"
 # System tray
 tray-icon = "0.19"
 
-# Settings dialog (cross-platform)
-eframe = "0.31"
+# Windowing + OpenGL rendering (replaces eframe/egui)
+winit = "0.30"
 egui = "0.31"
+egui_glow = { version = "0.31", features = ["winit"] }
+egui-winit = "0.31"
+glutin = "*"
+glutin-winit = "*"
+glow = "0.16"
 
 # Config
 serde = { version = "1", features = ["derive"] }
