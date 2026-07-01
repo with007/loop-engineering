@@ -139,7 +139,7 @@ throttle=$(python -c "from loop_engineering.control import get_throttle; print(g
 **选任务**：
 
 ```bash
-python -m loop_engineering.scripts.task_pick $whoami --project-root D:/work_pvp/loop-engineering
+python .claude/scripts/task_pick.py $whoami --project-root D:/work_pvp/loop-engineering
 ```
 - 输出格式: `taskID=xxx branch=agent/<whoami>/xxx-<slug> desc=... openSpec=true|false`
 - `openSpec=true` → 任务关联 `openspec/changes/<taskID>/`，implementer 按 OpenSpec apply 流程处理
@@ -480,7 +480,7 @@ COMMIT_EOF
    ```
 3. 运行收尾脚本（更新主工程 tasks.md: [~]→[x]、生成 diff、弹通知）：
    ```bash
-   python -m loop_engineering.scripts.task_done $whoami [任务ID] [IMP序号] [VFY轮数] --project-root D:/work_pvp/loop-engineering
+   python .claude/scripts/task_done.py $whoami [任务ID] [IMP序号] [VFY轮数] --project-root D:/work_pvp/loop-engineering
    ```
 4. 推送：
    ```bash
