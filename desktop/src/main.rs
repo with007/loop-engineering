@@ -603,7 +603,7 @@ impl App {
     fn apply_pending_update(&self) {
         // Try to apply any pending update via Velopack
         use velopack::sources;
-        let source = sources::AutoSource::new(UPDATE_SOURCE_URL);
+        let source = sources::GithubSource::new(UPDATE_SOURCE_URL, Some(UPDATE_GITHUB_TOKEN.to_string()), false);
         if let Ok(um) = velopack::UpdateManager::new(source, None, None) {
             if let Some(asset) = um.get_update_pending_restart() {
                 log!("apply_pending_update: applying {} and restarting", asset.Version);
@@ -891,6 +891,8 @@ fn poll_background(
 
 /// GitHub repo URL for update checks. Change this to your repo.
 const UPDATE_SOURCE_URL: &str = "https://github.com/with007/loop-engineering";
+/// Read-only GitHub token for private repo access (Contents: read).
+const UPDATE_GITHUB_TOKEN: &str = "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";
 
 /// Check for updates using Velopack. If `manual` is true, this was triggered
 /// by the user clicking "check for updates" in the menu.
@@ -902,7 +904,7 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
     );
 
     use velopack::sources;
-    let source = sources::AutoSource::new(UPDATE_SOURCE_URL);
+    let source = sources::GithubSource::new(UPDATE_SOURCE_URL, Some(UPDATE_GITHUB_TOKEN.to_string()), false);
     let um = match velopack::UpdateManager::new(source, None, None) {
         Ok(um) => um,
         Err(e) => {
