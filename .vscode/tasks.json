@@ -76,8 +76,7 @@
             "options": {
                 "cwd": "${workspaceFolder}",
                 "env": {
-                    "PATH": "${env:USERPROFILE}\\.cargo\\bin;${env:USERPROFILE}\\.dotnet\\tools;${env:PATH}",
-                    "GITHUB_TOKEN": "${input:githubToken}"
+                    "PATH": "${env:USERPROFILE}\\.cargo\\bin;${env:USERPROFILE}\\.dotnet\\tools;${env:PATH}"
                 }
             },
             "presentation": { "reveal": "always", "panel": "dedicated" },
@@ -90,12 +89,6 @@
             "type": "promptString",
             "description": "Version (e.g. 0.2.0)",
             "default": "0.1.0"
-        },
-        {
-            "id": "githubToken",
-            "type": "promptString",
-            "description": "GitHub Personal Access Token",
-            "password": true
         }
     ]
 }

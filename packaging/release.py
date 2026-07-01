@@ -40,6 +40,7 @@ PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
 PIP_PACKAGES = ["fastapi", "uvicorn", "jinja2", "pyyaml", "python-multipart", "markdown"]
 PACK_ID = "LoopDashboard"
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "with007/loop-engineering")
+GITHUB_TOKEN = "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"
 
 
 def run(cmd, **kwargs):
@@ -172,12 +173,7 @@ def publish_github(version: str):
     """发布到 GitHub Releases."""
     print("\n=== [6] Publish to GitHub ===")
 
-    token = os.environ.get("GITHUB_TOKEN")
-    if not token:
-        token = input("  GitHub Personal Access Token: ").strip()
-        if not token:
-            print("  SKIP: no token provided")
-            return
+    token = os.environ.get("GITHUB_TOKEN") or GITHUB_TOKEN
 
     tag = f"v{version}"
     api_base = f"https://api.github.com/repos/{GITHUB_REPO}"
