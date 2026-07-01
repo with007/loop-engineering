@@ -24,6 +24,7 @@ user_invocable: true
    ```
 3. **去重检查**：grep `tasks.md` 中是否已存在相同描述的条目（忽略 `[ ]` / `[x]` 状态标记）。若存在则提示用户"任务已存在"并停止，不重复添加。
 4. **定位日期分组**：取当天日期，若 `## YYYY-MM-DD` 段落不存在则创建。
+5. **生成 task_id**：用 `python -c "from loop_engineering.task_id import generate_task_id; print(generate_task_id('<描述>'))"` 生成 8 位十六进制 task_id。
 
 ## 模式 1: 直接添加
 
@@ -34,7 +35,7 @@ user_invocable: true
    - **怎么验证**：验收条件，如"编译 0 error"、"read_console 无异常"、"游戏内 X 功能正常"
 2. 在当天的日期分组末尾追加：
    ```markdown
-   - [ ] <描述> (→ <user>)
+   - [ ] <描述> (→ <user>) [<task_id>]
    ```
 3. 不 commit，留给用户自己提交
 
@@ -44,11 +45,11 @@ user_invocable: true
 
 1. 调用 `openspec-new-change` skill，和用户交互梳理需求 → 生成完整的 change（包含 spec、design、tasks.md）
 2. **确保已提交**：change 文件生成后必须 commit（含 proposal.md、design.md、specs/、tasks.md），否则 agent worktree 读不到这些文件。不要求 push，但至少本地 commit。
-3. change 生成并提交后，去重检查通过后，在当天日期分组末尾追加：
+3. change 生成并提交后，去重检查通过后，生成 task_id（用 change-name 作为描述），在当天日期分组末尾追加：
    ```markdown
-   - [ ] <change-name> (→ <user>)
+   - [ ] <change-name> (→ <user>) [<task_id>]
    ```
-3. 告诉用户 change 已生成，可以去 `openspec/changes/<name>/tasks.md` 看详情
+4. 告诉用户 change 已生成，可以去 `openspec/changes/<name>/tasks.md` 看详情
 
 ## 模式 3: 指定已有 OpenSpec change
 
@@ -60,9 +61,9 @@ user_invocable: true
    - **全完成**（0 个 `[ ]`）→ 警告用户"该 change 所有子任务已完成，无需添加"，询问是否仍要添加
    - **部分完成**（有 `[ ]` 有 `[x]`）→ 正常添加，输出中标注进度
    - **全未开始**（全部 `[ ]`）→ 正常添加
-3. 去重检查通过后，在当天日期分组末尾追加：
+4. 去重检查通过后，生成 task_id（用 change-name 作为描述），在当天日期分组末尾追加：
    ```markdown
-   - [ ] <change-name> (→ <user>)
+   - [ ] <change-name> (→ <user>) [<task_id>]
    ```
 
 ## 输出
@@ -71,7 +72,7 @@ user_invocable: true
 
 ```markdown
 ## 已添加
-**条目**: `- [ ] <条目> (→ <user>)`
+**条目**: `- [ ] <条目> (→ <user>) [<task_id>]`
 **来源**: 直接添加 / OpenSpec 新建 / 已有 change
 **进度**: <change 已完成子任务数>/<总子任务数>（仅模式 3 有进度时显示）
 **队列**: 位置 N/M，前面还有 K 个待办任务
