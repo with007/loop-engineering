@@ -21,25 +21,7 @@ use tray_icon::menu::{Menu, MenuItem, Submenu};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
 fn create_icon() -> Icon {
-    let mut pixels = vec![0u8; 32 * 32 * 4];
-    let cx = 16.0;
-    let cy = 16.0;
-    let r = 14.0;
-    for y in 0..32 {
-        for x in 0..32 {
-            let dx = x as f64 - cx;
-            let dy = y as f64 - cy;
-            let dist = (dx * dx + dy * dy).sqrt();
-            let idx = (y * 32 + x) as usize * 4;
-            if dist <= r {
-                pixels[idx] = 59;
-                pixels[idx + 1] = 130;
-                pixels[idx + 2] = 246;
-                pixels[idx + 3] = 255;
-            }
-        }
-    }
-    Icon::from_rgba(pixels, 32, 32).unwrap()
+    Icon::from_rgba(crate::icon_data::ICON_RGBA.to_vec(), 32, 32).unwrap()
 }
 
 // ── Project menu data ─────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ use winit::window::WindowId;
 mod config;
 mod server;
 mod tray;
+mod icon_data;
 
 use config::Config;
 use server::{find_available_port, Server};
