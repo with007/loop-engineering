@@ -1,0 +1,101 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "cargo build",
+            "type": "shell",
+            "command": "cargo",
+            "args": ["build", "--release"],
+            "options": {
+                "cwd": "${workspaceFolder}/desktop",
+                "env": { "PATH": "${env:USERPROFILE}\\.cargo\\bin;${env:PATH}" }
+            },
+            "presentation": { "reveal": "always", "panel": "shared" },
+            "problemMatcher": ["$rustc"]
+        },
+        {
+            "label": "Run Rust Dashboard",
+            "type": "shell",
+            "command": "cmd",
+            "args": ["/c", "taskkill /F /IM loop-dashboard.exe 2>nul & start \"\" \"${workspaceFolder}\\desktop\\target\\release\\loop-dashboard.exe\""],
+            "options": { "cwd": "${workspaceFolder}/desktop/target/release" },
+            "presentation": { "reveal": "never" },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build & Run",
+            "dependsOn": ["cargo build", "Run Rust Dashboard"],
+            "dependsOrder": "sequence",
+            "group": { "kind": "build", "isDefault": true },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build Python Dashboard (.exe)",
+            "type": "shell",
+            "command": "pyinstaller",
+            "args": ["--clean", "--noconfirm", "loop-dashboard.spec"],
+            "options": { "cwd": "${workspaceFolder}/packaging" },
+            "presentation": { "reveal": "always", "panel": "shared" },
+            "problemMatcher": []
+        },
+        {
+            "label": "Package Distribution (zip)",
+            "type": "shell",
+            "command": "cmd",
+            "args": ["/c", "build.bat"],
+            "options": { "cwd": "${workspaceFolder}/packaging" },
+            "presentation": { "reveal": "always", "panel": "shared" },
+            "problemMatcher": []
+        },
+        {
+            "label": "Release (Build + Package)",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "packaging/release.py",
+                "${input:releaseVersion}"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "PATH": "${env:USERPROFILE}\\.cargo\\bin;${env:USERPROFILE}\\.dotnet\\tools;${env:PATH}"
+                }
+            },
+            "presentation": { "reveal": "always", "panel": "dedicated" },
+            "problemMatcher": []
+        },
+        {
+            "label": "🚀 Release + Publish to GitHub",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "packaging/release.py",
+                "${input:releaseVersion}",
+                "--publish"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "PATH": "${env:USERPROFILE}\\.cargo\\bin;${env:USERPROFILE}\\.dotnet\\tools;${env:PATH}",
+                    "GITHUB_TOKEN": "${input:githubToken}"
+                }
+            },
+            "presentation": { "reveal": "always", "panel": "dedicated" },
+            "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            "id": "releaseVersion",
+            "type": "promptString",
+            "description": "Version (e.g. 0.2.0)",
+            "default": "0.1.0"
+        },
+        {
+            "id": "githubToken",
+            "type": "promptString",
+            "description": "GitHub Personal Access Token",
+            "password": true
+        }
+    ]
+}
