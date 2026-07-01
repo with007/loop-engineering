@@ -84,11 +84,7 @@ impl ProjectMenu {
         if !running {
             items.push(&self.start_loop);
         } else {
-            if paused {
-                items.push(&self.resume);
-            } else {
-                items.push(&self.pause);
-            }
+            items.push(if paused { &self.resume } else { &self.pause });
             items.push(&self.stop_loop);
         }
 
@@ -145,7 +141,8 @@ pub fn build_menu(items: &mut TrayMenuItems, running: bool, paused: bool) -> Men
         items.project_submenus.push(proj.rebuild_submenu(running, paused));
     }
 
-    let mut refs: Vec<&dyn tray_icon::menu::IsMenuItem> = Vec::new();
+    let mut refs: Vec<&dyn tray_icon::menu::IsMenuItem> =
+        Vec::with_capacity(items.project_submenus.len() + 5);
     for submenu in &items.project_submenus {
         refs.push(submenu as &dyn tray_icon::menu::IsMenuItem);
     }

@@ -132,17 +132,17 @@ impl GlutinWindowContext {
         });
         let context_attributes =
             glutin::context::ContextAttributesBuilder::new().build(raw_window_handle);
-        let fallback_context_attributes = glutin::context::ContextAttributesBuilder::new()
-            .with_context_api(glutin::context::ContextApi::Gles(None))
-            .build(raw_window_handle);
         let not_current_gl_context = unsafe {
             gl_display
                 .create_context(&gl_config, &context_attributes)
                 .unwrap_or_else(|_| {
                     log!("GlutinWindowContext: retrying with GLES fallback");
+                    let fallback_attrs = glutin::context::ContextAttributesBuilder::new()
+                        .with_context_api(glutin::context::ContextApi::Gles(None))
+                        .build(raw_window_handle);
                     gl_config
                         .display()
-                        .create_context(&gl_config, &fallback_context_attributes)
+                        .create_context(&gl_config, &fallback_attrs)
                         .expect("failed to create context even with fallback attributes")
                 })
         };
@@ -445,14 +445,10 @@ impl ApplicationHandler<UserEvent> for App {
                 self.handle_menu_event(event_loop, e);
             }
             UserEvent::PollResult { running, paused } => {
-                let mut s = self.state.lock().unwrap();
-                s.loop_running = running;
-                s.loop_paused = paused;
-                drop(s);
-                self.rebuild_menu(running, paused);
+                self.update_loop_state(running, paused);
             }
             UserEvent::PollServerDown => {
-                // Server was down, restart was triggered in background
+                self.update_loop_state(false, false);
             }
         }
     }
@@ -558,8 +554,10 @@ impl ApplicationHandler<UserEvent> for App {
 impl App {
     fn open_settings_window(&mut self, event_loop: &ActiveEventLoop) {
         log!("open_settings_window: creating new window");
-        let port = { self.state.lock().unwrap().port };
-        let autostart = { self.state.lock().unwrap().autostart };
+        let (port, autostart) = {
+            let s = self.state.lock().unwrap();
+            (s.port, s.autostart)
+        };
         let settings_path = self.exe_dir.join("dashboard-settings.json");
         let mut ws = WindowState::new(event_loop, port, autostart, settings_path);
 
@@ -591,12 +589,20 @@ impl App {
         }
     }
 
+    fn update_loop_state(&mut self, running: bool, paused: bool) {
+        let mut s = self.state.lock().unwrap();
+        s.loop_running = running;
+        s.loop_paused = paused;
+        drop(s);
+        self.rebuild_menu(running, paused);
+    }
+
     fn handle_menu_event(&mut self, event_loop: &ActiveEventLoop, event: tray_icon::menu::MenuEvent) {
         let port = { self.state.lock().unwrap().port };
         let url = format!("http://localhost:{}", port);
 
         let ids = match &self.menu_ids {
-            Some(ids) => ids.clone(),
+            Some(ids) => ids,
             None => {
                 log!("handle_menu_event: no menu_ids (should not happen)");
                 return;
@@ -609,13 +615,13 @@ impl App {
 
         let id = &event.id;
 
-        if *id == ids.add_project {
+        if id == &ids.add_project {
             log!("menu: add_project");
             let _ = open::that(format!("{}/setup", url));
-        } else if *id == ids.settings {
+        } else if id == &ids.settings {
             log!("menu: settings -> open_settings_window");
             self.open_settings_window(event_loop);
-        } else if *id == ids.quit {
+        } else if id == &ids.quit {
             log!("menu: QUIT -> calling std::process::exit(0)");
             std::process::exit(0);
         } else {
@@ -634,41 +640,25 @@ impl App {
                             log!("menu: project '{}' -> pause", proj.name);
                             let _ = ureq::post(&format!("{}/api/control/pause", url))
                                 .send_empty();
-                            let mut s = self.state.lock().unwrap();
-                            s.loop_running = true;
-                            s.loop_paused = true;
-                            drop(s);
-                            self.rebuild_menu(true, true);
+                            self.update_loop_state(true, true);
                         }
                         tray::ProjectAction::Resume => {
                             log!("menu: project '{}' -> resume", proj.name);
                             let _ = ureq::delete(&format!("{}/api/control/pause", url))
                                 .call();
-                            let mut s = self.state.lock().unwrap();
-                            s.loop_running = true;
-                            s.loop_paused = false;
-                            drop(s);
-                            self.rebuild_menu(true, false);
+                            self.update_loop_state(true, false);
                         }
                         tray::ProjectAction::Stop => {
                             log!("menu: project '{}' -> stop", proj.name);
                             let _ = ureq::post(&format!("{}/api/control/stop", url))
                                 .send_empty();
-                            let mut s = self.state.lock().unwrap();
-                            s.loop_running = false;
-                            s.loop_paused = false;
-                            drop(s);
-                            self.rebuild_menu(false, false);
+                            self.update_loop_state(false, false);
                         }
                         tray::ProjectAction::Start => {
                             log!("menu: project '{}' -> start", proj.name);
                             let _ = ureq::post(&format!("{}/api/control/start", url))
                                 .send_empty();
-                            let mut s = self.state.lock().unwrap();
-                            s.loop_running = true;
-                            s.loop_paused = false;
-                            drop(s);
-                            self.rebuild_menu(true, false);
+                            self.update_loop_state(true, false);
                         }
                     }
                     handled = true;
