@@ -8,7 +8,7 @@ use std::time::Instant;
 use tray_icon::menu::MenuEvent;
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::raw_window_handle::HasWindowHandle;
 use winit::window::WindowId;
 
@@ -69,6 +69,10 @@ pub struct AppState {
 #[derive(Debug)]
 enum UserEvent {
     MenuEvent(tray_icon::menu::MenuEvent),
+    /// Background poll result — server status check completed
+    PollResult { running: bool, paused: bool },
+    /// Background poll failed (server down, restarting in background)
+    PollServerDown,
 }
 
 // ── GlutinWindowContext ───────────────────────────────────────────────────
@@ -215,7 +219,6 @@ struct WindowState {
     gl_window: GlutinWindowContext,
     gl: Arc<glow::Context>,
     egui_glow: egui_glow::EguiGlow,
-    show: bool,
     port: u16,
     autostart: bool,
     settings_path: std::path::PathBuf,
@@ -270,7 +273,6 @@ impl WindowState {
             gl_window,
             gl,
             egui_glow,
-            show: false,
             port,
             autostart,
             settings_path,
@@ -352,6 +354,7 @@ struct App {
     app_dir: Arc<String>,
     exe_dir: std::path::PathBuf,
     last_poll: Instant,
+    proxy: EventLoopProxy<UserEvent>,
     test_mode: bool,
     test_step: u32,
     test_timer: Instant,
@@ -378,6 +381,11 @@ impl ApplicationHandler<UserEvent> for App {
         if self.last_heartbeat.elapsed().as_secs() >= 2 {
             self.last_heartbeat = Instant::now();
             log!("heartbeat: poll mode active");
+        }
+
+        // Keep rendering while settings window is open
+        if let Some(ref ws) = self.settings_window {
+            ws.gl_window.window().request_redraw();
         }
 
         // ── Test mode ──
@@ -411,19 +419,19 @@ impl ApplicationHandler<UserEvent> for App {
             }
         }
 
-        // Server polling every 10 seconds
+        // Server polling every 10 seconds (background thread — don't block GUI)
         if self.last_poll.elapsed().as_secs() >= 10 {
             self.last_poll = Instant::now();
             log!("new_events: polling server status...");
-            if let Some(ref menu_items) = self.menu_items {
-                poll_and_update(
-                    &self.state,
-                    menu_items,
-                    &self.server,
-                    &self.python_exe,
-                    &self.app_dir,
-                );
-            }
+            let port = { self.state.lock().unwrap().port };
+            let state = self.state.clone();
+            let server = self.server.clone();
+            let python_exe = self.python_exe.clone();
+            let app_dir = self.app_dir.clone();
+            let proxy = self.proxy.clone();
+            std::thread::spawn(move || {
+                poll_background(port, &state, &server, &python_exe, &app_dir, &proxy);
+            });
         }
     }
 
@@ -432,6 +440,32 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::MenuEvent(e) => {
                 log!("user_event: MenuEvent id={:?}", e.id);
                 self.handle_menu_event(event_loop, e);
+            }
+            UserEvent::PollResult { running, paused } => {
+                let mut s = self.state.lock().unwrap();
+                s.loop_running = running;
+                s.loop_paused = paused;
+                drop(s);
+                if let Some(ref items) = self.menu_items {
+                    let status_text = if running && paused {
+                        "Loop: 已暂停 ⏸"
+                    } else if running {
+                        "Loop: 运行中 ●"
+                    } else {
+                        "Loop: 未启动 ○"
+                    };
+                    let _ = items.status.set_text(status_text);
+                    let _ = items.start_loop.set_enabled(!running);
+                    let _ = items.pause.set_enabled(running && !paused);
+                    let _ = items.resume.set_enabled(running && paused);
+                    let _ = items.stop_loop.set_enabled(running);
+                }
+            }
+            UserEvent::PollServerDown => {
+                // Server was down, restart was triggered in background
+                if let Some(ref items) = self.menu_items {
+                    let _ = items.status.set_text("Loop: ⚠ 服务器重连中...");
+                }
             }
         }
     }
@@ -469,59 +503,57 @@ impl ApplicationHandler<UserEvent> for App {
 
         // Forward event to egui for input handling
         if let Some(ref mut ws) = self.settings_window {
-            if ws.show {
-                let event_response = ws
-                    .egui_glow
-                    .on_window_event(ws.gl_window.window(), &event);
+            let event_response = ws
+                .egui_glow
+                .on_window_event(ws.gl_window.window(), &event);
 
-                if event_response.repaint {
-                    ws.gl_window.window().request_redraw();
-                }
+            if event_response.repaint {
+                ws.gl_window.window().request_redraw();
+            }
 
-                // Render on RedrawRequested or after input events that need repaint
-                if matches!(event, WindowEvent::RedrawRequested) || event_response.repaint {
-                    let action = ws.render();
-                    match action {
-                        SettingsAction::Close => {
-                            self.hide_settings_window();
-                        }
-                        SettingsAction::Save { port, autostart } => {
-                            log!(
-                                "settings: saving port={}, autostart={}",
-                                port,
-                                autostart
-                            );
-                            let settings = serde_json::json!({
-                                "port": port,
-                                "autostart": autostart,
-                            });
-                            if let Ok(data) = serde_json::to_string_pretty(&settings) {
-                                let _ = std::fs::write(&ws.settings_path, data);
-                            }
-                            // Update app state
-                            {
-                                let mut s = self.state.lock().unwrap();
-                                s.port = port;
-                                s.autostart = autostart;
-                            }
-                            if autostart {
-                                enable_autostart();
-                            } else {
-                                disable_autostart();
-                            }
-                            // Update autostart menu text
-                            if let Some(ref items) = self.menu_items {
-                                let label = if autostart {
-                                    "✓ 开机自启"
-                                } else {
-                                    "  开机自启"
-                                };
-                                let _ = items.autostart.set_text(label);
-                            }
-                            self.hide_settings_window();
-                        }
-                        SettingsAction::None => {}
+            // Render on RedrawRequested or after input events that need repaint
+            if matches!(event, WindowEvent::RedrawRequested) || event_response.repaint {
+                let action = ws.render();
+                match action {
+                    SettingsAction::Close => {
+                        self.hide_settings_window();
                     }
+                    SettingsAction::Save { port, autostart } => {
+                        log!(
+                            "settings: saving port={}, autostart={}",
+                            port,
+                            autostart
+                        );
+                        let settings = serde_json::json!({
+                            "port": port,
+                            "autostart": autostart,
+                        });
+                        if let Ok(data) = serde_json::to_string_pretty(&settings) {
+                            let _ = std::fs::write(&ws.settings_path, data);
+                        }
+                        // Update app state
+                        {
+                            let mut s = self.state.lock().unwrap();
+                            s.port = port;
+                            s.autostart = autostart;
+                        }
+                        if autostart {
+                            enable_autostart();
+                        } else {
+                            disable_autostart();
+                        }
+                        // Update autostart menu text
+                        if let Some(ref items) = self.menu_items {
+                            let label = if autostart {
+                                "✓ 开机自启"
+                            } else {
+                                "  开机自启"
+                            };
+                            let _ = items.autostart.set_text(label);
+                        }
+                        self.hide_settings_window();
+                    }
+                    SettingsAction::None => {}
                 }
             }
         }
@@ -567,6 +599,9 @@ impl App {
             ws.autostart = s.autostart;
             drop(s);
 
+            // Render first frame BEFORE showing, so user doesn't see white flash
+            log!("open_settings_window: rendering first frame...");
+            ws.render();
             ws.gl_window.window().set_visible(true);
             ws.gl_window.window().request_redraw();
             log!("open_settings_window: window visible, redraw requested");
@@ -737,6 +772,7 @@ fn main() {
         app_dir,
         exe_dir,
         last_poll: Instant::now(),
+        proxy: event_loop.create_proxy(),
         test_mode,
         test_step: 0,
         test_timer: Instant::now(),
@@ -750,62 +786,39 @@ fn main() {
     log!("main: event loop exited");
 }
 
-// ── poll_and_update ───────────────────────────────────────────────────────
+// ── poll_background (runs in a thread — never blocks the GUI) ──────────────
 
-fn poll_and_update(
+fn poll_background(
+    port: u16,
     state: &Arc<Mutex<AppState>>,
-    tray: &tray::TrayMenuItems,
     server: &Arc<Mutex<Server>>,
     python_exe: &str,
     app_dir: &str,
+    proxy: &EventLoopProxy<UserEvent>,
 ) {
-    let port = { state.lock().unwrap().port };
-
     if !server::is_port_open(port) {
         log!("poll: server down, restarting...");
-        let mut s = state.lock().unwrap();
-        s.loop_running = false;
-        s.loop_paused = false;
-        // Note: tray_icon doesn't have a direct set_tooltip method accessible
-        // through TrayMenuItems. The TrayIcon is in App.tray_icon.
-        // We update the menu item text instead:
-        let _ = tray.status.set_text("Loop: ⚠ 服务器重连中...");
-        drop(s);
+        {
+            let mut s = state.lock().unwrap();
+            s.loop_running = false;
+            s.loop_paused = false;
+        }
+        let _ = proxy.send_event(UserEvent::PollServerDown);
         let mut srv = server.lock().unwrap();
         let _ = srv.restart(port, python_exe, app_dir);
         return;
     }
 
-    if let Ok(resp) =
-        ureq::get(&format!("http://localhost:{}/api/control/status", port)).call()
-    {
-        if let Ok(json) = resp.into_body().read_json::<serde_json::Value>() {
-            let running = json
-                .get("running")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let paused = json
-                .get("paused")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-
-            let mut s = state.lock().unwrap();
-            s.loop_running = running;
-            s.loop_paused = paused;
-
-            let status_text = if running && paused {
-                "Loop: 已暂停 ⏸"
-            } else if running {
-                "Loop: 运行中 ●"
-            } else {
-                "Loop: 未启动 ○"
-            };
-            let _ = tray.status.set_text(status_text);
-
-            let _ = tray.start_loop.set_enabled(!running);
-            let _ = tray.pause.set_enabled(running && !paused);
-            let _ = tray.resume.set_enabled(running && paused);
-            let _ = tray.stop_loop.set_enabled(running);
+    match ureq::get(&format!("http://localhost:{}/api/control/status", port)).call() {
+        Ok(resp) => {
+            if let Ok(json) = resp.into_body().read_json::<serde_json::Value>() {
+                let running = json.get("running").and_then(|v| v.as_bool()).unwrap_or(false);
+                let paused = json.get("paused").and_then(|v| v.as_bool()).unwrap_or(false);
+                let _ = proxy.send_event(UserEvent::PollResult { running, paused });
+            }
+        }
+        Err(e) => {
+            log!("poll: HTTP error: {:?}", e);
         }
     }
 }

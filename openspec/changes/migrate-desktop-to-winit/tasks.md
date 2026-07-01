@@ -34,9 +34,9 @@
 
 ### 7. 测试验证
 - [x] Windows: 编译 release build
-- [x] 验证托盘图标出现（自动化测试确认托盘创建成功；可视化验证需要桌面环境）
-- [x] 验证托盘菜单所有项响应（自动化测试确认 MenuEvent handler 注册成功；交互测试需要桌面环境）
-- [x] 验证设置面板打开/关闭（`--test` 模式自动化验证：GL 上下文 + EguiGlow + CJK 字体 + 窗口显隐均正常）
-- [x] 验证点 X 关闭设置面板不退出应用（`--test` 模式验证：隐藏窗口后事件循环继续运行）
-- [x] 验证托盘退出正常终止（`--test` 模式验证：`std::process::exit(0)` 正常退出）
+- [x] 验证托盘图标出现（`test-layer1`: FindWindowW 找到 tray_icon_app 窗口）
+- [x] 验证托盘菜单所有项响应（`test-layer1`: PostMessage(WM_USER_TRAYICON, WM_RBUTTONDOWN) 触发 tray_proc → show_tray_menu → TrackPopupMenu，ESC 关闭后进程存活）
+- [x] 验证设置面板打开/关闭（`--test` 模式：GL 上下文 + EguiGlow + CJK 字体 + 窗口显隐均正常）
+- [x] 验证点 X 关闭设置面板不退出应用（`--test` 模式：隐藏窗口后事件循环 heartbeat 继续运行）
+- [x] 验证托盘退出正常终止（`--test` 模式：`std::process::exit(0)` 正常退出）
 - [x] 验证服务器状态轮询正常工作（`poll_and_update` 函数完整复用，`new_events` 中按 10s 间隔调用）
