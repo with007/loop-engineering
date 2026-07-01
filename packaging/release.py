@@ -275,11 +275,10 @@ def main():
     print(f"Loop Dashboard Release v{version} (current: {current or 'none'})")
     print(f"Repo: {GITHUB_REPO}")
 
-    # 只在完整重建时清理
-    if not args.skip_build and not args.skip_python:
+    # 只在完整重建 Python 环境时才清理
+    if not args.skip_python:
         clean()
     else:
-        # 跳过清理时确保目录存在
         DIST.mkdir(parents=True, exist_ok=True)
         RELEASES.mkdir(parents=True, exist_ok=True)
     if not args.skip_build:
