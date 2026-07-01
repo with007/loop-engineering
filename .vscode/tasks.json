@@ -87,8 +87,8 @@
         {
             "id": "releaseVersion",
             "type": "promptString",
-            "description": "Version (e.g. 0.2.0)",
-            "default": "0.1.0"
+            "description": "Version (auto = bump patch, or type e.g. 0.2.0)",
+            "default": "auto"
         }
     ]
 }

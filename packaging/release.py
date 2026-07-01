@@ -231,16 +231,48 @@ def publish_github(version: str):
             print(f"    FAILED: {e.code} {e.read().decode()}")
 
 
+def get_current_version():
+    """从 version.txt 读取当前版本."""
+    vf = ROOT / "desktop" / "version.txt"
+    if vf.exists():
+        return vf.read_text().strip()
+    return None
+
+
+def bump_patch(version: str) -> str:
+    """递增 patch 版本号，如 0.1.0 → 0.1.1."""
+    parts = version.split(".")
+    parts[-1] = str(int(parts[-1]) + 1)
+    return ".".join(parts)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Loop Dashboard 发布脚本")
-    parser.add_argument("version", help="版本号，如 0.1.0")
+    parser.add_argument("version", nargs="?", help="版本号，如 0.2.0，或 'auto' 自动递增")
     parser.add_argument("--publish", action="store_true", help="构建后发布到 GitHub")
     parser.add_argument("--skip-build", action="store_true", help="跳过 Rust 编译")
     parser.add_argument("--skip-python", action="store_true", help="跳过 Python 下载（使用已有）")
     args = parser.parse_args()
 
+    current = get_current_version()
+
+    if not args.version:
+        if current:
+            print(f"Current version: {current}")
+            args.version = input(f"New version [{bump_patch(current)}]: ").strip()
+        if not args.version:
+            if current:
+                args.version = bump_patch(current)
+            else:
+                args.version = "0.1.0"
+    elif args.version == "auto":
+        if current:
+            args.version = bump_patch(current)
+        else:
+            args.version = "0.1.0"
+
     version = args.version
-    print(f"Loop Dashboard Release v{version}")
+    print(f"Loop Dashboard Release v{version} (current: {current or 'none'})")
     print(f"Repo: {GITHUB_REPO}")
 
     clean()
