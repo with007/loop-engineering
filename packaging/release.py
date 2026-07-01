@@ -1,0 +1,269 @@
+#!/usr/bin/env python3
+"""Loop Dashboard 发布脚本
+
+用法:
+    python release.py 0.1.0                        # 构建 + 打包
+    python release.py 0.1.0 --publish              # 构建 + 打包 + 发布到 GitHub
+
+前提:
+    - Rust (cargo)
+    - .NET SDK 8+ (vpk CLI: dotnet tool install -g vpk)
+    - 发布需要 GITHUB_TOKEN 环境变量 (或手动输入)
+
+产物:
+    packaging/releases/
+      LoopDashboard-win-Setup.exe
+      LoopDashboard-win-Portable.zip
+      LoopDashboard-0.1.0-full.nupkg
+      releases.win.json
+"""
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import urllib.request
+import zipfile
+from pathlib import Path
+from urllib.request import Request
+
+ROOT = Path(__file__).resolve().parent.parent
+DIST = ROOT / "packaging" / "dist"
+RELEASES = ROOT / "packaging" / "releases"
+DESKTOP = ROOT / "desktop"
+PYTHON_VERSION = "3.14.3"
+PYTHON_URL = f"https://www.python.org/ftp/python/{PYTHON_VERSION}/python-{PYTHON_VERSION}-embed-amd64.zip"
+PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
+PIP_PACKAGES = ["fastapi", "uvicorn", "jinja2", "pyyaml", "python-multipart", "markdown"]
+PACK_ID = "LoopDashboard"
+GITHUB_REPO = os.environ.get("GITHUB_REPO", "with007/loop-engineering")
+
+
+def run(cmd, **kwargs):
+    """运行命令，失败时退出."""
+    print(f"  RUN: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
+    result = subprocess.run(cmd, shell=isinstance(cmd, str), **kwargs)
+    if result.returncode != 0:
+        print(f"  FAILED (exit {result.returncode})")
+        sys.exit(1)
+    return result
+
+
+def clean():
+    """清理旧的构建产物."""
+    print("\n=== [1] Clean ===")
+    if DIST.exists():
+        shutil.rmtree(DIST)
+    if RELEASES.exists():
+        shutil.rmtree(RELEASES)
+    DIST.mkdir(parents=True)
+    RELEASES.mkdir(parents=True)
+    (DIST / "python").mkdir()
+    (DIST / "app" / "src" / "loop_engineering").mkdir(parents=True)
+    (DIST / "app" / "templates").mkdir(parents=True)
+
+
+def build_rust():
+    """编译 Rust 二进制."""
+    print("\n=== [2] Build Rust ===")
+    run(["cargo", "build", "--release"], cwd=DESKTOP)
+
+
+def setup_python():
+    """下载嵌入式 Python 并安装依赖."""
+    print("\n=== [3] Setup embedded Python ===")
+    python_dir = DIST / "python"
+
+    # 下载 Python embed
+    zip_path = python_dir / "python-embed.zip"
+    print(f"  Downloading Python {PYTHON_VERSION}...")
+    urllib.request.urlretrieve(PYTHON_URL, zip_path)
+
+    # 解压
+    with zipfile.ZipFile(zip_path) as zf:
+        zf.extractall(python_dir)
+    zip_path.unlink()
+
+    # 配置 site-packages
+    pth = python_dir / "python314._pth"
+    pth.write_text("python314.zip\n.\nimport site\n..\\app\\src\n", encoding="ascii")
+    print(f"  Configured {pth.name}")
+
+    # 安装 pip
+    print("  Installing pip...")
+    get_pip = python_dir / "get-pip.py"
+    urllib.request.urlretrieve(PIP_URL, get_pip)
+    run([str(python_dir / "python.exe"), str(get_pip)])
+    get_pip.unlink()
+
+    # 安装依赖
+    print("  Installing packages...")
+    run([
+        str(python_dir / "python.exe"), "-m", "pip", "install",
+        *PIP_PACKAGES
+    ])
+
+
+def copy_files():
+    """复制应用文件."""
+    print("\n=== [4] Copy app files ===")
+    # Rust 二进制
+    src_exe = DESKTOP / "target" / "release" / "loop-dashboard.exe"
+    shutil.copy2(src_exe, DIST / "loop-dashboard.exe")
+    print(f"  {src_exe.name}")
+
+    # Python 源码
+    src_dir = ROOT / "src" / "loop_engineering"
+    dst_dir = DIST / "app" / "src" / "loop_engineering"
+    for item in src_dir.rglob("*"):
+        if item.is_file() and "__pycache__" not in str(item):
+            rel = item.relative_to(src_dir)
+            (dst_dir / rel.parent).mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, dst_dir / rel)
+    print(f"  src/loop_engineering/")
+
+    # 模板
+    templates_src = ROOT / "templates"
+    templates_dst = DIST / "app" / "templates"
+    if templates_src.exists():
+        for item in templates_src.rglob("*"):
+            if item.is_file():
+                rel = item.relative_to(templates_src)
+                (templates_dst / rel.parent).mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item, templates_dst / rel)
+    print(f"  templates/")
+
+    # 确保不包含运行时生成的配置/日志
+    for fname in ["dashboard-settings.json", "dashboard.log"]:
+        p = DIST / fname
+        if p.exists():
+            p.unlink()
+
+
+def write_version(version: str):
+    """写入版本文件."""
+    (DIST / "version.txt").write_text(f"{version}\n")
+    print(f"  version.txt → {version}")
+
+
+def vpk_pack(version: str):
+    """运行 vpk 打包."""
+    print("\n=== [5] vpk pack ===")
+    run([
+        "vpk", "pack",
+        "--packId", PACK_ID,
+        "--packVersion", version,
+        "--packDir", str(DIST),
+        "--mainExe", "loop-dashboard.exe",
+        "--outputDir", str(RELEASES),
+        "--channel", "win",
+    ], cwd=ROOT)
+
+    print("\n  Release files:")
+    for f in sorted(RELEASES.iterdir()):
+        size_mb = f.stat().st_size / (1024 * 1024)
+        print(f"    {f.name} ({size_mb:.1f} MB)")
+
+
+def publish_github(version: str):
+    """发布到 GitHub Releases."""
+    print("\n=== [6] Publish to GitHub ===")
+
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        token = input("  GitHub Personal Access Token: ").strip()
+        if not token:
+            print("  SKIP: no token provided")
+            return
+
+    tag = f"v{version}"
+    api_base = f"https://api.github.com/repos/{GITHUB_REPO}"
+
+    # 创建 Release
+    print(f"  Creating release {tag}...")
+    create_url = f"{api_base}/releases"
+    data = json.dumps({
+        "tag_name": tag,
+        "target_commitish": "master",
+        "name": f"Loop Dashboard v{version}",
+        "body": f"Loop Dashboard v{version}\n\n"
+                f"### 安装\n"
+                f"下载 `LoopDashboard-win-Setup.exe` 运行安装。\n\n"
+                f"### 便携版\n"
+                f"下载 `LoopDashboard-win-Portable.zip` 解压运行。",
+        "draft": False,
+        "prerelease": version.startswith("0."),
+    }).encode()
+
+    req = Request(create_url, data=data, method="POST")
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Accept", "application/vnd.github.v3+json")
+    req.add_header("Content-Type", "application/json")
+
+    try:
+        with urllib.request.urlopen(req) as resp:
+            release = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        print(f"  FAILED: {e.code} {body}")
+        return
+
+    upload_url = release["upload_url"].split("{")[0]
+    print(f"  Release created: {release['html_url']}")
+
+    # 上传文件
+    for fpath in RELEASES.iterdir():
+        if not fpath.is_file():
+            continue
+        print(f"  Uploading {fpath.name} ({fpath.stat().st_size / 1024 / 1024:.1f} MB)...")
+        with open(fpath, "rb") as f:
+            data = f.read()
+
+        url = f"{upload_url}?name={fpath.name}"
+        req = Request(url, data=data, method="POST")
+        req.add_header("Authorization", f"Bearer {token}")
+        req.add_header("Accept", "application/vnd.github.v3+json")
+        req.add_header("Content-Type", "application/octet-stream")
+
+        try:
+            urllib.request.urlopen(req)
+            print(f"    OK")
+        except urllib.error.HTTPError as e:
+            print(f"    FAILED: {e.code} {e.read().decode()}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Loop Dashboard 发布脚本")
+    parser.add_argument("version", help="版本号，如 0.1.0")
+    parser.add_argument("--publish", action="store_true", help="构建后发布到 GitHub")
+    parser.add_argument("--skip-build", action="store_true", help="跳过 Rust 编译")
+    parser.add_argument("--skip-python", action="store_true", help="跳过 Python 下载（使用已有）")
+    args = parser.parse_args()
+
+    version = args.version
+    print(f"Loop Dashboard Release v{version}")
+    print(f"Repo: {GITHUB_REPO}")
+
+    clean()
+    if not args.skip_build:
+        build_rust()
+    if not args.skip_python:
+        setup_python()
+    else:
+        print("\n=== [3] Setup Python (SKIPPED) ===")
+    copy_files()
+    write_version(version)
+    vpk_pack(version)
+
+    if args.publish:
+        publish_github(version)
+
+    print(f"\n=== Done: v{version} ===")
+    print(f"Files: {RELEASES}")
+
+
+if __name__ == "__main__":
+    main()
