@@ -4,6 +4,7 @@ src/loop_engineering/__init__.py
 src/loop_engineering/cli.py
 src/loop_engineering/config.py
 src/loop_engineering/control.py
+src/loop_engineering/git_utils.py
 src/loop_engineering/path_utils.py
 src/loop_engineering/presets.py
 src/loop_engineering/registry.py
@@ -17,12 +18,9 @@ src/loop_engineering.egg-info/dependency_links.txt
 src/loop_engineering.egg-info/entry_points.txt
 src/loop_engineering.egg-info/requires.txt
 src/loop_engineering.egg-info/top_level.txt
-src/loop_engineering/scripts/__init__.py
-src/loop_engineering/scripts/task_cleanup.py
-src/loop_engineering/scripts/task_done.py
-src/loop_engineering/scripts/task_pick.py
 src/loop_engineering/server/__init__.py
 src/loop_engineering/server/app.py
+src/loop_engineering/server/dashboard_tray.py
 src/loop_engineering/server/dependencies.py
 src/loop_engineering/server/api/__init__.py
 src/loop_engineering/server/api/branches.py
@@ -31,6 +29,7 @@ src/loop_engineering/server/api/control.py
 src/loop_engineering/server/api/docs.py
 src/loop_engineering/server/api/projects.py
 src/loop_engineering/server/api/runs.py
+src/loop_engineering/server/api/sync.py
 src/loop_engineering/server/api/tasks.py
 src/loop_engineering/server/routers/__init__.py
 src/loop_engineering/server/routers/fragments.py

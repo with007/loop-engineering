@@ -24,6 +24,9 @@ serde_yaml = "0.9"
 # Auto-start
 auto-launch = "0.5"
 
+# Auto-update
+velopack = "1.2"
+
 # HTTP for polling
 ureq = { version = "3", features = ["json"] }
 
