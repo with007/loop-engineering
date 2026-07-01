@@ -107,13 +107,11 @@ pub enum ProjectAction {
 // ── Main tray items ───────────────────────────────────────────────────────
 
 pub struct TrayMenuItems {
-    pub status: MenuItem,
     pub sep1: MenuItem,
-    pub sep2: MenuItem,
     pub add_project: MenuItem,
-    pub sep3: MenuItem,
+    pub sep2: MenuItem,
     pub settings: MenuItem,
-    pub sep4: MenuItem,
+    pub sep3: MenuItem,
     pub quit: MenuItem,
     pub projects: Vec<ProjectMenu>,
 }
@@ -140,9 +138,6 @@ impl TrayMenuItems {
 pub fn build_menu(items: &TrayMenuItems, running: bool, paused: bool) -> Menu {
     let mut refs: Vec<&dyn tray_icon::menu::IsMenuItem> = Vec::new();
 
-    refs.push(&items.status);
-    refs.push(&items.sep1);
-
     // One submenu per project
     for proj in &items.projects {
         // Note: we can't call rebuild_submenu here because it returns a temporary.
@@ -153,11 +148,11 @@ pub fn build_menu(items: &TrayMenuItems, running: bool, paused: bool) -> Menu {
         refs.push(leaked);
     }
 
-    refs.push(&items.sep2);
+    refs.push(&items.sep1);
     refs.push(&items.add_project);
-    refs.push(&items.sep3);
+    refs.push(&items.sep2);
     refs.push(&items.settings);
-    refs.push(&items.sep4);
+    refs.push(&items.sep3);
     refs.push(&items.quit);
 
     Menu::with_items(&refs).unwrap()
@@ -168,13 +163,11 @@ pub fn build_menu(items: &TrayMenuItems, running: bool, paused: bool) -> Menu {
 pub fn create_tray() -> (TrayIcon, TrayMenuItems, TrayMenuIds) {
     let icon = create_icon();
 
-    let status = MenuItem::new("Loop: 未启动", false, None);
     let sep1 = MenuItem::new("───────────────", false, None);
-    let sep2 = MenuItem::new("───────────────", false, None);
     let add_project = MenuItem::new("新增项目", true, None);
-    let sep3 = MenuItem::new("───────────────", false, None);
+    let sep2 = MenuItem::new("───────────────", false, None);
     let settings = MenuItem::new("设置...", true, None);
-    let sep4 = MenuItem::new("───────────────", false, None);
+    let sep3 = MenuItem::new("───────────────", false, None);
     let quit = MenuItem::new("退出", true, None);
 
     let projects_data = find_projects(&exe_dir());
@@ -203,13 +196,11 @@ pub fn create_tray() -> (TrayIcon, TrayMenuItems, TrayMenuIds) {
 
     // Build initial menu (loop not running)
     let items = TrayMenuItems {
-        status,
         sep1,
-        sep2,
         add_project,
-        sep3,
+        sep2,
         settings,
-        sep4,
+        sep3,
         quit,
         projects: project_menus,
     };

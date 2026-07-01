@@ -446,23 +446,10 @@ impl ApplicationHandler<UserEvent> for App {
                 s.loop_running = running;
                 s.loop_paused = paused;
                 drop(s);
-                if let Some(ref items) = self.menu_items {
-                    let status_text = if running && paused {
-                        "Loop: 已暂停 ⏸"
-                    } else if running {
-                        "Loop: 运行中 ●"
-                    } else {
-                        "Loop: 未启动 ○"
-                    };
-                    let _ = items.status.set_text(status_text);
-                }
                 self.rebuild_menu(running, paused);
             }
             UserEvent::PollServerDown => {
                 // Server was down, restart was triggered in background
-                if let Some(ref items) = self.menu_items {
-                    let _ = items.status.set_text("Loop: ⚠ 服务器重连中...");
-                }
             }
         }
     }
