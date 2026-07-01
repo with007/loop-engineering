@@ -19,6 +19,7 @@
 | Jinja2 渲染 | 用真实数据渲染模板，验证输出内容 |
 | pytest | 测试框架，执行项目测试用例 |
 | Bash 命令 | CLI 验证（--help）、进程管理（启动/停止服务） |
+| cargo | Rust 编译和测试运行（Desktop 托盘程序） |
 
 ## 自动化验证手段
 
@@ -47,6 +48,8 @@ python -m pytest || echo "SKIPPED: no test framework configured"
 - `presets.py`：预设类型配置和模板变量生成
 - `control.py`：IPC 文件信号（heartbeat、pause、throttle）
 - `config.py`：YAML 配置读写和项目检测
+- `desktop/src/main.rs`：winit 事件循环、UserEvent 分发、设置窗口 GL 渲染、后台轮询线程
+- `desktop/src/tray.rs`：托盘菜单结构、项目子菜单构建、菜单 ID 匹配与事件路由
 
 ### 3. 模板检查
 
@@ -158,6 +161,38 @@ kill $SERVER_PID 2>/dev/null
 1. 用 jinja2 Environment + FileSystemLoader 渲染变更的模板
 2. Python assert 检查渲染结果包含关键字段
 3. 确认模板变量在 `presets.py` 的 `PRESETS` 中有对应类型定义
+
+### Desktop 应用（托盘程序）
+
+**触发条件**: 变更涉及 `desktop/src/` 下的 `.rs` 文件。
+
+**验证步骤**:
+1. 进入 `desktop/` 目录，编译：
+   ```bash
+   cargo build --release
+   ```
+   exit code 0 = 通过。
+
+2. Layer 1 自动化测试（启动真实二进制，PostMessage 模拟右键托盘）：
+   ```bash
+   cargo run --release --bin test-layer1
+   ```
+   输出 `ALL CHECKS PASSED` = 通过。
+
+3. 内置测试模式（覆盖设置窗口 OpenGL 渲染 + CJK 字体加载）：
+   ```bash
+   # 确保旧进程已退出、日志已清空
+   taskkill /F /IM loop-dashboard.exe 2>/dev/null
+   cmd //c "del /f target/release/dashboard.log" 2>&1
+   # 启动测试模式，等待完成后检查日志
+   target/release/loop-dashboard.exe --test &
+   sleep 8
+   cat target/release/dashboard.log
+   taskkill /F /IM loop-dashboard.exe 2>/dev/null
+   ```
+   日志含 `ALL TESTS PASSED` + `GlutinWindowContext: ready` + `WindowState: CJK font loaded` = 通过。
+
+4. 验证完成后确认进程已退出。
 
 > 如果变更涉及以上未列出的新模块，参照"自动化验证手段"推导合适的验证步骤。
 > 验证通过后建议将新模块的验证示例添加到本文档。
