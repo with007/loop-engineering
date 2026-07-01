@@ -8,6 +8,17 @@ import sys
 import json
 import shutil
 import subprocess
+
+
+def _get_templates_root():
+    """获取 templates/ 根目录，兼容 PyInstaller 打包和开发模式."""
+    if getattr(sys, 'frozen', False):
+        # PyInstaller 打包后，templates 在 MEIPASS 下
+        return os.path.join(sys._MEIPASS, 'templates')
+    else:
+        # 开发模式：从 loop_engineering/server/ 向上两级到项目根，再进 templates
+        pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(os.path.dirname(pkg_dir), 'templates')
 import platform
 from pathlib import Path
 
@@ -287,9 +298,7 @@ def deploy_scripts(config):
     target_dir = os.path.join(project_root, ".claude", "scripts")
     os.makedirs(target_dir, exist_ok=True)
 
-    # 源目录：loop-engineering 包中的 templates/scripts/
-    pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    src_dir = os.path.join(os.path.dirname(pkg_dir), "templates", "scripts")
+    src_dir = os.path.join(_get_templates_root(), "scripts")
 
     if not os.path.isdir(src_dir):
         print(f"  WARNING:: 模板脚本目录不存在: {src_dir}")
@@ -331,12 +340,11 @@ def deploy_verify_docs(config):
     agent_dir = get_agent_dir(config)
     project_type = config.get("type", "generic")
 
-    pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    templates_dir = os.path.join(os.path.dirname(pkg_dir), "templates", "verify", project_type)
+    templates_dir = os.path.join(_get_templates_root(), "verify", project_type)
 
     if not os.path.isdir(templates_dir):
         print(f"  WARNING: 模板目录不存在: {templates_dir}，fallback 到 generic")
-        templates_dir = os.path.join(os.path.dirname(pkg_dir), "templates", "verify", "generic")
+        templates_dir = os.path.join(_get_templates_root(), "verify", "generic")
         if not os.path.isdir(templates_dir):
             print(f"  [FAIL] generic 模板目录也不存在，跳过验证文档部署")
             return
@@ -500,8 +508,7 @@ def deploy_skills(config):
     from jinja2 import Environment, BaseLoader
 
     project_root = config["project"]["root"]
-    pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    templates_dir = os.path.join(os.path.dirname(pkg_dir), "templates")
+    templates_dir = _get_templates_root()
 
     # 构建 Jinja2 模板变量
     project_name = config["project"]["name"]

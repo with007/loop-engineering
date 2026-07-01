@@ -20,3 +20,7 @@
 - [x] 人物列表需要支持按照agent名筛选，同时默认从新到旧显示 (→ with) [7fe8eb99] — 11:34 IMP1 VFY1 PASS — 12:07 IMP1 VFY2 PASS
   我写错了，其实是任务列表，不过分支列表的筛选也留着吧
 - [x] 按照agent筛选应该支持和状态一样的按钮方式筛选，收集tasks中涉及的所有agent作为选项。考虑到agent后面可能很多，做成下拉列表，默认选中自己 (→ with) [7c1db41e] — 15:09 IMP1 VFY1 PASS
+- [x] 参考任务f610728e的反馈格式，统一一下添加反馈的相关逻辑和解析逻辑。然后task-merge技能新增加入，如果用户拒绝合入，则和用户讨论，最终使用相同格式添加反馈 (→ with) [a783a210] — 12:13 IMP1 VFY1 PASS · 15:11 IMP2 VFY1 PASS
+  ## IMP1 反馈
+  1. reopen_task（API）缺少 ## IMP{N} 反馈 标题头 — 当前只写裸文本缩进，需自动统计已有 IMP 条数并追加标题
+  2. write_feedback_to_task（task-merge 拒绝时调用）同样缺少标题头 — 需与 reopen 统一格式
