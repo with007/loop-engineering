@@ -8,3 +8,13 @@ ProjectSettings/McpProjectConfig.json
 .loop-engineering/
 work_pvp-*/
 uv.lock
+
+# Rust desktop app build artifacts
+desktop/target/
+
+# IDE
+.vscode/
+
+# Logs and diffs
+*.diff
+dashboard.log
