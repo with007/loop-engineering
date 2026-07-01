@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+"""从 tasks.md 选取下一个待办任务（独立部署版）。
+
+零包依赖，纯 stdlib + git 命令 + 内置 TaskLine 解析器。
+由 loop setup 部署到 .claude/scripts/。
+用法: python .claude/scripts/task_pick.py <username> [--project-root <dir>] [--format shell]
+输出: taskID=<id> branch=<分支名> desc=<描述> openSpec=<true|false>  或  NONE（无任务） 或  BUSY（有进行中任务）
+"""
+import hashlib
+import os
+import re
+import shlex
+import subprocess
+import sys
+
+
+# ── TaskLine 解析器 ──
+
+_TASK_LINE_RE = re.compile(
+    r'^- \[(.)\]\s+'             # checkbox: - [x]
+    r'(.+?)'                      # description (non-greedy)
+    r'(?:\s+\(→\s*(\w+)\))?'     # optional assignee: (→ whoami)
+    r'(?:\s+\[([a-f0-9]{8})\])?' # optional task_id: [xxxxxxxx]
+    r'(?:\s+—\s+(.+))?'          # optional meta: — text
+    r'$'
+)
+
+
+class TaskLine:
+    """tasks.md 中单行任务的解析和格式化（零依赖版）."""
+
+    __slots__ = ("status", "description", "assignee", "task_id", "meta", "feedback")
+
+    def __init__(self, status=" ", description="", assignee="", task_id="", meta="", feedback=None):
+        self.status = status
+        self.description = description
+        self.assignee = assignee
+        self.task_id = task_id
+        self.meta = meta
+        self.feedback = feedback if feedback is not None else []
+
+    @classmethod
+    def parse(cls, line):
+        m = _TASK_LINE_RE.match(line)
+        if not m:
+            return None
+        return cls(
+            status=m.group(1),
+            description=m.group(2).strip(),
+            assignee=m.group(3) or "",
+            task_id=m.group(4) or "",
+            meta=m.group(5) or "",
+        )
+
+    def format(self):
+        parts = [f"- [{self.status}] {self.description}"]
+        if self.assignee:
+            parts.append(f" (→ {self.assignee})")
+        if self.task_id:
+            parts.append(f" [{self.task_id}]")
+        if self.meta:
+            parts.append(f" — {self.meta}")
+        return "".join(parts)
+
+
+# ── 工具函数 ──
+
+def _run(cmd):
+    return subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                          encoding='utf-8', errors='replace')
+
+
+def _find_project_root(start_dir=None):
+    """从 start_dir 向上查找 .loop-engineering/loop-config.yaml."""
+    if start_dir is None:
+        start_dir = os.getcwd()
+    start_dir = os.path.abspath(start_dir)
+    p = start_dir
+    for _ in range(10):
+        if os.path.exists(os.path.join(p, ".loop-engineering", "loop-config.yaml")):
+            return p
+        if os.path.exists(os.path.join(p, "loop-config.yaml")):
+            return p
+        parent = os.path.dirname(p)
+        if parent == p:
+            break
+        p = parent
+    return start_dir
+
+
+def _make_readable_slug(description, max_len=40):
+    """从描述生成可读的 git 分支名后缀."""
+    desc = re.split(r'\s+—\s+', description.strip())[0].strip()
+    desc = re.sub(r'[\\:?*\[\]~^{}!]', '', desc)
+    desc = re.sub(r'\s+', '-', desc)
+    desc = re.sub(r'-{2,}', '-', desc)
+    desc = re.sub(r'\.{2,}', '', desc)
+    desc = re.sub(r'^\.|\.$', '', desc)
+    desc = re.sub(r'^-+|-+$', '', desc)
+    result = desc[:max_len]
+    if not result or len(result) < 1:
+        result = 'task'
+    return result
+
+
+def _make_branch_name(whoami, task_id, description):
+    slug = _make_readable_slug(description)
+    return f"agent/{whoami}/{task_id}-{slug}"
+
+
+# ── 主逻辑 ──
+
+def main():
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    if len(sys.argv) < 2:
+        print("Usage: task_pick.py <username> [--project-root <path>] [--format shell]")
+        sys.exit(1)
+
+    whoami = sys.argv[1]
+    project_root = None
+    fmt = None
+    for i, arg in enumerate(sys.argv):
+        if arg == "--project-root" and i + 1 < len(sys.argv):
+            project_root = sys.argv[i + 1]
+        elif arg == "--format" and i + 1 < len(sys.argv):
+            fmt = sys.argv[i + 1]
+    if not project_root:
+        project_root = _find_project_root()
+    tasks_path = os.path.join(project_root, "tasks.md")
+
+    def emit(status, **kwargs):
+        if fmt == "shell":
+            print(f"STATUS={status}")
+            for k, v in kwargs.items():
+                print(f"{k}={shlex.quote(str(v))}")
+        else:
+            if status == "ok":
+                parts = [f"taskID={kwargs.get('task_id', '')}",
+                         f"branch={kwargs.get('branch', '')}",
+                         f"desc={kwargs.get('desc', '')}",
+                         f"openSpec={kwargs.get('openSpec', 'false')}",
+                         f"reopen={kwargs.get('reopen', 'false')}"]
+                print(" ".join(parts))
+            elif status == "none":
+                print("NONE")
+            elif status == "busy":
+                print("BUSY")
+
+    try:
+        with open(tasks_path, 'r', encoding='utf-8') as f:
+            lines = f.read().split('\n')
+    except FileNotFoundError:
+        emit("none")
+        return
+
+    tasks = []
+    for line in lines:
+        tl = TaskLine.parse(line)
+        if tl and tl.assignee == whoami:
+            tasks.append(tl)
+
+    for tl in tasks:
+        if tl.status == "~":
+            emit("busy")
+            return
+
+    for tl in tasks:
+        if tl.status not in (" ", "r"):
+            continue
+        if not tl.task_id:
+            continue
+
+        desc = tl.description
+        task_id = tl.task_id
+        is_reopen = tl.status == "r"
+
+        if is_reopen:
+            r = _run(f"git branch -a --list 'agent/{whoami}/{task_id}-*' --sort=-committerdate")
+            branches = [b.strip().lstrip('* ') for b in r.stdout.strip().split('\n') if b.strip()]
+            if branches:
+                branch = branches[0]
+                if branch.startswith('remotes/origin/'):
+                    branch = branch[len('remotes/origin/'):]
+            else:
+                branch = _make_branch_name(whoami, task_id, desc)
+                is_reopen = False
+        else:
+            branch = _make_branch_name(whoami, task_id, desc)
+
+        if not is_reopen:
+            result = _run(f"git ls-remote --heads origin 'agent/{whoami}/{task_id}-*'")
+            if result.stdout.strip():
+                continue
+
+        open_spec = "true" if (
+            os.path.isdir(os.path.join(project_root, f"openspec/changes/{desc}")) or
+            os.path.isdir(os.path.join(project_root, f"openspec/changes/{task_id}"))
+        ) else "false"
+        reopen_flag = "true" if is_reopen else "false"
+
+        emit("ok", task_id=task_id, branch=branch, desc=desc, openSpec=open_spec, reopen=reopen_flag)
+        return
+
+    emit("none")
+
+
+if __name__ == "__main__":
+    main()
