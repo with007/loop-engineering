@@ -28,14 +28,19 @@ fn create_icon() -> Icon {
 
 pub struct TrayMenuItems {
     pub status: MenuItem,
+    pub sep1: MenuItem,
     pub pause: MenuItem,
     pub resume: MenuItem,
     pub stop_loop: MenuItem,
     pub start_loop: MenuItem,
+    pub sep2: MenuItem,
     pub open_dashboard: MenuItem,
+    pub sep3: MenuItem,
     pub add_project: MenuItem,
+    pub projects_menu: Submenu,
+    pub sep4: MenuItem,
     pub settings: MenuItem,
-    pub autostart: MenuItem,
+    pub sep5: MenuItem,
     pub quit: MenuItem,
     pub projects: Vec<ProjectItem>,
 }
@@ -51,7 +56,6 @@ impl TrayMenuItems {
             open_dashboard: self.open_dashboard.id().clone(),
             add_project: self.add_project.id().clone(),
             settings: self.settings.id().clone(),
-            autostart: self.autostart.id().clone(),
             quit: self.quit.id().clone(),
         }
     }
@@ -67,7 +71,6 @@ pub struct TrayMenuIds {
     pub open_dashboard: tray_icon::menu::MenuId,
     pub add_project: tray_icon::menu::MenuId,
     pub settings: tray_icon::menu::MenuId,
-    pub autostart: tray_icon::menu::MenuId,
     pub quit: tray_icon::menu::MenuId,
 }
 
@@ -76,6 +79,39 @@ pub struct ProjectItem {
     pub name: String,
     pub root: String,
     pub agent_dir: String,
+}
+
+/// Build a dynamic menu based on current loop state.
+/// Buttons are shown/hidden (not just enabled/disabled) depending on state.
+pub fn build_menu(items: &TrayMenuItems, running: bool, paused: bool) -> Menu {
+    let mut refs: Vec<&dyn tray_icon::menu::IsMenuItem> = Vec::with_capacity(16);
+
+    refs.push(&items.status);
+    refs.push(&items.sep1);
+
+    // Show loop control buttons based on state
+    if !running {
+        refs.push(&items.start_loop);
+    } else {
+        if paused {
+            refs.push(&items.resume);
+        } else {
+            refs.push(&items.pause);
+        }
+        refs.push(&items.stop_loop);
+    }
+
+    refs.push(&items.sep2);
+    refs.push(&items.open_dashboard);
+    refs.push(&items.sep3);
+    refs.push(&items.add_project);
+    refs.push(&items.projects_menu);
+    refs.push(&items.sep4);
+    refs.push(&items.settings);
+    refs.push(&items.sep5);
+    refs.push(&items.quit);
+
+    Menu::with_items(&refs).unwrap()
 }
 
 /// Create the system tray icon and menu. Returns the TrayIcon (must be kept alive),
@@ -96,8 +132,6 @@ pub fn create_tray() -> (TrayIcon, TrayMenuItems, TrayMenuIds) {
     let sep4 = MenuItem::new("───────────────", false, None);
     let settings = MenuItem::new("设置...", true, None);
     let sep5 = MenuItem::new("───────────────", false, None);
-    let autostart = MenuItem::new("✓ 开机自启", true, None);
-    let sep6 = MenuItem::new("───────────────", false, None);
     let quit = MenuItem::new("退出", true, None);
 
     // Build projects submenu
@@ -118,25 +152,33 @@ pub fn create_tray() -> (TrayIcon, TrayMenuItems, TrayMenuIds) {
     }
 
     let projects_menu = if menu_refs.is_empty() {
-        Submenu::with_items("项目", true, &[&placeholder as &dyn tray_icon::menu::IsMenuItem]).unwrap()
+        Submenu::with_items("项目", true, &[&placeholder as &dyn tray_icon::menu::IsMenuItem])
+            .unwrap()
     } else {
         Submenu::with_items("项目", true, &menu_refs).unwrap()
     };
 
-    let menu = Menu::with_items(&[
-        &status, &sep1,
-        &pause, &resume, &stop_loop, &start_loop,
-        &sep2,
-        &open_dashboard,
-        &sep3,
-        &add_project, &projects_menu,
-        &sep4,
-        &settings,
-        &sep5,
-        &autostart,
-        &sep6,
-        &quit,
-    ]).unwrap();
+    let items = TrayMenuItems {
+        status,
+        sep1,
+        pause,
+        resume,
+        stop_loop,
+        start_loop,
+        sep2,
+        open_dashboard,
+        sep3,
+        add_project,
+        projects_menu,
+        sep4,
+        settings,
+        sep5,
+        quit,
+        projects: proj_data,
+    };
+
+    // Initial menu: loop not running → only show "启动 Loop"
+    let menu = build_menu(&items, false, false);
 
     let tray_icon = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
@@ -144,17 +186,6 @@ pub fn create_tray() -> (TrayIcon, TrayMenuItems, TrayMenuIds) {
         .with_tooltip("Loop Engineering")
         .build()
         .unwrap();
-
-    start_loop.set_enabled(true);
-    pause.set_enabled(false);
-    resume.set_enabled(false);
-    stop_loop.set_enabled(false);
-
-    let items = TrayMenuItems {
-        status, pause, resume, stop_loop, start_loop,
-        open_dashboard, add_project, settings, autostart, quit,
-        projects: proj_data,
-    };
 
     let ids = items.clone_ids();
 
@@ -172,7 +203,6 @@ fn exe_dir() -> std::path::PathBuf {
 }
 
 fn find_projects(_exe_dir: &std::path::Path) -> Vec<ProjectInfo> {
-    // Read from ~/.config/loop-engineering/projects.yaml (same as Python registry)
     let registry_path = dirs::home_dir()
         .unwrap_or_default()
         .join(".config")
@@ -188,20 +218,39 @@ fn find_projects(_exe_dir: &std::path::Path) -> Vec<ProjectInfo> {
                     let root = entry.get("root").and_then(|v| v.as_str()).unwrap_or("");
                     let name = entry.get("name").and_then(|v| v.as_str()).unwrap_or("");
 
-                    if root.is_empty() { continue; }
+                    if root.is_empty() {
+                        continue;
+                    }
 
                     let root_path = std::path::Path::new(root);
-                    let config_path = root_path.join(".loop-engineering").join("loop-config.yaml");
-                    if !config_path.exists() { continue; }
+                    let config_path =
+                        root_path.join(".loop-engineering").join("loop-config.yaml");
+                    if !config_path.exists() {
+                        continue;
+                    }
 
-                    if root_path.join(".git").is_file() { continue; }
+                    if root_path.join(".git").is_file() {
+                        continue;
+                    }
                     let agent_dir = if let Ok(cfg_data) = std::fs::read_to_string(&config_path) {
                         if let Ok(cfg) = serde_yaml::from_str::<serde_yaml::Value>(&cfg_data) {
-                            let ws = cfg.get("agent").and_then(|a| a.get("workspace")).and_then(|v| v.as_str()).unwrap_or("");
-                            let pname = cfg.get("project").and_then(|p| p.get("name")).and_then(|v| v.as_str()).unwrap_or(name);
+                            let ws = cfg
+                                .get("agent")
+                                .and_then(|a| a.get("workspace"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            let pname = cfg
+                                .get("project")
+                                .and_then(|p| p.get("name"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(name);
                             format!("{}/{}", ws, pname)
-                        } else { String::new() }
-                    } else { String::new() };
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    };
 
                     projects.push(ProjectInfo {
                         name: name.to_string(),

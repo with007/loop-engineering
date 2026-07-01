@@ -455,11 +455,8 @@ impl ApplicationHandler<UserEvent> for App {
                         "Loop: 未启动 ○"
                     };
                     let _ = items.status.set_text(status_text);
-                    let _ = items.start_loop.set_enabled(!running);
-                    let _ = items.pause.set_enabled(running && !paused);
-                    let _ = items.resume.set_enabled(running && paused);
-                    let _ = items.stop_loop.set_enabled(running);
                 }
+                self.rebuild_menu(running, paused);
             }
             UserEvent::PollServerDown => {
                 // Server was down, restart was triggered in background
@@ -542,15 +539,6 @@ impl ApplicationHandler<UserEvent> for App {
                         } else {
                             disable_autostart();
                         }
-                        // Update autostart menu text
-                        if let Some(ref items) = self.menu_items {
-                            let label = if autostart {
-                                "✓ 开机自启"
-                            } else {
-                                "  开机自启"
-                            };
-                            let _ = items.autostart.set_text(label);
-                        }
                         self.hide_settings_window();
                     }
                     SettingsAction::None => {}
@@ -615,6 +603,15 @@ impl App {
         }
     }
 
+    fn rebuild_menu(&mut self, running: bool, paused: bool) {
+        if let (Some(ref items), Some(ref mut tray_icon)) =
+            (&self.menu_items, &mut self.tray_icon)
+        {
+            let menu = tray::build_menu(items, running, paused);
+            tray_icon.set_menu(Some(Box::new(menu)));
+        }
+    }
+
     fn handle_menu_event(&mut self, event_loop: &ActiveEventLoop, event: tray_icon::menu::MenuEvent) {
         let port = { self.state.lock().unwrap().port };
         let url = format!("http://localhost:{}", port);
@@ -642,39 +639,46 @@ impl App {
         } else if *id == ids.settings {
             log!("menu: settings -> open_settings_window");
             self.open_settings_window(event_loop);
-        } else if *id == ids.autostart {
-            log!("menu: toggle_autostart");
-            let mut s = self.state.lock().unwrap();
-            s.autostart = !s.autostart;
-            let label = if s.autostart {
-                "✓ 开机自启"
-            } else {
-                "  开机自启"
-            };
-            let _ = items.autostart.set_text(label);
-            if s.autostart {
-                enable_autostart();
-            } else {
-                disable_autostart();
-            }
-            let mut c = Config::load(&self.exe_dir);
-            c.autostart = s.autostart;
-            c.save(&self.exe_dir);
         } else if *id == ids.pause {
             log!("menu: pause");
             let _ =
                 ureq::post(&format!("{}/api/control/pause", url)).send_empty();
+            // Optimistic state update + menu rebuild
+            {
+                let mut s = self.state.lock().unwrap();
+                s.loop_running = true;
+                s.loop_paused = true;
+            }
+            self.rebuild_menu(true, true);
         } else if *id == ids.resume {
             log!("menu: resume");
             let _ = ureq::delete(&format!("{}/api/control/pause", url)).call();
+            {
+                let mut s = self.state.lock().unwrap();
+                s.loop_running = true;
+                s.loop_paused = false;
+            }
+            self.rebuild_menu(true, false);
         } else if *id == ids.stop_loop {
             log!("menu: stop_loop");
             let _ =
                 ureq::post(&format!("{}/api/control/stop", url)).send_empty();
+            {
+                let mut s = self.state.lock().unwrap();
+                s.loop_running = false;
+                s.loop_paused = false;
+            }
+            self.rebuild_menu(false, false);
         } else if *id == ids.start_loop {
             log!("menu: start_loop");
             let _ =
                 ureq::post(&format!("{}/api/control/start", url)).send_empty();
+            {
+                let mut s = self.state.lock().unwrap();
+                s.loop_running = true;
+                s.loop_paused = false;
+            }
+            self.rebuild_menu(true, false);
         } else if *id == ids.quit {
             log!("menu: QUIT -> calling std::process::exit(0)");
             std::process::exit(0);
