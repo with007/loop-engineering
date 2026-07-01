@@ -17,49 +17,6 @@
         </div>
     </div>
 
-    <!-- Bar chart for recent runs -->
-    {% if runs %}
-    <div class="card" style="margin-bottom: 20px;">
-        <h3>最近结果</h3>
-        <div style="height: 120px;">
-            <canvas id="runsChart"></canvas>
-        </div>
-        <script>
-            (function() {
-                var ctx = document.getElementById('runsChart');
-                if (!ctx) return;
-                var runs = {{ runs | tojson | safe }};
-                var recent = runs.slice(0, 20).reverse();
-                new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels: recent.map(function(r) { return r.task_id.slice(0, 12); }),
-                        datasets: [{
-                            data: recent.map(function(r) { return r.result === 'PASS' ? 1 : 0; }),
-                            backgroundColor: recent.map(function(r) {
-                                return r.result === 'PASS' ? '#3b82f6' : '#f97316';
-                            }),
-                            borderRadius: 2,
-                        }]
-                    },
-                    options: {
-                        plugins: { legend: { display: false } },
-                        scales: {
-                            y: { display: false, max: 1.2 },
-                            x: {
-                                ticks: { color: '#64748b', font: { size: 9 }, maxRotation: 45 },
-                                grid: { display: false }
-                            }
-                        },
-                        responsive: true,
-                        maintainAspectRatio: false,
-                    }
-                });
-            })();
-        </script>
-    </div>
-    {% endif %}
-
     <!-- Filter -->
     <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center;">
         <span style="color: var(--muted); font-size: 13px;">Filter:</span>
