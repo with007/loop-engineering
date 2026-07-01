@@ -630,66 +630,68 @@ impl App {
 
         let id = &event.id;
 
-        if *id == ids.open_dashboard {
-            log!("menu: open_dashboard");
-            let _ = open::that(&url);
-        } else if *id == ids.add_project {
+        if *id == ids.add_project {
             log!("menu: add_project");
             let _ = open::that(format!("{}/setup", url));
         } else if *id == ids.settings {
             log!("menu: settings -> open_settings_window");
             self.open_settings_window(event_loop);
-        } else if *id == ids.pause {
-            log!("menu: pause");
-            let _ =
-                ureq::post(&format!("{}/api/control/pause", url)).send_empty();
-            // Optimistic state update + menu rebuild
-            {
-                let mut s = self.state.lock().unwrap();
-                s.loop_running = true;
-                s.loop_paused = true;
-            }
-            self.rebuild_menu(true, true);
-        } else if *id == ids.resume {
-            log!("menu: resume");
-            let _ = ureq::delete(&format!("{}/api/control/pause", url)).call();
-            {
-                let mut s = self.state.lock().unwrap();
-                s.loop_running = true;
-                s.loop_paused = false;
-            }
-            self.rebuild_menu(true, false);
-        } else if *id == ids.stop_loop {
-            log!("menu: stop_loop");
-            let _ =
-                ureq::post(&format!("{}/api/control/stop", url)).send_empty();
-            {
-                let mut s = self.state.lock().unwrap();
-                s.loop_running = false;
-                s.loop_paused = false;
-            }
-            self.rebuild_menu(false, false);
-        } else if *id == ids.start_loop {
-            log!("menu: start_loop");
-            let _ =
-                ureq::post(&format!("{}/api/control/start", url)).send_empty();
-            {
-                let mut s = self.state.lock().unwrap();
-                s.loop_running = true;
-                s.loop_paused = false;
-            }
-            self.rebuild_menu(true, false);
         } else if *id == ids.quit {
             log!("menu: QUIT -> calling std::process::exit(0)");
             std::process::exit(0);
         } else {
-            // Check project items
+            // Check per-project menu items
             let mut handled = false;
-            for p in &items.projects {
-                if *id == p.id {
-                    log!("menu: project clicked: {}", p.name);
-                    let encoded = p.root.replace('\\', "/").replace(':', "%3A");
-                    let _ = open::that(format!("{}/?project={}", url, encoded));
+            for proj in &items.projects {
+                if let Some(action) = proj.match_event(id) {
+                    let encoded = proj.root.replace('\\', "/").replace(':', "%3A");
+                    let project_url = format!("{}/?project={}", url, encoded);
+                    match action {
+                        tray::ProjectAction::OpenDashboard => {
+                            log!("menu: project '{}' -> open_dashboard", proj.name);
+                            let _ = open::that(&project_url);
+                        }
+                        tray::ProjectAction::Pause => {
+                            log!("menu: project '{}' -> pause", proj.name);
+                            let _ = ureq::post(&format!("{}/api/control/pause", url))
+                                .send_empty();
+                            let mut s = self.state.lock().unwrap();
+                            s.loop_running = true;
+                            s.loop_paused = true;
+                            drop(s);
+                            self.rebuild_menu(true, true);
+                        }
+                        tray::ProjectAction::Resume => {
+                            log!("menu: project '{}' -> resume", proj.name);
+                            let _ = ureq::delete(&format!("{}/api/control/pause", url))
+                                .call();
+                            let mut s = self.state.lock().unwrap();
+                            s.loop_running = true;
+                            s.loop_paused = false;
+                            drop(s);
+                            self.rebuild_menu(true, false);
+                        }
+                        tray::ProjectAction::Stop => {
+                            log!("menu: project '{}' -> stop", proj.name);
+                            let _ = ureq::post(&format!("{}/api/control/stop", url))
+                                .send_empty();
+                            let mut s = self.state.lock().unwrap();
+                            s.loop_running = false;
+                            s.loop_paused = false;
+                            drop(s);
+                            self.rebuild_menu(false, false);
+                        }
+                        tray::ProjectAction::Start => {
+                            log!("menu: project '{}' -> start", proj.name);
+                            let _ = ureq::post(&format!("{}/api/control/start", url))
+                                .send_empty();
+                            let mut s = self.state.lock().unwrap();
+                            s.loop_running = true;
+                            s.loop_paused = false;
+                            drop(s);
+                            self.rebuild_menu(true, false);
+                        }
+                    }
                     handled = true;
                     break;
                 }

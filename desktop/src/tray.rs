@@ -1,9 +1,25 @@
 // System tray icon + menu
+// Menu structure:
+//   Loop: <status>
+//   ───────────────
+//   <Project A> ▼
+//     ├─ 打开 Dashboard
+//     ├─ ────────────
+//     ├─ 暂停/恢复 Loop
+//     ├─ 停止 Loop
+//     ├─ 启动 Loop
+//   <Project B> ▼
+//     ├─ ...
+//   ───────────────
+//   新增项目
+//   ───────────────
+//   设置...
+//   ───────────────
+//   退出
 
 use tray_icon::menu::{Menu, MenuItem, Submenu};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
-/// Spawn a static turquoise icon (32x32) as raw RGBA bytes
 fn create_icon() -> Icon {
     let mut pixels = vec![0u8; 32 * 32 * 4];
     let cx = 16.0;
@@ -26,34 +42,92 @@ fn create_icon() -> Icon {
     Icon::from_rgba(pixels, 32, 32).unwrap()
 }
 
-pub struct TrayMenuItems {
-    pub status: MenuItem,
-    pub sep1: MenuItem,
+// ── Project menu data ─────────────────────────────────────────────────────
+
+pub struct ProjectMenu {
+    pub name: String,
+    pub root: String,
+    #[allow(dead_code)]
+    pub agent_dir: String,
+    pub dashboard: MenuItem,
+    pub sep: MenuItem,
     pub pause: MenuItem,
     pub resume: MenuItem,
     pub stop_loop: MenuItem,
     pub start_loop: MenuItem,
+}
+
+impl ProjectMenu {
+    /// Check if a menu event ID belongs to this project, and return which action.
+    pub fn match_event(&self, id: &tray_icon::menu::MenuId) -> Option<ProjectAction> {
+        if *id == self.dashboard.id() {
+            Some(ProjectAction::OpenDashboard)
+        } else if *id == self.pause.id() {
+            Some(ProjectAction::Pause)
+        } else if *id == self.resume.id() {
+            Some(ProjectAction::Resume)
+        } else if *id == self.stop_loop.id() {
+            Some(ProjectAction::Stop)
+        } else if *id == self.start_loop.id() {
+            Some(ProjectAction::Start)
+        } else {
+            None
+        }
+    }
+
+    /// Rebuild this project's submenu based on loop state.
+    fn rebuild_submenu(&self, running: bool, paused: bool) -> Submenu {
+        let mut items: Vec<&dyn tray_icon::menu::IsMenuItem> = Vec::with_capacity(6);
+        items.push(&self.dashboard);
+        items.push(&self.sep);
+
+        if !running {
+            items.push(&self.start_loop);
+        } else {
+            if paused {
+                items.push(&self.resume);
+            } else {
+                items.push(&self.pause);
+            }
+            items.push(&self.stop_loop);
+        }
+
+        Submenu::with_items(&self.name, true, &items).unwrap()
+    }
+}
+
+pub enum ProjectAction {
+    OpenDashboard,
+    Pause,
+    Resume,
+    Stop,
+    Start,
+}
+
+// ── Main tray items ───────────────────────────────────────────────────────
+
+pub struct TrayMenuItems {
+    pub status: MenuItem,
+    pub sep1: MenuItem,
     pub sep2: MenuItem,
-    pub open_dashboard: MenuItem,
-    pub sep3: MenuItem,
     pub add_project: MenuItem,
-    pub projects_menu: Submenu,
-    pub sep4: MenuItem,
+    pub sep3: MenuItem,
     pub settings: MenuItem,
-    pub sep5: MenuItem,
+    pub sep4: MenuItem,
     pub quit: MenuItem,
-    pub projects: Vec<ProjectItem>,
+    pub projects: Vec<ProjectMenu>,
+}
+
+#[derive(Clone)]
+pub struct TrayMenuIds {
+    pub add_project: tray_icon::menu::MenuId,
+    pub settings: tray_icon::menu::MenuId,
+    pub quit: tray_icon::menu::MenuId,
 }
 
 impl TrayMenuItems {
     pub fn clone_ids(&self) -> TrayMenuIds {
         TrayMenuIds {
-            status: self.status.id().clone(),
-            pause: self.pause.id().clone(),
-            resume: self.resume.id().clone(),
-            stop_loop: self.stop_loop.id().clone(),
-            start_loop: self.start_loop.id().clone(),
-            open_dashboard: self.open_dashboard.id().clone(),
             add_project: self.add_project.id().clone(),
             settings: self.settings.id().clone(),
             quit: self.quit.id().clone(),
@@ -61,123 +135,85 @@ impl TrayMenuItems {
     }
 }
 
-#[derive(Clone)]
-pub struct TrayMenuIds {
-    pub status: tray_icon::menu::MenuId,
-    pub pause: tray_icon::menu::MenuId,
-    pub resume: tray_icon::menu::MenuId,
-    pub stop_loop: tray_icon::menu::MenuId,
-    pub start_loop: tray_icon::menu::MenuId,
-    pub open_dashboard: tray_icon::menu::MenuId,
-    pub add_project: tray_icon::menu::MenuId,
-    pub settings: tray_icon::menu::MenuId,
-    pub quit: tray_icon::menu::MenuId,
-}
+// ── Menu builder ──────────────────────────────────────────────────────────
 
-pub struct ProjectItem {
-    pub id: tray_icon::menu::MenuId,
-    pub name: String,
-    pub root: String,
-    pub agent_dir: String,
-}
-
-/// Build a dynamic menu based on current loop state.
-/// Buttons are shown/hidden (not just enabled/disabled) depending on state.
 pub fn build_menu(items: &TrayMenuItems, running: bool, paused: bool) -> Menu {
-    let mut refs: Vec<&dyn tray_icon::menu::IsMenuItem> = Vec::with_capacity(16);
+    let mut refs: Vec<&dyn tray_icon::menu::IsMenuItem> = Vec::new();
 
     refs.push(&items.status);
     refs.push(&items.sep1);
 
-    // Show loop control buttons based on state
-    if !running {
-        refs.push(&items.start_loop);
-    } else {
-        if paused {
-            refs.push(&items.resume);
-        } else {
-            refs.push(&items.pause);
-        }
-        refs.push(&items.stop_loop);
+    // One submenu per project
+    for proj in &items.projects {
+        // Note: we can't call rebuild_submenu here because it returns a temporary.
+        // Instead, we build the submenu inline and leak it to get a static ref.
+        let submenu = proj.rebuild_submenu(running, paused);
+        // Box::leak to get 'static lifetime — the submenu lives as long as the menu.
+        let leaked: &'static Submenu = Box::leak(Box::new(submenu));
+        refs.push(leaked);
     }
 
     refs.push(&items.sep2);
-    refs.push(&items.open_dashboard);
-    refs.push(&items.sep3);
     refs.push(&items.add_project);
-    refs.push(&items.projects_menu);
-    refs.push(&items.sep4);
+    refs.push(&items.sep3);
     refs.push(&items.settings);
-    refs.push(&items.sep5);
+    refs.push(&items.sep4);
     refs.push(&items.quit);
 
     Menu::with_items(&refs).unwrap()
 }
 
-/// Create the system tray icon and menu. Returns the TrayIcon (must be kept alive),
-/// the menu items (for state updates), and the menu IDs (for event matching).
+// ── Factory ───────────────────────────────────────────────────────────────
+
 pub fn create_tray() -> (TrayIcon, TrayMenuItems, TrayMenuIds) {
     let icon = create_icon();
 
     let status = MenuItem::new("Loop: 未启动", false, None);
     let sep1 = MenuItem::new("───────────────", false, None);
-    let pause = MenuItem::new("暂停 Loop", true, None);
-    let resume = MenuItem::new("恢复 Loop", true, None);
-    let stop_loop = MenuItem::new("停止 Loop", true, None);
-    let start_loop = MenuItem::new("启动 Loop", true, None);
     let sep2 = MenuItem::new("───────────────", false, None);
-    let open_dashboard = MenuItem::new("打开 Dashboard", true, None);
-    let sep3 = MenuItem::new("───────────────", false, None);
     let add_project = MenuItem::new("新增项目", true, None);
-    let sep4 = MenuItem::new("───────────────", false, None);
+    let sep3 = MenuItem::new("───────────────", false, None);
     let settings = MenuItem::new("设置...", true, None);
-    let sep5 = MenuItem::new("───────────────", false, None);
+    let sep4 = MenuItem::new("───────────────", false, None);
     let quit = MenuItem::new("退出", true, None);
 
-    // Build projects submenu
-    let projects = find_projects(&exe_dir());
-    let mut proj_data: Vec<ProjectItem> = Vec::new();
-    let mut menu_refs: Vec<&dyn tray_icon::menu::IsMenuItem> = Vec::new();
-    let placeholder = MenuItem::new("（无项目）", false, None);
+    let projects_data = find_projects(&exe_dir());
+    let mut project_menus: Vec<ProjectMenu> = Vec::new();
 
-    for p in &projects {
-        let item = Box::new(MenuItem::new(&p.name, true, None));
-        proj_data.push(ProjectItem {
-            id: item.id().clone(),
+    for p in &projects_data {
+        let dashboard = MenuItem::new("打开 Dashboard", true, None);
+        let sep = MenuItem::new("───────────────", false, None);
+        let pause = MenuItem::new("暂停 Loop", true, None);
+        let resume = MenuItem::new("恢复 Loop", true, None);
+        let stop_loop = MenuItem::new("停止 Loop", true, None);
+        let start_loop = MenuItem::new("启动 Loop", true, None);
+
+        project_menus.push(ProjectMenu {
             name: p.name.clone(),
             root: p.root.clone(),
             agent_dir: p.agent_dir.clone(),
+            dashboard,
+            sep,
+            pause,
+            resume,
+            stop_loop,
+            start_loop,
         });
-        menu_refs.push(Box::leak(item) as &dyn tray_icon::menu::IsMenuItem);
     }
 
-    let projects_menu = if menu_refs.is_empty() {
-        Submenu::with_items("项目", true, &[&placeholder as &dyn tray_icon::menu::IsMenuItem])
-            .unwrap()
-    } else {
-        Submenu::with_items("项目", true, &menu_refs).unwrap()
-    };
-
+    // Build initial menu (loop not running)
     let items = TrayMenuItems {
         status,
         sep1,
-        pause,
-        resume,
-        stop_loop,
-        start_loop,
         sep2,
-        open_dashboard,
-        sep3,
         add_project,
-        projects_menu,
-        sep4,
+        sep3,
         settings,
-        sep5,
+        sep4,
         quit,
-        projects: proj_data,
+        projects: project_menus,
     };
 
-    // Initial menu: loop not running → only show "启动 Loop"
     let menu = build_menu(&items, false, false);
 
     let tray_icon = TrayIconBuilder::new()
@@ -191,6 +227,8 @@ pub fn create_tray() -> (TrayIcon, TrayMenuItems, TrayMenuIds) {
 
     (tray_icon, items, ids)
 }
+
+// ── Project discovery ─────────────────────────────────────────────────────
 
 struct ProjectInfo {
     name: String,
@@ -218,39 +256,24 @@ fn find_projects(_exe_dir: &std::path::Path) -> Vec<ProjectInfo> {
                     let root = entry.get("root").and_then(|v| v.as_str()).unwrap_or("");
                     let name = entry.get("name").and_then(|v| v.as_str()).unwrap_or("");
 
-                    if root.is_empty() {
-                        continue;
-                    }
+                    if root.is_empty() { continue; }
 
                     let root_path = std::path::Path::new(root);
-                    let config_path =
-                        root_path.join(".loop-engineering").join("loop-config.yaml");
-                    if !config_path.exists() {
-                        continue;
-                    }
+                    let config_path = root_path.join(".loop-engineering").join("loop-config.yaml");
+                    if !config_path.exists() { continue; }
 
-                    if root_path.join(".git").is_file() {
-                        continue;
-                    }
+                    if root_path.join(".git").is_file() { continue; }
                     let agent_dir = if let Ok(cfg_data) = std::fs::read_to_string(&config_path) {
                         if let Ok(cfg) = serde_yaml::from_str::<serde_yaml::Value>(&cfg_data) {
-                            let ws = cfg
-                                .get("agent")
+                            let ws = cfg.get("agent")
                                 .and_then(|a| a.get("workspace"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("");
-                            let pname = cfg
-                                .get("project")
+                                .and_then(|v| v.as_str()).unwrap_or("");
+                            let pname = cfg.get("project")
                                 .and_then(|p| p.get("name"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or(name);
+                                .and_then(|v| v.as_str()).unwrap_or(name);
                             format!("{}/{}", ws, pname)
-                        } else {
-                            String::new()
-                        }
-                    } else {
-                        String::new()
-                    };
+                        } else { String::new() }
+                    } else { String::new() };
 
                     projects.push(ProjectInfo {
                         name: name.to_string(),
