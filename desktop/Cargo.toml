@@ -1,0 +1,36 @@
+[package]
+name = "loop-dashboard"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# System tray
+tray-icon = "0.19"
+
+# Settings dialog (cross-platform)
+eframe = "0.31"
+egui = "0.31"
+
+# Config
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# Auto-start
+auto-launch = "0.5"
+
+# HTTP for polling
+ureq = { version = "3", features = ["json"] }
+
+# Open URLs in browser
+open = "5"
+
+# Paths
+dirs = "6"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation", "Win32_System_Threading", "Win32_Graphics_Gdi"] }
