@@ -215,15 +215,38 @@ TEST.md 说明了项目中可用的测试手段（pip install、启动服务、c
 > **如果所有项都 ✅**: 默认建议 pass，但让用户最终决定。
 > **如果有 ❌**: 列出失败项和原因，提醒用户注意。仍可 pass（如果用户认为失败项无关紧要）。
 
-#### 3f. FAIL — 清理 Agent Worktree
+#### 3f. FAIL — 讨论反馈 + 清理 Agent Worktree
 
 用户回复 fail 或选择不继续：
+
+**3f-1. 讨论拒绝原因**
+
+询问用户拒绝合入的原因，与用户讨论后形成结构化反馈。
+反馈应对后续改进有指导意义，不止于"不通过"。
+
+**3f-2. 写入反馈**
+
+调用 `write_feedback_to_task` 用统一格式写入 tasks.md：
+
+```python
+from loop_engineering.task_id import write_feedback_to_task
+import os
+
+tasks_path = os.path.join("D:/work_pvp/loop-engineering", "tasks.md")
+write_feedback_to_task(tasks_path, "<task_id>", "<反馈文本>")
+```
+
+> **注意**: 需要有 task_id 才能写入反馈。如果任务行无 `[task_id]`，产出反馈文本告知用户，
+> 建议后续用 task-add 添加任务以自动生成 task_id。
+
+**3f-3. 清理 Agent Worktree**
 
 ```bash
 cd D:/work_pvp-agent/loop-engineering
 git checkout --detach master
-git branch -D <branch>
 ```
+
+> **不要 `git branch -D <branch>`**：agent worktree 和主 worktree 共享 git refs（`git worktree` 机制），删分支会同时影响主 worktree，导致 Step 6 找不到分支。
 
 ```
 ExitWorktree(action="keep")
@@ -233,7 +256,8 @@ ExitWorktree(action="keep")
 ```
 ## 合入已取消 ❌
 **分支**: <branch>
-**原因**: <手动测试未通过 / 用户取消>
+**原因**: <用户反馈摘要>
+**反馈**: 已写入 tasks.md（IMP{N}）
 **状态**: 主工作区未改变，无任何修改
 ```
 
@@ -246,8 +270,9 @@ ExitWorktree(action="keep")
 ```bash
 cd D:/work_pvp-agent/loop-engineering
 git checkout --detach master
-git branch -D <branch>
 ```
+
+> **不要 `git branch -D <branch>`**：agent worktree 和主 worktree 共享 git refs，删分支会导致 Step 6 找不到分支。
 
 ```
 ExitWorktree(action="keep")
