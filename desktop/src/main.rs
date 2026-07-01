@@ -219,7 +219,8 @@ struct WindowState {
     gl_window: GlutinWindowContext,
     gl: Arc<glow::Context>,
     egui_glow: egui_glow::EguiGlow,
-    port: u16,
+    /// Editable text — persists across frames (not reset on each render)
+    port_str: String,
     autostart: bool,
     settings_path: std::path::PathBuf,
 }
@@ -273,7 +274,7 @@ impl WindowState {
             gl_window,
             gl,
             egui_glow,
-            port,
+            port_str: port.to_string(),
             autostart,
             settings_path,
         }
@@ -281,8 +282,10 @@ impl WindowState {
 
     fn render(&mut self) -> SettingsAction {
         let mut action = SettingsAction::None;
-        let mut port_str = self.port.to_string();
-        let mut autostart_val = self.autostart;
+
+        // Extract fields before the closure to avoid borrow-of-self conflicts
+        let port_str = &mut self.port_str;
+        let autostart_val = &mut self.autostart;
 
         self.egui_glow.run(self.gl_window.window(), |egui_ctx| {
             if egui_ctx.input(|i| i.viewport().close_requested()) {
@@ -299,19 +302,19 @@ impl WindowState {
                 ui.horizontal(|ui| {
                     ui.label("端口号:");
                     ui.add(
-                        egui::TextEdit::singleline(&mut port_str).desired_width(80.0),
+                        egui::TextEdit::singleline(port_str).desired_width(80.0),
                     );
                 });
                 ui.label("修改端口后需重启生效");
                 ui.add_space(8.0);
-                ui.checkbox(&mut autostart_val, "开机自启");
+                ui.checkbox(autostart_val, "开机自启");
                 ui.add_space(16.0);
                 ui.horizontal(|ui| {
                     if ui.button("保存").clicked() {
                         log!("settings: save clicked, port={}, autostart={}", port_str, autostart_val);
                         action = SettingsAction::Save {
                             port: port_str.parse::<u16>().unwrap_or(8765),
-                            autostart: autostart_val,
+                            autostart: *autostart_val,
                         };
                     }
                     if ui.button("取消").clicked() {
@@ -554,45 +557,34 @@ impl ApplicationHandler<UserEvent> for App {
 
 impl App {
     fn open_settings_window(&mut self, event_loop: &ActiveEventLoop) {
-        if self.settings_window.is_none() {
-            log!("open_settings_window: creating new window");
-            let port = { self.state.lock().unwrap().port };
-            let autostart = { self.state.lock().unwrap().autostart };
-            let settings_path = self.exe_dir.join("dashboard-settings.json");
-            self.settings_window = Some(WindowState::new(
-                event_loop,
-                port,
-                autostart,
-                settings_path,
-            ));
-        }
+        log!("open_settings_window: creating new window");
+        let port = { self.state.lock().unwrap().port };
+        let autostart = { self.state.lock().unwrap().autostart };
+        let settings_path = self.exe_dir.join("dashboard-settings.json");
+        let mut ws = WindowState::new(event_loop, port, autostart, settings_path);
 
-        if let Some(ref mut ws) = self.settings_window {
-            // Update port/autostart from current state
-            let s = self.state.lock().unwrap();
-            ws.port = s.port;
-            ws.autostart = s.autostart;
-            drop(s);
+        // Render first frame BEFORE showing, so user doesn't see white flash
+        log!("open_settings_window: rendering first frame...");
+        ws.render();
+        ws.gl_window.window().set_visible(true);
+        ws.gl_window.window().request_redraw();
+        log!("open_settings_window: window visible, redraw requested");
 
-            // Render first frame BEFORE showing, so user doesn't see white flash
-            log!("open_settings_window: rendering first frame...");
-            ws.render();
-            ws.gl_window.window().set_visible(true);
-            ws.gl_window.window().request_redraw();
-            log!("open_settings_window: window visible, redraw requested");
-        }
+        self.settings_window = Some(ws);
     }
 
     fn hide_settings_window(&mut self) {
-        if let Some(ref ws) = self.settings_window {
+        if let Some(mut ws) = self.settings_window.take() {
             ws.gl_window.window().set_visible(false);
-            log!("hide_settings_window: window hidden");
+            ws.egui_glow.destroy();
+            log!("hide_settings_window: window hidden and GL resources released");
         }
+        // WindowState dropped here → GlutinWindowContext (window, GL context, surface) freed
     }
 
     fn rebuild_menu(&mut self, running: bool, paused: bool) {
-        if let (Some(ref items), Some(ref mut tray_icon)) =
-            (&self.menu_items, &mut self.tray_icon)
+        if let (Some(ref mut items), Some(ref mut tray_icon)) =
+            (&mut self.menu_items, &mut self.tray_icon)
         {
             let menu = tray::build_menu(items, running, paused);
             tray_icon.set_menu(Some(Box::new(menu)));

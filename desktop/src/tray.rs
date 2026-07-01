@@ -114,6 +114,9 @@ pub struct TrayMenuItems {
     pub sep3: MenuItem,
     pub quit: MenuItem,
     pub projects: Vec<ProjectMenu>,
+    /// Owned submenus — rebuilt by `build_menu()` and referenced by the `Menu`.
+    /// Stored here so they live as long as the `TrayMenuItems` (no Box::leak).
+    pub project_submenus: Vec<Submenu>,
 }
 
 #[derive(Clone)]
@@ -135,17 +138,16 @@ impl TrayMenuItems {
 
 // ── Menu builder ──────────────────────────────────────────────────────────
 
-pub fn build_menu(items: &TrayMenuItems, running: bool, paused: bool) -> Menu {
-    let mut refs: Vec<&dyn tray_icon::menu::IsMenuItem> = Vec::new();
-
-    // One submenu per project
+pub fn build_menu(items: &mut TrayMenuItems, running: bool, paused: bool) -> Menu {
+    // Rebuild owned submenus (drops old ones, no leak)
+    items.project_submenus.clear();
     for proj in &items.projects {
-        // Note: we can't call rebuild_submenu here because it returns a temporary.
-        // Instead, we build the submenu inline and leak it to get a static ref.
-        let submenu = proj.rebuild_submenu(running, paused);
-        // Box::leak to get 'static lifetime — the submenu lives as long as the menu.
-        let leaked: &'static Submenu = Box::leak(Box::new(submenu));
-        refs.push(leaked);
+        items.project_submenus.push(proj.rebuild_submenu(running, paused));
+    }
+
+    let mut refs: Vec<&dyn tray_icon::menu::IsMenuItem> = Vec::new();
+    for submenu in &items.project_submenus {
+        refs.push(submenu as &dyn tray_icon::menu::IsMenuItem);
     }
 
     refs.push(&items.sep1);
@@ -195,7 +197,7 @@ pub fn create_tray() -> (TrayIcon, TrayMenuItems, TrayMenuIds) {
     }
 
     // Build initial menu (loop not running)
-    let items = TrayMenuItems {
+    let mut items = TrayMenuItems {
         sep1,
         add_project,
         sep2,
@@ -203,9 +205,10 @@ pub fn create_tray() -> (TrayIcon, TrayMenuItems, TrayMenuIds) {
         sep3,
         quit,
         projects: project_menus,
+        project_submenus: Vec::new(),
     };
 
-    let menu = build_menu(&items, false, false);
+    let menu = build_menu(&mut items, false, false);
 
     let tray_icon = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
