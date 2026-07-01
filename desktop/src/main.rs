@@ -74,6 +74,8 @@ enum UserEvent {
     PollResult { running: bool, paused: bool },
     /// Background poll failed (server down, restarting in background)
     PollServerDown,
+    /// Update check found and downloaded a new version
+    UpdateReady { version: String },
 }
 
 // ── GlutinWindowContext ───────────────────────────────────────────────────
@@ -363,6 +365,10 @@ struct App {
     test_step: u32,
     test_timer: Instant,
     last_heartbeat: Instant,
+    /// Pending update version (downloaded, waiting for user to restart)
+    update_pending_version: Option<String>,
+    /// True if this is the first run (no settings file existed on startup)
+    first_run: bool,
 }
 
 impl ApplicationHandler<UserEvent> for App {
@@ -379,6 +385,12 @@ impl ApplicationHandler<UserEvent> for App {
             log!("new_events: tray icon created. Menu IDs: settings={:?} quit={:?}",
                 self.menu_ids.as_ref().unwrap().settings,
                 self.menu_ids.as_ref().unwrap().quit);
+
+            // Auto-open settings window on first run
+            if self.first_run {
+                log!("new_events: first run — auto-opening settings window");
+                self.open_settings_window(event_loop);
+            }
         }
 
         // Heartbeat log every 2 seconds
@@ -450,6 +462,13 @@ impl ApplicationHandler<UserEvent> for App {
             }
             UserEvent::PollServerDown => {
                 self.update_loop_state(false, false);
+            }
+            UserEvent::UpdateReady { version } => {
+                log!("user_event: UpdateReady v{}", version);
+                // User can now restart to apply — the "check for updates" menu
+                // item will show as "restart and update" when an update is pending.
+                self.update_pending_version = Some(version);
+                self.rebuild_menu_from_state();
             }
         }
     }
@@ -581,6 +600,20 @@ impl App {
         // WindowState dropped here → GlutinWindowContext (window, GL context, surface) freed
     }
 
+    fn apply_pending_update(&self) {
+        // Try to apply any pending update via Velopack
+        use velopack::sources;
+        let source = sources::AutoSource::new(UPDATE_SOURCE_URL);
+        if let Ok(um) = velopack::UpdateManager::new(source, None, None) {
+            if let Some(asset) = um.get_update_pending_restart() {
+                log!("apply_pending_update: applying {} and restarting", asset.Version);
+                let _ = um.apply_updates_and_restart(&asset);
+            } else {
+                log!("apply_pending_update: no pending update found on disk");
+            }
+        }
+    }
+
     fn rebuild_menu(&mut self, running: bool, paused: bool) {
         if let (Some(ref mut items), Some(ref mut tray_icon)) =
             (&mut self.menu_items, &mut self.tray_icon)
@@ -588,6 +621,14 @@ impl App {
             let menu = tray::build_menu(items, running, paused);
             tray_icon.set_menu(Some(Box::new(menu)));
         }
+    }
+
+    fn rebuild_menu_from_state(&mut self) {
+        let (running, paused) = {
+            let s = self.state.lock().unwrap();
+            (s.loop_running, s.loop_paused)
+        };
+        self.rebuild_menu(running, paused);
     }
 
     fn update_loop_state(&mut self, running: bool, paused: bool) {
@@ -622,6 +663,19 @@ impl App {
         } else if id == &ids.settings {
             log!("menu: settings -> open_settings_window");
             self.open_settings_window(event_loop);
+        } else if id == &ids.check_updates {
+            if let Some(ref ver) = self.update_pending_version {
+                // Update already downloaded — apply and restart
+                log!("menu: apply update v{} and restart", ver);
+                self.apply_pending_update();
+            } else {
+                // Trigger a manual check
+                log!("menu: check_updates — triggering update check");
+                let proxy = self.proxy.clone();
+                std::thread::spawn(move || {
+                    check_for_updates_inner(&proxy, true);
+                });
+            }
         } else if id == &ids.quit {
             log!("menu: QUIT -> calling std::process::exit(0)");
             std::process::exit(0);
@@ -683,6 +737,13 @@ fn main() {
         .to_path_buf();
     init_log(&exe_dir);
 
+    // Velopack: handle pending updates, first-run/restarted hooks.
+    // Must run before anything else — it may terminate/restart the process.
+    velopack::VelopackApp::build()
+        .on_first_run(|v| log_msg(&format!("Velopack: first run of v{}", v)))
+        .on_restarted(|v| log_msg(&format!("Velopack: restarted after update to v{}", v)))
+        .run();
+
     // Single-instance guard — only one tray icon per user session
     let _single_instance_mutex = unsafe {
         use windows::Win32::System::Threading::CreateMutexW;
@@ -702,6 +763,12 @@ fn main() {
     let test_mode = std::env::args().any(|a| a == "--test");
     if test_mode {
         log!("main: TEST MODE enabled");
+    }
+
+    // Detect first run (no settings file yet)
+    let first_run = !exe_dir.join("dashboard-settings.json").exists();
+    if first_run {
+        log!("main: FIRST RUN detected — will open settings window");
     }
 
     let config = Config::load(&exe_dir);
@@ -737,8 +804,8 @@ fn main() {
         log!("main: FAILED to start server");
     }
 
-    let _ = open::that(format!("http://localhost:{}", port));
-    log!("main: opened browser at port {}", port);
+    // Don't auto-open browser — user opens via tray menu "新增项目"
+    log!("main: server ready on port {}", port);
 
     // Build event loop with user events
     let event_loop = EventLoop::<UserEvent>::with_user_event()
@@ -751,6 +818,10 @@ fn main() {
         let _ = proxy.send_event(UserEvent::MenuEvent(event));
     }));
     log!("main: MenuEvent handler registered");
+
+    // Spawn background update checker (first check after 2 min, then every 6 hours)
+    let update_proxy = event_loop.create_proxy();
+    spawn_update_checker(update_proxy);
 
     let mut app = App {
         tray_icon: None,
@@ -768,6 +839,8 @@ fn main() {
         test_step: 0,
         test_timer: Instant::now(),
         last_heartbeat: Instant::now(),
+        update_pending_version: None,
+        first_run,
     };
 
     log!("main: entering event_loop.run_app");
@@ -812,6 +885,77 @@ fn poll_background(
             log!("poll: HTTP error: {:?}", e);
         }
     }
+}
+
+// ── update checker (runs in a thread — never blocks the GUI) ─────────────
+
+/// GitHub repo URL for update checks. Change this to your repo.
+const UPDATE_SOURCE_URL: &str = "https://github.com/with007/loop-engineering";
+
+/// Check for updates using Velopack. If `manual` is true, this was triggered
+/// by the user clicking "check for updates" in the menu.
+fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
+    log!(
+        "update: checking (source={}, manual={})",
+        UPDATE_SOURCE_URL,
+        manual
+    );
+
+    use velopack::sources;
+    let source = sources::AutoSource::new(UPDATE_SOURCE_URL);
+    let um = match velopack::UpdateManager::new(source, None, None) {
+        Ok(um) => um,
+        Err(e) => {
+            log!("update: failed to create UpdateManager: {:?}", e);
+            return;
+        }
+    };
+
+    match um.check_for_updates() {
+        Ok(velopack::UpdateCheck::UpdateAvailable(update)) => {
+            let version = update.TargetFullRelease.Version.clone();
+            log!(
+                "update: found v{} (size={} bytes), downloading...",
+                version,
+                update.TargetFullRelease.Size
+            );
+
+            match um.download_updates(&update, None) {
+                Ok(()) => {
+                    log!("update: v{} downloaded successfully", version);
+                    let _ = proxy.send_event(UserEvent::UpdateReady { version });
+                }
+                Err(e) => {
+                    log!("update: download failed: {:?}", e);
+                }
+            }
+        }
+        Ok(velopack::UpdateCheck::NoUpdateAvailable) => {
+            log!("update: no updates available");
+        }
+        Ok(velopack::UpdateCheck::RemoteIsEmpty) => {
+            log!("update: remote feed is empty (no releases published yet)");
+        }
+        Err(e) => {
+            log!("update: check failed: {:?}", e);
+        }
+    }
+}
+
+/// Spawn a background thread that periodically checks for updates.
+/// First check after 2 minutes, then every 6 hours.
+fn spawn_update_checker(proxy: EventLoopProxy<UserEvent>) {
+    std::thread::spawn(move || {
+        // Initial delay — let the app settle
+        std::thread::sleep(std::time::Duration::from_secs(120));
+        check_for_updates_inner(&proxy, false);
+
+        // Periodic checks
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(6 * 3600));
+            check_for_updates_inner(&proxy, false);
+        }
+    });
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
