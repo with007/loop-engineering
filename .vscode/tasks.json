@@ -48,12 +48,14 @@
             "problemMatcher": []
         },
         {
-            "label": "Release (Build + Package)",
+            "label": "🚀 Release + Publish",
             "type": "shell",
             "command": "python",
             "args": [
                 "packaging/release.py",
-                "${input:releaseVersion}"
+                "${input:releaseVersion}",
+                "--skip-python",
+                "--publish"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -62,7 +64,22 @@
             "problemMatcher": []
         },
         {
-            "label": "🚀 Release + Publish to GitHub",
+            "label": "Release (Build + Package only)",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "packaging/release.py",
+                "${input:releaseVersion}",
+                "--skip-python"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": { "reveal": "always", "panel": "dedicated" },
+            "problemMatcher": []
+        },
+        {
+            "label": "🚀 Full Release (重建 Python + Publish)",
             "type": "shell",
             "command": "python",
             "args": [
