@@ -56,10 +56,7 @@
                 "${input:releaseVersion}"
             ],
             "options": {
-                "cwd": "${workspaceFolder}",
-                "env": {
-                    "PATH": "${env:USERPROFILE}\\.cargo\\bin;${env:USERPROFILE}\\.dotnet\\tools;${env:PATH}"
-                }
+                "cwd": "${workspaceFolder}"
             },
             "presentation": { "reveal": "always", "panel": "dedicated" },
             "problemMatcher": []
@@ -74,10 +71,7 @@
                 "--publish"
             ],
             "options": {
-                "cwd": "${workspaceFolder}",
-                "env": {
-                    "PATH": "${env:USERPROFILE}\\.cargo\\bin;${env:USERPROFILE}\\.dotnet\\tools;${env:PATH}"
-                }
+                "cwd": "${workspaceFolder}"
             },
             "presentation": { "reveal": "always", "panel": "dedicated" },
             "problemMatcher": []
