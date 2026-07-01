@@ -682,6 +682,21 @@ fn main() {
         .to_path_buf();
     init_log(&exe_dir);
 
+    // Single-instance guard — only one tray icon per user session
+    let _single_instance_mutex = unsafe {
+        use windows::Win32::System::Threading::CreateMutexW;
+        use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
+        let name = windows::core::w!("LoopEngineeringDashboard");
+        let handle = CreateMutexW(None, true, name).expect("CreateMutexW failed");
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            log!("main: another instance already running, exiting");
+            return;
+        }
+        log!("main: single-instance mutex acquired");
+        handle
+    };
+    // handle lives for the process lifetime (never dropped, OS cleans up on exit)
+
     // 检测 --test 模式
     let test_mode = std::env::args().any(|a| a == "--test");
     if test_mode {
