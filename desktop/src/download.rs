@@ -22,6 +22,20 @@ struct DownloadState {
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
+/// Update the URL in a download-state file (keeps the same offset).
+/// Used when the original S3 signed URL expires and a fresh one is needed.
+pub fn refresh_state_url(state_path: &Path, new_url: &str) -> Result<(), String> {
+    let content = std::fs::read_to_string(state_path)
+        .map_err(|e| format!("read state: {}", e))?;
+    let mut state: DownloadState = serde_json::from_str(&content)
+        .map_err(|e| format!("parse state: {}", e))?;
+    state.url = new_url.to_string();
+    let json = serde_json::to_string(&state)
+        .map_err(|e| format!("serialize state: {}", e))?;
+    std::fs::write(state_path, json)
+        .map_err(|e| format!("write state: {}", e))
+}
+
 /// Resolve the GitHub API asset URL for a given release filename.
 ///
 /// GitHub's CDN (`github.com/releases/download/...`) does not support

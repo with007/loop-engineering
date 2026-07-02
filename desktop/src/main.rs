@@ -1111,6 +1111,35 @@ fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<Us
                     let _ = proxy_dl.send_event(UserEvent::UpdateProgress(pct));
                 },
             );
+
+            let result = match result {
+                Ok(path) => Ok(path),
+                Err(e) => {
+                    log!("startup: first resume attempt failed ({}), refreshing URL...", e);
+                    // S3 signed URL may have expired — get a fresh one and retry
+                    match download::get_github_asset_url(
+                        UPDATE_SOURCE_URL, &fname, UPDATE_GITHUB_TOKEN,
+                    ) {
+                        Ok(new_url) if new_url != asset_url => {
+                            let state_path = pkg_dir.join(format!("{}.download-state.json", fname));
+                            if let Err(e2) = download::refresh_state_url(&state_path, &new_url) {
+                                Err(format!("refresh URL: {}", e2))
+                            } else {
+                                let proxy2 = proxy_dl_done.clone();
+                                download::download_with_resume(
+                                    &new_url, &pkg_dir, &fname, expected_size, &token,
+                                    move |pct| {
+                                        let _ = proxy2.send_event(UserEvent::UpdateProgress(pct));
+                                    },
+                                )
+                            }
+                        }
+                        Ok(_) => Err(format!("same URL, no retry: {}", e)),
+                        Err(e2) => Err(format!("re-resolve URL: {}", e2)),
+                    }
+                }
+            };
+
             DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
             match result {
                 Ok(_) => {
@@ -1118,8 +1147,8 @@ fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<Us
                     let _ = proxy_dl_done.send_event(UserEvent::UpdateReady { version: ver });
                 }
                 Err(e) => {
-                    log!("startup: resumed download failed: {}", e);
-                    // Clean up stale state — next attempt will get a fresh URL
+                    log!("startup: resumed download ultimately failed: {}", e);
+                    // Clean up stale state
                     let _ = std::fs::remove_file(pkg_dir.join(format!("{}.partial", fname)));
                     let _ = std::fs::remove_file(pkg_dir.join(format!("{}.download-state.json", fname)));
                     let _ = proxy_dl_done.send_event(UserEvent::UpdateStatus(format!("Resume failed: {}", e)));
