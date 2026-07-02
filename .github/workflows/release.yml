@@ -97,6 +97,7 @@ jobs:
           }
 
       - name: Build & Package
+        shell: bash
         run: |
           if [ -f packaging/dist/python-cache/python.exe ]; then
             echo "Python cache hit, skipping download"
