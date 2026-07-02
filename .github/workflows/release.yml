@@ -36,6 +36,18 @@ jobs:
           path: packaging/python-cache
           key: python-embed-3.14.3
 
+      - name: Debug Python cache
+        shell: bash
+        run: |
+          echo "Cache hit: ${{ steps.cache-python.outputs.cache-hit }}"
+          echo "Cache primary key: ${{ steps.cache-python.outputs.cache-primary-key }}"
+          if [ -d packaging/python-cache ]; then
+            echo "python-cache exists:"
+            ls -la packaging/python-cache/ | head -10
+          else
+            echo "python-cache directory does NOT exist"
+          fi
+
       # ── Setup ──
       - name: Setup .NET SDK (for vpk)
         uses: actions/setup-dotnet@v4
@@ -147,6 +159,19 @@ jobs:
             ~/.cargo/git
             desktop/target
           key: ${{ steps.cache-rust.outputs.cache-primary-key }}
+
+      - if: always()
+        name: Debug before cache save
+        shell: bash
+        run: |
+          echo "Before cache save:"
+          if [ -d packaging/python-cache ]; then
+            echo "python-cache size:"
+            du -sh packaging/python-cache/
+            ls packaging/python-cache/ | head -5
+          else
+            echo "python-cache does NOT exist - cannot save"
+          fi
 
       - if: always()
         uses: actions/cache/save@v4
