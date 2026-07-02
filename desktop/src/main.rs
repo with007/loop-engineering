@@ -26,7 +26,7 @@ static LOG_PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 /// Set while a download_update is in progress — prevents concurrent downloads.
 static DOWNLOAD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 /// Timeout for update download (30MB over GitHub should finish in <5min).
-const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
 
 fn init_log(exe_dir: &std::path::Path) {
     let path = exe_dir.join("dashboard.log").to_string_lossy().to_string();
@@ -973,6 +973,9 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
                 return;
             }
 
+            // Show immediate feedback — first bytes may take a while on slow links
+            let _ = proxy.send_event(UserEvent::UpdateProgress(0));
+
             // Spawn a separate thread so we can timeout the download.
             // Velopack's download_updates has no built-in timeout.
             // Progress: Velopack expects an mpsc::Sender<i16> (0-100).
@@ -1001,10 +1004,11 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
                     log!("update: download failed: {:?}", e);
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    // Thread is still running — we can't cancel it, but we
-                    // can at least log and let the next check try again.
-                    DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
-                    log!("update: download TIMED OUT after {:?}", DOWNLOAD_TIMEOUT);
+                    // Thread still downloading — don't reset the flag so
+                    // subsequent checks see "already in progress" instead of
+                    // hitting a file-lock error. If it eventually finishes we
+                    // get the result below; if not, app restart clears it.
+                    log!("update: download still running after {:?}, will keep waiting", DOWNLOAD_TIMEOUT);
                 }
                 Err(_) => {
                     DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
