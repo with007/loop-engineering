@@ -165,6 +165,15 @@ impl GlutinWindowContext {
             glutin_winit::finalize_window(event_loop, winit_window_builder.clone(), &gl_config)
                 .expect("failed to finalize glutin window")
         });
+
+        // Center the window on the primary monitor
+        if let Some(monitor) = window.current_monitor() {
+            let win_size = window.inner_size();
+            let mon_size = monitor.size();
+            let x = mon_size.width.saturating_sub(win_size.width) / 2;
+            let y = mon_size.height.saturating_sub(win_size.height) / 2;
+            let _ = window.set_outer_position(winit::dpi::PhysicalPosition::new(x, y));
+        }
         let (width, height): (u32, u32) = window.inner_size().into();
         let width = NonZeroU32::new(width).unwrap_or(NonZeroU32::MIN);
         let height = NonZeroU32::new(height).unwrap_or(NonZeroU32::MIN);
