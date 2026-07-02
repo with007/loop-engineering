@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.8
+- 更新检查加速：1 次 API 调用代替 Velopack 11 次串行请求（877ms vs 2-5 分钟）
+- 移除硬编码 GitHub token，改为环境变量读取
+
 ## v0.1.7
 - CI 构建从 ~5 分钟降到 ~2.5 分钟（跳过冗余 cache save、缓存 vpk/dotnet tools、修复 Python embed 缓存）
 - 修复增量 nupkg 下载（Accept header 导致全下载为 JSON）
