@@ -77,8 +77,17 @@ jobs:
             $asset = $prev.assets | Where-Object { $_.name -eq $name }
             if ($asset) {
               New-Item -ItemType Directory -Force -Path "packaging/releases" | Out-Null
+              Write-Host "Downloading $name ($($asset.size) bytes)..."
               Invoke-WebRequest -Uri $asset.url -Headers $headers -OutFile "packaging/releases/$name"
-              Write-Host "Downloaded $name for delta"
+              # Verify zip integrity — corrupted download kills vpk pack
+              try {
+                $zip = [System.IO.Compression.ZipFile]::OpenRead("packaging/releases/$name")
+                $zip.Dispose()
+                Write-Host "  Valid"
+              } catch {
+                Write-Host "  CORRUPTED, removing"
+                Remove-Item "packaging/releases/$name" -Force
+              }
             }
           }
 
