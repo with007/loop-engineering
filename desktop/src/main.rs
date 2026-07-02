@@ -1320,6 +1320,9 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
     log!("update: found v{} (size={} bytes), check took {:?}, downloading...",
         version, expected_size, check_start.elapsed());
 
+    // Notify user that a new version is being downloaded
+    let _ = proxy.send_event(UserEvent::UpdateStatus(format!("Found v{}, downloading...", version)));
+
     // ── 4. Guard: only one download at a time ───────────────────────────
     if DOWNLOAD_IN_PROGRESS.swap(true, Ordering::SeqCst) {
         log!("update: download already in progress, skipping");
@@ -1411,16 +1414,16 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
 }
 
 /// Spawn a background thread that periodically checks for updates.
-/// First check after 2 minutes, then every 6 hours.
+/// First check after 30 seconds, then every 30 minutes.
 fn spawn_update_checker(proxy: EventLoopProxy<UserEvent>) {
     std::thread::spawn(move || {
         // Initial delay — let the app settle
-        std::thread::sleep(std::time::Duration::from_secs(120));
+        std::thread::sleep(std::time::Duration::from_secs(30));
         check_for_updates_inner(&proxy, false);
 
         // Periodic checks
         loop {
-            std::thread::sleep(std::time::Duration::from_secs(6 * 3600));
+            std::thread::sleep(std::time::Duration::from_secs(30 * 60));
             check_for_updates_inner(&proxy, false);
         }
     });
