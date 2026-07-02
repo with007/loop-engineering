@@ -42,8 +42,14 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - uses: actions/cache/restore@v4
+        id: cache-dotnet-tools
+        with:
+          path: ~/.dotnet/tools
+          key: dotnet-tools-${{ runner.os }}-vpk-1
+
       - name: Install vpk CLI
-        run: dotnet tool update -g vpk || dotnet tool install -g vpk
+        run: dotnet tool install -g vpk || true
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -78,7 +84,7 @@ jobs:
             if (-not $asset) { continue }
             New-Item -ItemType Directory -Force -Path "packaging/releases" | Out-Null
             Write-Host "Downloading $name ($($asset.size) bytes) from $($prev.tag_name)..."
-            Invoke-WebRequest -Uri $asset.url -Headers $headers -OutFile "packaging/releases/$name"
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "packaging/releases/$name"
             try {
               $zip = [System.IO.Compression.ZipFile]::OpenRead("packaging/releases/$name")
               $zip.Dispose()
@@ -129,7 +135,9 @@ jobs:
           files: packaging/releases/*
 
       # ── Save caches (always, even on failure) ──
-      - if: always()
+      # Skip save on cache hit: Cargo.lock unchanged → key unchanged → save is redundant.
+      # The 2-minute tar+zstd cost isn't worth it for incremental target/ changes.
+      - if: always() && steps.cache-rust.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -143,3 +151,9 @@ jobs:
         with:
           path: packaging/dist/python-cache
           key: python-embed-3.14.3
+
+      - if: always() && steps.cache-dotnet-tools.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.dotnet/tools
+          key: ${{ steps.cache-dotnet-tools.outputs.cache-primary-key }}

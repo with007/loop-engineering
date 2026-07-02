@@ -358,12 +358,27 @@ def main():
         else:
             DIST.mkdir(parents=True, exist_ok=True)
             RELEASES.mkdir(parents=True, exist_ok=True)
+            # Copy cached Python to dist (CI restores to python-cache)
+            cache_dir = DIST.parent / "python-cache"
+            if cache_dir.exists():
+                print("\n=== [0] Restore Python from cache ===")
+                shutil.copytree(cache_dir, DIST / "python")
+            else:
+                print("\n=== [0] Python cache not found, will download ===")
+                args.skip_python = False
+                (DIST / "python").mkdir(parents=True, exist_ok=True)
         if not args.skip_build:
             build_rust()
         else:
             print("\n=== [2] Build Rust (SKIPPED) ===")
         if not args.skip_python:
             setup_python()
+            # Save to cache dir for CI caching
+            cache_dir = DIST.parent / "python-cache"
+            if cache_dir.exists():
+                shutil.rmtree(cache_dir)
+            shutil.copytree(DIST / "python", cache_dir)
+            print(f"  Python cached to {cache_dir}")
         else:
             print("\n=== [3] Setup Python (SKIPPED) ===")
         copy_files()
