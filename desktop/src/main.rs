@@ -69,6 +69,7 @@ pub struct AppState {
     pub pending_merge: u32,
     pub port: u16,
     pub autostart: bool,
+    pub auto_open_browser: bool,
 }
 
 // ── UserEvent ─────────────────────────────────────────────────────────────
@@ -109,7 +110,7 @@ impl GlutinWindowContext {
             .with_resizable(false)
             .with_inner_size(winit::dpi::LogicalSize {
                 width: 380.0,
-                height: 280.0,
+                height: 440.0,
             })
             .with_title("Loop Dashboard 设置")
             .with_visible(false);
@@ -244,7 +245,9 @@ struct WindowState {
     /// Editable text — persists across frames (not reset on each render)
     port_str: String,
     autostart: bool,
-    settings_path: std::path::PathBuf,
+    auto_open_browser: bool,
+    update_status: Option<String>,
+    update_progress: Option<u32>,
 }
 
 impl WindowState {
@@ -252,7 +255,9 @@ impl WindowState {
         event_loop: &ActiveEventLoop,
         port: u16,
         autostart: bool,
-        settings_path: std::path::PathBuf,
+        auto_open_browser: bool,
+        update_status: Option<String>,
+        update_progress: Option<u32>,
     ) -> Self {
         log!("WindowState: creating GL context...");
         let gl_window = unsafe { GlutinWindowContext::new(event_loop) };
@@ -298,8 +303,17 @@ impl WindowState {
             egui_glow,
             port_str: port.to_string(),
             autostart,
-            settings_path,
+            auto_open_browser,
+            update_status,
+            update_progress,
         }
+    }
+
+    fn set_update_status(&mut self, text: Option<String>) {
+        self.update_status = text;
+    }
+    fn set_update_progress(&mut self, pct: Option<u32>) {
+        self.update_progress = pct;
     }
 
     fn render(&mut self) -> SettingsAction {
@@ -308,6 +322,9 @@ impl WindowState {
         // Extract fields before the closure to avoid borrow-of-self conflicts
         let port_str = &mut self.port_str;
         let autostart_val = &mut self.autostart;
+        let auto_open_val = &mut self.auto_open_browser;
+        let update_status = &self.update_status;
+        let update_progress = &self.update_progress;
 
         self.egui_glow.run(self.gl_window.window(), |egui_ctx| {
             if egui_ctx.input(|i| i.viewport().close_requested()) {
@@ -321,6 +338,8 @@ impl WindowState {
                     ui.heading("Loop Dashboard 设置");
                 });
                 ui.separator();
+
+                // ── Server settings ──
                 ui.horizontal(|ui| {
                     ui.label("端口号:");
                     ui.add(
@@ -328,15 +347,51 @@ impl WindowState {
                     );
                 });
                 ui.label("修改端口后需重启生效");
-                ui.add_space(8.0);
+                ui.add_space(4.0);
                 ui.checkbox(autostart_val, "开机自启");
-                ui.add_space(16.0);
+                ui.checkbox(auto_open_val, "启动时自动打开 Dashboard");
+                ui.add_space(8.0);
+
+                // ── Updates ──
+                ui.separator();
+                ui.vertical_centered(|ui| {
+                    ui.heading("更新");
+                });
+                ui.add_space(4.0);
+
+                // Status text
+                if let Some(ref status) = update_status {
+                    ui.label(status);
+                } else {
+                    ui.label("暂无更新状态");
+                }
+
+                // Progress bar
+                if let Some(pct) = update_progress {
+                    ui.add(
+                        egui::ProgressBar::new(*pct as f32 / 100.0)
+                            .desired_width(200.0)
+                            .text(format!("{}%", pct)),
+                    );
+                }
+
+                ui.add_space(4.0);
+                if ui.button("检查更新").clicked() {
+                    action = SettingsAction::CheckUpdates;
+                }
+
+                ui.add_space(12.0);
+                ui.separator();
+
+                // ── Save / Cancel ──
                 ui.horizontal(|ui| {
                     if ui.button("保存").clicked() {
-                        log!("settings: save clicked, port={}, autostart={}", port_str, autostart_val);
+                        log!("settings: save clicked, port={}, autostart={}, auto_open={}",
+                            port_str, autostart_val, auto_open_val);
                         action = SettingsAction::Save {
                             port: port_str.parse::<u16>().unwrap_or(8765),
                             autostart: *autostart_val,
+                            auto_open_browser: *auto_open_val,
                         };
                     }
                     if ui.button("取消").clicked() {
@@ -363,7 +418,8 @@ impl WindowState {
 enum SettingsAction {
     None,
     Close,
-    Save { port: u16, autostart: bool },
+    Save { port: u16, autostart: bool, auto_open_browser: bool },
+    CheckUpdates,
 }
 
 // ── App ───────────────────────────────────────────────────────────────────
@@ -386,8 +442,14 @@ struct App {
     last_heartbeat: Instant,
     /// Pending update version (downloaded, waiting for user to restart)
     update_pending_version: Option<String>,
+    /// Current update status message (shown in settings)
+    update_status: Option<String>,
+    /// Current download progress (0-100, shown in settings)
+    update_progress: Option<u32>,
     /// True if this is the first run (no settings file existed on startup)
     first_run: bool,
+    /// Auto-open browser on startup (from config)
+    auto_open_browser: bool,
 }
 
 impl ApplicationHandler<UserEvent> for App {
@@ -485,6 +547,12 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::UpdateReady { version } => {
                 log!("user_event: UpdateReady v{}", version);
                 self.update_pending_version = Some(version.clone());
+                self.update_status = Some(format!("v{} ready, restarting...", version));
+                self.update_progress = Some(100);
+                if let Some(ref mut ws) = self.settings_window {
+                    ws.set_update_status(Some(format!("v{} ready, restarting...", version)));
+                    ws.set_update_progress(Some(100));
+                }
                 self.rebuild_menu_from_state();
                 // Auto-restart to apply update — show notification first
                 if let Some(ref icon) = self.tray_icon {
@@ -495,12 +563,23 @@ impl ApplicationHandler<UserEvent> for App {
                 self.apply_pending_update();
             }
             UserEvent::UpdateProgress(pct) => {
+                self.update_progress = Some(pct);
+                if let Some(ref mut ws) = self.settings_window {
+                    ws.set_update_progress(Some(pct));
+                    ws.set_update_status(Some(format!("Downloading update... {}%", pct)));
+                }
                 if let Some(ref icon) = self.tray_icon {
                     let msg = format!("Downloading update... {}%", pct);
                     let _ = icon.set_tooltip(Some(&msg));
                 }
             }
             UserEvent::UpdateStatus(msg) => {
+                self.update_status = Some(msg.clone());
+                self.update_progress = None;
+                if let Some(ref mut ws) = self.settings_window {
+                    ws.set_update_status(Some(msg.clone()));
+                    ws.set_update_progress(None);
+                }
                 if let Some(ref icon) = self.tray_icon {
                     let _ = icon.set_tooltip(Some(&msg));
                 }
@@ -556,31 +635,46 @@ impl ApplicationHandler<UserEvent> for App {
                     SettingsAction::Close => {
                         self.hide_settings_window();
                     }
-                    SettingsAction::Save { port, autostart } => {
+                    SettingsAction::Save { port, autostart, auto_open_browser } => {
                         log!(
-                            "settings: saving port={}, autostart={}",
-                            port,
-                            autostart
+                            "settings: saving port={}, autostart={}, auto_open={}",
+                            port, autostart, auto_open_browser
                         );
-                        let settings = serde_json::json!({
-                            "port": port,
-                            "autostart": autostart,
-                        });
-                        if let Ok(data) = serde_json::to_string_pretty(&settings) {
-                            let _ = std::fs::write(&ws.settings_path, data);
-                        }
+                        let cfg = Config { port, autostart, auto_open_browser };
+                        cfg.save(&self.exe_dir);
                         // Update app state
                         {
                             let mut s = self.state.lock().unwrap();
                             s.port = port;
                             s.autostart = autostart;
+                            s.auto_open_browser = auto_open_browser;
                         }
+                        self.auto_open_browser = auto_open_browser;
                         if autostart {
                             enable_autostart();
                         } else {
                             disable_autostart();
                         }
                         self.hide_settings_window();
+                    }
+                    SettingsAction::CheckUpdates => {
+                        // Check for pending update first
+                        if let Some(ref ver) = self.update_pending_version {
+                            log!("settings: apply pending update v{}", ver);
+                            self.apply_pending_update();
+                        } else {
+                            log!("settings: check_updates clicked");
+                            self.update_status = Some("Checking for updates...".into());
+                            self.update_progress = None;
+                            if let Some(ref mut ws) = self.settings_window {
+                                ws.set_update_status(Some("Checking for updates...".into()));
+                                ws.set_update_progress(None);
+                            }
+                            let proxy = self.proxy.clone();
+                            std::thread::spawn(move || {
+                                check_for_updates_inner(&proxy, true);
+                            });
+                        }
                     }
                     SettingsAction::None => {}
                 }
@@ -609,12 +703,13 @@ impl ApplicationHandler<UserEvent> for App {
 impl App {
     fn open_settings_window(&mut self, event_loop: &ActiveEventLoop) {
         log!("open_settings_window: creating new window");
-        let (port, autostart) = {
+        let (port, autostart, auto_open_browser) = {
             let s = self.state.lock().unwrap();
-            (s.port, s.autostart)
+            (s.port, s.autostart, s.auto_open_browser)
         };
-        let settings_path = self.exe_dir.join("dashboard-settings.json");
-        let mut ws = WindowState::new(event_loop, port, autostart, settings_path);
+        let status = self.update_status.clone();
+        let progress = self.update_progress;
+        let mut ws = WindowState::new(event_loop, port, autostart, auto_open_browser, status, progress);
 
         // Render first frame BEFORE showing, so user doesn't see white flash
         log!("open_settings_window: rendering first frame...");
@@ -698,23 +793,6 @@ impl App {
         } else if id == &ids.settings {
             log!("menu: settings -> open_settings_window");
             self.open_settings_window(event_loop);
-        } else if id == &ids.check_updates {
-            if let Some(ref ver) = self.update_pending_version {
-                // Update already downloaded — apply and restart
-                log!("menu: apply update v{} and restart", ver);
-                self.apply_pending_update();
-            } else {
-                // Trigger a manual check
-                log!("menu: check_updates — triggering update check");
-                // Show immediate feedback — the API check takes ~20s
-                if let Some(ref icon) = self.tray_icon {
-                    let _ = icon.set_tooltip(Some("Checking for updates..."));
-                }
-                let proxy = self.proxy.clone();
-                std::thread::spawn(move || {
-                    check_for_updates_inner(&proxy, true);
-                });
-            }
         } else if id == &ids.quit {
             log!("menu: QUIT -> calling std::process::exit(0)");
             std::process::exit(0);
@@ -826,6 +904,7 @@ fn main() {
         pending_merge: 0,
         port,
         autostart: config.autostart,
+        auto_open_browser: config.auto_open_browser,
     }));
 
     if config.autostart {
@@ -843,7 +922,10 @@ fn main() {
         log!("main: FAILED to start server");
     }
 
-    // Don't auto-open browser — user opens via tray menu "新增项目"
+    if config.auto_open_browser {
+        log!("main: auto-opening browser at http://127.0.0.1:{}", port);
+        let _ = open::that(format!("http://127.0.0.1:{}", port));
+    }
     log!("main: server ready on port {}", port);
 
     // Build event loop with user events
@@ -882,7 +964,10 @@ fn main() {
         test_timer: Instant::now(),
         last_heartbeat: Instant::now(),
         update_pending_version: None,
+        update_status: None,
+        update_progress: None,
         first_run,
+        auto_open_browser: config.auto_open_browser,
     };
 
     log!("main: entering event_loop.run_app");

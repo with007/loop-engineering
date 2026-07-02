@@ -8,14 +8,17 @@ pub struct Config {
     pub port: u16,
     #[serde(default = "default_autostart")]
     pub autostart: bool,
+    #[serde(default = "default_auto_open_browser")]
+    pub auto_open_browser: bool,
 }
 
 fn default_port() -> u16 { 8765 }
 fn default_autostart() -> bool { true }
+fn default_auto_open_browser() -> bool { true }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { port: 8765, autostart: true }
+        Self { port: 8765, autostart: true, auto_open_browser: true }
     }
 }
 

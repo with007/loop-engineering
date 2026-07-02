@@ -89,7 +89,6 @@ pub struct TrayMenuItems {
     pub add_project: MenuItem,
     pub sep2: MenuItem,
     pub settings: MenuItem,
-    pub check_updates: MenuItem,
     pub sep3: MenuItem,
     pub quit: MenuItem,
     pub projects: Vec<ProjectMenu>,
@@ -102,7 +101,6 @@ pub struct TrayMenuItems {
 pub struct TrayMenuIds {
     pub add_project: tray_icon::menu::MenuId,
     pub settings: tray_icon::menu::MenuId,
-    pub check_updates: tray_icon::menu::MenuId,
     pub quit: tray_icon::menu::MenuId,
 }
 
@@ -111,7 +109,6 @@ impl TrayMenuItems {
         TrayMenuIds {
             add_project: self.add_project.id().clone(),
             settings: self.settings.id().clone(),
-            check_updates: self.check_updates.id().clone(),
             quit: self.quit.id().clone(),
         }
     }
@@ -136,7 +133,6 @@ pub fn build_menu(items: &mut TrayMenuItems, running: bool, paused: bool) -> Men
     refs.push(&items.add_project);
     refs.push(&items.sep2);
     refs.push(&items.settings);
-    refs.push(&items.check_updates);
     refs.push(&items.sep3);
     refs.push(&items.quit);
 
@@ -152,7 +148,6 @@ pub fn create_tray() -> (TrayIcon, TrayMenuItems, TrayMenuIds) {
     let add_project = MenuItem::new("新增项目", true, None);
     let sep2 = MenuItem::new("───────────────", false, None);
     let settings = MenuItem::new("设置...", true, None);
-    let check_updates = MenuItem::new("检查更新...", true, None);
     let sep3 = MenuItem::new("───────────────", false, None);
     let quit = MenuItem::new("退出", true, None);
 
@@ -186,7 +181,6 @@ pub fn create_tray() -> (TrayIcon, TrayMenuItems, TrayMenuIds) {
         add_project,
         sep2,
         settings,
-        check_updates,
         sep3,
         quit,
         projects: project_menus,
