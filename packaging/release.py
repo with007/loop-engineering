@@ -170,65 +170,100 @@ def vpk_pack(version: str):
 
 
 def publish_github(version: str):
-    """发布到 GitHub Releases."""
+    """发布到 GitHub Releases — 幂等：Release 已存在则只补传缺失文件."""
     print("\n=== [6] Publish to GitHub ===")
 
     token = os.environ.get("GITHUB_TOKEN") or GITHUB_TOKEN
-
     tag = f"v{version}"
     api_base = f"https://api.github.com/repos/{GITHUB_REPO}"
 
-    # 创建 Release
-    print(f"  Creating release {tag}...")
-    create_url = f"{api_base}/releases"
-    data = json.dumps({
-        "tag_name": tag,
-        "target_commitish": "master",
-        "name": f"Loop Dashboard v{version}",
-        "body": f"Loop Dashboard v{version}\n\n"
-                f"### 安装\n"
-                f"下载 `LoopDashboard-win-Setup.exe` 运行安装。\n\n"
-                f"### 便携版\n"
-                f"下载 `LoopDashboard-win-Portable.zip` 解压运行。",
-        "draft": False,
-        "prerelease": version.startswith("0."),
-    }).encode()
+    def api_headers():
+        return {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
 
-    req = Request(create_url, data=data, method="POST")
-    req.add_header("Authorization", f"Bearer {token}")
-    req.add_header("Accept", "application/vnd.github.v3+json")
-    req.add_header("Content-Type", "application/json")
-
+    # 检查 Release 是否已存在
+    release = None
+    list_url = f"{api_base}/releases"
+    req = Request(list_url)
+    for h, v in api_headers().items():
+        req.add_header(h, v)
     try:
         with urllib.request.urlopen(req) as resp:
-            release = json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        body = e.read().decode()
-        print(f"  FAILED: {e.code} {body}")
+            releases = json.loads(resp.read())
+        for r in releases:
+            if r["tag_name"] == tag:
+                release = r
+                print(f"  Release exists: {release['html_url']}")
+                break
+    except Exception as e:
+        print(f"  Failed to list releases: {e}")
         return
 
-    upload_url = release["upload_url"].split("{")[0]
-    print(f"  Release created: {release['html_url']}")
+    # 不存在则创建
+    if not release:
+        print(f"  Creating release {tag}...")
+        data = json.dumps({
+            "tag_name": tag,
+            "target_commitish": "master",
+            "name": f"Loop Dashboard v{version}",
+            "body": f"Loop Dashboard v{version}\n\n"
+                    f"### 安装\n"
+                    f"下载 `LoopDashboard-win-Setup.exe` 运行安装。\n\n"
+                    f"### 便携版\n"
+                    f"下载 `LoopDashboard-win-Portable.zip` 解压运行。",
+            "draft": False,
+            "prerelease": version.startswith("0."),
+        }).encode()
 
-    # 上传文件
-    for fpath in RELEASES.iterdir():
+        req = Request(f"{api_base}/releases", data=data, method="POST")
+        req.add_header("Authorization", f"Bearer {token}")
+        req.add_header("Accept", "application/vnd.github.v3+json")
+        req.add_header("Content-Type", "application/json")
+        try:
+            with urllib.request.urlopen(req) as resp:
+                release = json.loads(resp.read())
+            print(f"  Release created: {release['html_url']}")
+        except urllib.error.HTTPError as e:
+            print(f"  FAILED: {e.code} {e.read().decode()}")
+            return
+
+    # 收集已有文件名，只上传缺失的
+    existing_names = {a["name"] for a in release.get("assets", [])}
+    upload_url = release["upload_url"].split("{")[0]
+
+    for fpath in sorted(RELEASES.iterdir()):
         if not fpath.is_file():
             continue
-        print(f"  Uploading {fpath.name} ({fpath.stat().st_size / 1024 / 1024:.1f} MB)...")
+        if fpath.name in existing_names:
+            print(f"  SKIP {fpath.name} (already uploaded)")
+            continue
+
+        size_mb = fpath.stat().st_size / 1024 / 1024
+        print(f"  Uploading {fpath.name} ({size_mb:.1f} MB)...")
         with open(fpath, "rb") as f:
             data = f.read()
 
         url = f"{upload_url}?name={fpath.name}"
-        req = Request(url, data=data, method="POST")
-        req.add_header("Authorization", f"Bearer {token}")
-        req.add_header("Accept", "application/vnd.github.v3+json")
-        req.add_header("Content-Type", "application/octet-stream")
-
-        try:
-            urllib.request.urlopen(req)
-            print(f"    OK")
-        except urllib.error.HTTPError as e:
-            print(f"    FAILED: {e.code} {e.read().decode()}")
+        for attempt in range(3):
+            try:
+                req = Request(url, data=data, method="POST")
+                req.add_header("Authorization", f"Bearer {token}")
+                req.add_header("Content-Type", "application/octet-stream")
+                urllib.request.urlopen(req)
+                print(f"    OK")
+                break
+            except urllib.error.HTTPError as e:
+                print(f"    FAILED: {e.code}")
+                break  # HTTP 错误不重试
+            except Exception as e:
+                if attempt < 2:
+                    print(f"    Retry {attempt + 1}: {e}")
+                    import time
+                    time.sleep(3)
+                else:
+                    print(f"    FAILED after 3 attempts: {e}")
 
 
 def get_current_version():
@@ -252,6 +287,7 @@ def main():
     parser.add_argument("--publish", action="store_true", help="构建后发布到 GitHub")
     parser.add_argument("--skip-build", action="store_true", help="跳过 Rust 编译")
     parser.add_argument("--skip-python", action="store_true", help="跳过 Python 下载（使用已有）")
+    parser.add_argument("--publish-only", action="store_true", help="仅上传已有产物（跳过所有构建步骤）")
     args = parser.parse_args()
 
     current = get_current_version()
@@ -275,21 +311,25 @@ def main():
     print(f"Loop Dashboard Release v{version} (current: {current or 'none'})")
     print(f"Repo: {GITHUB_REPO}")
 
-    # 只在完整重建 Python 环境时才清理
-    if not args.skip_python:
-        clean()
+    if args.publish_only:
+        print("\n=== [1-5] SKIPPED (--publish-only) ===")
     else:
-        DIST.mkdir(parents=True, exist_ok=True)
-        RELEASES.mkdir(parents=True, exist_ok=True)
-    if not args.skip_build:
-        build_rust()
-    if not args.skip_python:
-        setup_python()
-    else:
-        print("\n=== [3] Setup Python (SKIPPED) ===")
-    copy_files()
-    write_version(version)
-    vpk_pack(version)
+        if not args.skip_python:
+            clean()
+        else:
+            DIST.mkdir(parents=True, exist_ok=True)
+            RELEASES.mkdir(parents=True, exist_ok=True)
+        if not args.skip_build:
+            build_rust()
+        else:
+            print("\n=== [2] Build Rust (SKIPPED) ===")
+        if not args.skip_python:
+            setup_python()
+        else:
+            print("\n=== [3] Setup Python (SKIPPED) ===")
+        copy_files()
+        write_version(version)
+        vpk_pack(version)
 
     if args.publish:
         publish_github(version)
