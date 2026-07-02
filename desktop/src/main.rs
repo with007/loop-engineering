@@ -14,6 +14,7 @@ use winit::raw_window_handle::HasWindowHandle;
 use winit::window::WindowId;
 
 mod config;
+mod download;
 mod server;
 mod tray;
 mod icon_data;
@@ -976,45 +977,75 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
             // Show immediate feedback — first bytes may take a while on slow links
             let _ = proxy.send_event(UserEvent::UpdateProgress(0));
 
-            // Spawn a separate thread so we can timeout the download.
-            // Velopack's download_updates has no built-in timeout.
-            // Progress: Velopack expects an mpsc::Sender<i16> (0-100).
-            let (tx, rx) = std::sync::mpsc::channel();
-            let (prog_tx, prog_rx) = std::sync::mpsc::channel::<i16>();
-            let proxy_progress = proxy.clone();
-            std::thread::spawn(move || {
-                // Forward progress to main thread
-                while let Ok(pct) = prog_rx.recv() {
-                    let _ = proxy_progress.send_event(UserEvent::UpdateProgress(pct as u32));
+            // Resolve GitHub API asset URL (supports Range, unlike github.com CDN)
+            let asset_url = match download::get_github_asset_url(
+                UPDATE_SOURCE_URL,
+                &update.TargetFullRelease.FileName,
+                UPDATE_GITHUB_TOKEN,
+            ) {
+                Ok(url) => url,
+                Err(e) => {
+                    log!("update: failed to resolve asset URL: {}", e);
+                    DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
+                    return;
                 }
-            });
+            };
+
+            // Determine packages directory (where Velopack expects .nupkg files)
+            let packages_dir = match std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|p| p.join("packages")))
+            {
+                Some(dir) => dir,
+                None => {
+                    log!("update: cannot determine exe directory");
+                    DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
+                    return;
+                }
+            };
+
+            let expected_size = update.TargetFullRelease.Size;
+            let filename = update.TargetFullRelease.FileName.clone();
+            let version_down = version.clone();
+            let proxy_dl = proxy.clone();
+            let proxy_dl_done = proxy.clone();
+            let token = UPDATE_GITHUB_TOKEN.to_string();
+
             std::thread::spawn(move || {
-                let result = um.download_updates(&update, Some(prog_tx));
-                let _ = tx.send(result);
+                let result = download::download_with_resume(
+                    &asset_url,
+                    &packages_dir,
+                    &filename,
+                    expected_size,
+                    &token,
+                    move |pct| {
+                        let _ = proxy_dl.send_event(UserEvent::UpdateProgress(pct));
+                    },
+                );
+
+                DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
+
+                match result {
+                    Ok(_final_path) => {
+                        log!("update: v{} downloaded successfully", version_down);
+                        let _ = proxy_dl_done.send_event(UserEvent::UpdateReady { version: version_down });
+                    }
+                    Err(e) => {
+                        log!("update: download failed: {}", e);
+                        // Clean up on error so next attempt starts fresh
+                        let _ = std::fs::remove_file(packages_dir.join(format!("{}.partial", filename)));
+                        let _ = std::fs::remove_file(packages_dir.join(format!("{}.download-state.json", filename)));
+                    }
+                }
             });
 
-            match rx.recv_timeout(DOWNLOAD_TIMEOUT) {
-                Ok(Ok(())) => {
-                    DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
-                    log!("update: v{} downloaded successfully", version);
-                    let _ = proxy.send_event(UserEvent::UpdateReady { version });
+            // Timeout watchdog — log if download takes longer than expected
+            std::thread::spawn(move || {
+                std::thread::sleep(DOWNLOAD_TIMEOUT);
+                if DOWNLOAD_IN_PROGRESS.load(Ordering::SeqCst) {
+                    log!("update: download still running after {:?}", DOWNLOAD_TIMEOUT);
                 }
-                Ok(Err(e)) => {
-                    DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
-                    log!("update: download failed: {:?}", e);
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    // Thread still downloading — don't reset the flag so
-                    // subsequent checks see "already in progress" instead of
-                    // hitting a file-lock error. If it eventually finishes we
-                    // get the result below; if not, app restart clears it.
-                    log!("update: download still running after {:?}, will keep waiting", DOWNLOAD_TIMEOUT);
-                }
-                Err(_) => {
-                    DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
-                    log!("update: download thread crashed");
-                }
-            }
+            });
         }
         Ok(velopack::UpdateCheck::NoUpdateAvailable) => {
             log!("update: no updates available");
