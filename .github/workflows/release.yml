@@ -75,23 +75,24 @@ jobs:
           $token = "${{ secrets.GITHUB_TOKEN }}"
           $repo = "${{ github.repository }}"
           $headers = @{ Authorization = "Bearer $token"; Accept = "application/vnd.github.v3+json" }
-          $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases?per_page=5" -Headers $headers
-          $prev = $releases | Where-Object { $_.tag_name -ne "v${{ steps.version.outputs.version }}" } | Select-Object -First 1
-          if ($prev) {
+          $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases?per_page=10" -Headers $headers | Sort-Object -Property created_at -Descending
+          $currentVersion = "${{ steps.version.outputs.version }}"
+          foreach ($prev in $releases) {
+            if ($prev.tag_name -eq "v$currentVersion") { continue }
             $name = "LoopDashboard-$($prev.tag_name.Substring(1))-full.nupkg"
             $asset = $prev.assets | Where-Object { $_.name -eq $name }
-            if ($asset) {
-              New-Item -ItemType Directory -Force -Path "packaging/releases" | Out-Null
-              Write-Host "Downloading $name ($($asset.size) bytes)..."
-              Invoke-WebRequest -Uri $asset.url -Headers $headers -OutFile "packaging/releases/$name"
-              try {
-                $zip = [System.IO.Compression.ZipFile]::OpenRead("packaging/releases/$name")
-                $zip.Dispose()
-                Write-Host "  Valid"
-              } catch {
-                Write-Host "  CORRUPTED, removing"
-                Remove-Item "packaging/releases/$name" -Force
-              }
+            if (-not $asset) { continue }
+            New-Item -ItemType Directory -Force -Path "packaging/releases" | Out-Null
+            Write-Host "Downloading $name ($($asset.size) bytes) from $($prev.tag_name)..."
+            Invoke-WebRequest -Uri $asset.url -Headers $headers -OutFile "packaging/releases/$name"
+            try {
+              $zip = [System.IO.Compression.ZipFile]::OpenRead("packaging/releases/$name")
+              $zip.Dispose()
+              Write-Host "  Valid, using for delta"
+              break
+            } catch {
+              Write-Host "  Corrupted, trying next release..."
+              Remove-Item "packaging/releases/$name" -Force
             }
           }
 
