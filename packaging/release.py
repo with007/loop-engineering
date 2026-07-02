@@ -149,7 +149,7 @@ def write_version(version: str):
     (DIST / "version.txt").write_text(f"{version}\n")
     print(f"  version.txt → {version}")
 
-    # 同步 Cargo.toml
+    # 同步 Cargo.toml 和 version.txt
     cargo_toml = ROOT / "desktop" / "Cargo.toml"
     content = cargo_toml.read_text()
     import re
@@ -157,6 +157,12 @@ def write_version(version: str):
     if new_content != content:
         cargo_toml.write_text(new_content)
         print(f"  Cargo.toml → {version}")
+
+    version_file = ROOT / "desktop" / "version.txt"
+    old_v = version_file.read_text().strip() if version_file.exists() else ""
+    if old_v != version:
+        version_file.write_text(f"{version}\n")
+        print(f"  version.txt → {version}")
 
 
 def vpk_pack(version: str):
