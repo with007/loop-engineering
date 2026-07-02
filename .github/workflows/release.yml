@@ -42,9 +42,10 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+          cache: true
 
       - name: Install vpk CLI
-        run: dotnet tool install -g vpk
+        run: dotnet tool update -g vpk || dotnet tool install -g vpk
 
       - name: Setup Python
         uses: actions/setup-python@v5
