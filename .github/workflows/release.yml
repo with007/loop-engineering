@@ -84,8 +84,8 @@ jobs:
             if (-not $asset) { continue }
             New-Item -ItemType Directory -Force -Path "packaging/releases" | Out-Null
             Write-Host "Downloading $name ($($asset.size) bytes) from $($prev.tag_name)..."
-            $downloadHeaders = @{ Authorization = "Bearer $token" }
-            Invoke-WebRequest -Uri $asset.browser_download_url -Headers $downloadHeaders -OutFile "packaging/releases/$name"
+            $downloadHeaders = @{ Authorization = "Bearer $token"; Accept = "application/octet-stream" }
+            Invoke-WebRequest -Uri $asset.url -Headers $downloadHeaders -OutFile "packaging/releases/$name"
             try {
               $zip = [System.IO.Compression.ZipFile]::OpenRead("packaging/releases/$name")
               $zip.Dispose()
