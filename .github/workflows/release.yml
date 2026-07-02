@@ -39,7 +39,6 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-          cache: true
 
       - name: Install vpk CLI
         run: dotnet tool update -g vpk || dotnet tool install -g vpk
