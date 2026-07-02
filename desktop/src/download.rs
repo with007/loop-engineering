@@ -36,15 +36,14 @@ pub fn refresh_state_url(state_path: &Path, new_url: &str) -> Result<(), String>
         .map_err(|e| format!("write state: {}", e))
 }
 
-/// Resolve the GitHub API asset URL for a given release filename.
+/// Resolve the GitHub CDN download URL for a given release filename.
 ///
-/// GitHub's CDN (`github.com/releases/download/...`) does not support
-/// `Accept-Ranges: bytes`, but the API asset URL (`api.github.com/repos/.../
-/// releases/assets/{id}`) redirects to S3 which does. We need the API URL
-/// for HTTP Range resume to work.
+/// Uses `browser_download_url` which goes through GitHub CDN (Fastly global
+/// edge nodes) rather than S3 directly. This is significantly faster from
+/// regions far from us-east-1 (e.g. China).
 ///
-/// Returns the API asset URL (e.g.
-/// `https://api.github.com/repos/owner/repo/releases/assets/12345678`).
+/// Returns the CDN URL (e.g.
+/// `https://github.com/owner/repo/releases/download/v1.0/filename.nupkg`).
 pub fn get_github_asset_url(repo_url: &str, filename: &str, token: &str) -> Result<String, String> {
     // Extract owner/repo from e.g. "https://github.com/with007/loop-engineering"
     let path = repo_url
@@ -89,7 +88,7 @@ pub fn get_github_asset_url(repo_url: &str, filename: &str, token: &str) -> Resu
     #[derive(Deserialize)]
     struct GhAsset {
         name: String,
-        url: String,
+        browser_download_url: String,
     }
 
     let releases: Vec<GhRelease> =
@@ -98,7 +97,7 @@ pub fn get_github_asset_url(repo_url: &str, filename: &str, token: &str) -> Resu
     for release in &releases {
         for asset in &release.assets {
             if asset.name.eq_ignore_ascii_case(filename) {
-                return Ok(asset.url.clone());
+                return Ok(asset.browser_download_url.clone());
             }
         }
     }
