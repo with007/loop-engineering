@@ -84,6 +84,8 @@ enum UserEvent {
     UpdateReady { version: String },
     /// Download progress (0-100 percent)
     UpdateProgress(u32),
+    /// Update check status (for tray tooltip feedback)
+    UpdateStatus(String),
 }
 
 // ── GlutinWindowContext ───────────────────────────────────────────────────
@@ -489,6 +491,11 @@ impl ApplicationHandler<UserEvent> for App {
                     let _ = icon.set_tooltip(Some(&msg));
                 }
             }
+            UserEvent::UpdateStatus(msg) => {
+                if let Some(ref icon) = self.tray_icon {
+                    let _ = icon.set_tooltip(Some(&msg));
+                }
+            }
         }
     }
 
@@ -690,6 +697,10 @@ impl App {
             } else {
                 // Trigger a manual check
                 log!("menu: check_updates — triggering update check");
+                // Show immediate feedback — the API check takes ~20s
+                if let Some(ref icon) = self.tray_icon {
+                    let _ = icon.set_tooltip(Some("Checking for updates..."));
+                }
                 let proxy = self.proxy.clone();
                 std::thread::spawn(move || {
                     check_for_updates_inner(&proxy, true);
@@ -986,6 +997,7 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
                 Ok(url) => url,
                 Err(e) => {
                     log!("update: failed to resolve asset URL: {}", e);
+                    let _ = proxy.send_event(UserEvent::UpdateStatus(format!("Failed: {}", e)));
                     DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
                     return;
                 }
@@ -1032,6 +1044,7 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
                     }
                     Err(e) => {
                         log!("update: download failed: {}", e);
+                        let _ = proxy_dl_done.send_event(UserEvent::UpdateStatus(format!("Download failed: {}", e)));
                         // Clean up on error so next attempt starts fresh
                         let _ = std::fs::remove_file(packages_dir.join(format!("{}.partial", filename)));
                         let _ = std::fs::remove_file(packages_dir.join(format!("{}.download-state.json", filename)));
@@ -1049,12 +1062,15 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
         }
         Ok(velopack::UpdateCheck::NoUpdateAvailable) => {
             log!("update: no updates available");
+            let _ = proxy.send_event(UserEvent::UpdateStatus("Already up to date".into()));
         }
         Ok(velopack::UpdateCheck::RemoteIsEmpty) => {
             log!("update: remote feed is empty (no releases published yet)");
+            let _ = proxy.send_event(UserEvent::UpdateStatus("No releases available".into()));
         }
         Err(e) => {
             log!("update: check failed: {:?}", e);
+            let _ = proxy.send_event(UserEvent::UpdateStatus(format!("Update check failed: {}", e)));
         }
     }
 }
