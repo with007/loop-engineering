@@ -1231,17 +1231,10 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
         .build()
         .into();
 
-    let mut req = agent
+    let req = agent
         .get(api_url)
         .header("Accept", "application/vnd.github.v3+json")
         .header("User-Agent", "LoopDashboard/1.0");
-
-    // Optional: use GITHUB_TOKEN env var for private repos or higher rate limit
-    if let Ok(token) = std::env::var("GITHUB_TOKEN") {
-        if !token.is_empty() {
-            req = req.header("Authorization", &format!("Bearer {}", token));
-        }
-    }
 
     let response = match req.call() {
         Ok(resp) => resp,
