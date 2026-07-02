@@ -19,6 +19,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache Rust
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/target
+          key: rust-release-${{ runner.os }}-${{ hashFiles('desktop/Cargo.lock') }}
+          restore-keys: rust-release-${{ runner.os }}-
+
+      - name: Cache Python embed
+        uses: actions/cache@v4
+        with:
+          path: packaging/dist/python-cache
+          key: python-embed-3.14.3
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -46,21 +62,31 @@ jobs:
           Remove-Item -Recurse -Force $dist -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path "$dist/python", "$dist/app/src/loop_engineering", "$dist/app/templates" | Out-Null
 
-          # Download embedded Python
-          Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.14.3/python-3.14.3-embed-amd64.zip" -OutFile "$dist/python/python-embed.zip"
-          Expand-Archive -Path "$dist/python/python-embed.zip" -DestinationPath "$dist/python"
-          Remove-Item "$dist/python/python-embed.zip"
+          # Use cached Python embed if available, otherwise download
+          $pythonCache = "$dist/python-cache"
+          if (Test-Path "$pythonCache/python.exe") {
+            Write-Host "Using cached Python embed"
+            Copy-Item -Recurse "$pythonCache/*" "$dist/python/"
+          } else {
+            Write-Host "Downloading Python embed..."
+            Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.14.3/python-3.14.3-embed-amd64.zip" -OutFile "$dist/python/python-embed.zip"
+            Expand-Archive -Path "$dist/python/python-embed.zip" -DestinationPath "$dist/python"
+            Remove-Item "$dist/python/python-embed.zip"
 
-          # Configure site-packages
-          Set-Content -Path "$dist/python/python314._pth" -Value "python314.zip`n.`nimport site`n..\app\src"
+            # Configure site-packages
+            Set-Content -Path "$dist/python/python314._pth" -Value "python314.zip`n.`nimport site`n..\app\src"
 
-          # Install pip
-          Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "$dist/python/get-pip.py"
-          & "$dist/python/python.exe" "$dist/python/get-pip.py"
-          Remove-Item "$dist/python/get-pip.py"
+            # Install pip + deps
+            Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "$dist/python/get-pip.py"
+            & "$dist/python/python.exe" "$dist/python/get-pip.py"
+            Remove-Item "$dist/python/get-pip.py"
+            & "$dist/python/python.exe" -m pip install fastapi uvicorn jinja2 pyyaml python-multipart markdown
 
-          # Install dependencies
-          & "$dist/python/python.exe" -m pip install fastapi uvicorn jinja2 pyyaml python-multipart markdown
+            # Save to cache
+            New-Item -ItemType Directory -Force -Path $pythonCache | Out-Null
+            Copy-Item -Recurse "$dist/python/*" "$pythonCache/"
+            Write-Host "Python embed cached"
+          }
 
       - name: Copy app files
         shell: pwsh
