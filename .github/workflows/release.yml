@@ -28,12 +28,14 @@ jobs:
             desktop/target
           key: rust-release-${{ runner.os }}-${{ hashFiles('desktop/Cargo.lock') }}
           restore-keys: rust-release-${{ runner.os }}-
+          save-always: true
 
       - name: Cache Python embed
         uses: actions/cache@v4
         with:
           path: packaging/dist/python-cache
           key: python-embed-3.14.3
+          save-always: true
 
       - name: Setup .NET SDK (for vpk)
         uses: actions/setup-dotnet@v4
@@ -45,6 +47,7 @@ jobs:
         with:
           path: ~/.dotnet/tools
           key: vpk-1.2.0
+          save-always: true
 
       - name: Install vpk CLI
         run: dotnet tool update -g vpk || dotnet tool install -g vpk
@@ -81,7 +84,6 @@ jobs:
               New-Item -ItemType Directory -Force -Path "packaging/releases" | Out-Null
               Write-Host "Downloading $name ($($asset.size) bytes)..."
               Invoke-WebRequest -Uri $asset.url -Headers $headers -OutFile "packaging/releases/$name"
-              # Verify zip integrity — corrupted download kills vpk pack
               try {
                 $zip = [System.IO.Compression.ZipFile]::OpenRead("packaging/releases/$name")
                 $zip.Dispose()
