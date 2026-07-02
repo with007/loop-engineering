@@ -81,6 +81,8 @@ enum UserEvent {
     PollServerDown,
     /// Update check found and downloaded a new version
     UpdateReady { version: String },
+    /// Download progress (0-100 percent)
+    UpdateProgress(u32),
 }
 
 // ── GlutinWindowContext ───────────────────────────────────────────────────
@@ -470,10 +472,21 @@ impl ApplicationHandler<UserEvent> for App {
             }
             UserEvent::UpdateReady { version } => {
                 log!("user_event: UpdateReady v{}", version);
-                // User can now restart to apply — the "check for updates" menu
-                // item will show as "restart and update" when an update is pending.
-                self.update_pending_version = Some(version);
+                self.update_pending_version = Some(version.clone());
                 self.rebuild_menu_from_state();
+                // Auto-restart to apply update — show notification first
+                if let Some(ref icon) = self.tray_icon {
+                    let _ = icon.set_tooltip(Some("Restarting to apply update..."));
+                }
+                show_update_notification(&version);
+                std::thread::sleep(Duration::from_secs(1));
+                self.apply_pending_update();
+            }
+            UserEvent::UpdateProgress(pct) => {
+                if let Some(ref icon) = self.tray_icon {
+                    let msg = format!("Downloading update... {}%", pct);
+                    let _ = icon.set_tooltip(Some(&msg));
+                }
             }
         }
     }
@@ -894,6 +907,33 @@ fn poll_background(
 
 // ── update checker (runs in a thread — never blocks the GUI) ─────────────
 
+/// Show a brief Windows notification balloon near the tray icon and then
+/// apply the pending update immediately (restarts the app).
+fn show_update_notification(version: &str) {
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        MessageBoxW, MB_OK, MB_ICONINFORMATION, MB_SYSTEMMODAL,
+    };
+    let msg = format!(
+        "Loop Dashboard v{} is ready.\n\nThe app will restart to apply the update.",
+        version
+    );
+    let msg_wide: Vec<u16> = msg.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        MessageBoxW(
+            None,
+            PCWSTR::from_raw(msg_wide.as_ptr()),
+            PCWSTR::from_raw(
+                "Update Ready\0"
+                    .encode_utf16()
+                    .collect::<Vec<u16>>()
+                    .as_ptr(),
+            ),
+            MB_OK | MB_ICONINFORMATION | MB_SYSTEMMODAL,
+        );
+    }
+}
+
 /// GitHub repo URL for update checks. Change this to your repo.
 const UPDATE_SOURCE_URL: &str = "https://github.com/with007/loop-engineering";
 /// Read-only GitHub token for private repo access (Contents: read).
@@ -935,9 +975,18 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
 
             // Spawn a separate thread so we can timeout the download.
             // Velopack's download_updates has no built-in timeout.
+            // Progress: Velopack expects an mpsc::Sender<i16> (0-100).
             let (tx, rx) = std::sync::mpsc::channel();
+            let (prog_tx, prog_rx) = std::sync::mpsc::channel::<i16>();
+            let proxy_progress = proxy.clone();
             std::thread::spawn(move || {
-                let result = um.download_updates(&update, None);
+                // Forward progress to main thread
+                while let Ok(pct) = prog_rx.recv() {
+                    let _ = proxy_progress.send_event(UserEvent::UpdateProgress(pct as u32));
+                }
+            });
+            std::thread::spawn(move || {
+                let result = um.download_updates(&update, Some(prog_tx));
                 let _ = tx.send(result);
             });
 
