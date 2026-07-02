@@ -1116,9 +1116,8 @@ fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<Us
                 Ok(path) => Ok(path),
                 Err(e) => {
                     log!("startup: first resume attempt failed ({}), refreshing URL...", e);
-                    // S3 signed URL may have expired — get a fresh one and retry
-                    match download::get_github_asset_url(
-                        UPDATE_SOURCE_URL, &fname, UPDATE_GITHUB_TOKEN,
+                    match download::get_github_cdn_url(
+                        UPDATE_SOURCE_URL, &ver, &fname,
                     ) {
                         Ok(new_url) if new_url != asset_url => {
                             let state_path = pkg_dir.join(format!("{}.download-state.json", fname));
@@ -1197,11 +1196,11 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
             // Show immediate feedback — first bytes may take a while on slow links
             let _ = proxy.send_event(UserEvent::UpdateProgress(0));
 
-            // Resolve GitHub API asset URL (supports Range, unlike github.com CDN)
-            let asset_url = match download::get_github_asset_url(
+            // Build CDN download URL (github.com CDN, much faster than S3)
+            let asset_url = match download::get_github_cdn_url(
                 UPDATE_SOURCE_URL,
+                &version,
                 &update.TargetFullRelease.FileName,
-                UPDATE_GITHUB_TOKEN,
             ) {
                 Ok(url) => url,
                 Err(e) => {

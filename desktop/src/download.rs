@@ -36,16 +36,14 @@ pub fn refresh_state_url(state_path: &Path, new_url: &str) -> Result<(), String>
         .map_err(|e| format!("write state: {}", e))
 }
 
-/// Resolve the GitHub CDN download URL for a given release filename.
+/// Construct the GitHub CDN download URL for a release asset.
 ///
-/// Uses `browser_download_url` which goes through GitHub CDN (Fastly global
-/// edge nodes) rather than S3 directly. This is significantly faster from
-/// regions far from us-east-1 (e.g. China).
+/// Uses github.com CDN (Fastly global edge nodes) which is significantly
+/// faster than the S3 redirect path, especially from regions far from
+/// us-east-1.
 ///
-/// Returns the CDN URL (e.g.
-/// `https://github.com/owner/repo/releases/download/v1.0/filename.nupkg`).
-pub fn get_github_asset_url(repo_url: &str, filename: &str, token: &str) -> Result<String, String> {
-    // Extract owner/repo from e.g. "https://github.com/with007/loop-engineering"
+/// Returns: `https://github.com/{owner}/{repo}/releases/download/v{version}/{filename}`
+pub fn get_github_cdn_url(repo_url: &str, version: &str, filename: &str) -> Result<String, String> {
     let path = repo_url
         .strip_prefix("https://github.com/")
         .or_else(|| repo_url.strip_prefix("http://github.com/"))
@@ -58,50 +56,10 @@ pub fn get_github_asset_url(repo_url: &str, filename: &str, token: &str) -> Resu
     let owner = parts[0];
     let repo = parts[1];
 
-    let api_url = format!(
-        "https://api.github.com/repos/{}/{}/releases?per_page=30",
-        owner, repo
-    );
-
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_global(Some(std::time::Duration::from_secs(30)))
-        .build()
-        .into();
-
-    let mut response = agent
-        .get(&api_url)
-        .header("Accept", "application/vnd.github.v3+json")
-        .header("Authorization", &format!("Bearer {}", token))
-        .header("User-Agent", "LoopDashboard/1.0")
-        .call()
-        .map_err(|e| format!("GitHub API error: {}", e))?;
-
-    let body = response
-        .body_mut()
-        .read_to_string()
-        .map_err(|e| format!("read response: {}", e))?;
-
-    #[derive(Deserialize)]
-    struct GhRelease {
-        assets: Vec<GhAsset>,
-    }
-    #[derive(Deserialize)]
-    struct GhAsset {
-        name: String,
-        browser_download_url: String,
-    }
-
-    let releases: Vec<GhRelease> =
-        serde_json::from_str(&body).map_err(|e| format!("JSON parse: {}", e))?;
-
-    for release in &releases {
-        for asset in &release.assets {
-            if asset.name.eq_ignore_ascii_case(filename) {
-                return Ok(asset.browser_download_url.clone());
-            }
-        }
-    }
-    Err(format!("asset '{}' not found in any release", filename))
+    Ok(format!(
+        "https://github.com/{}/{}/releases/download/v{}/{}",
+        owner, repo, version, filename
+    ))
 }
 
 /// Download a file with HTTP Range resume support.
