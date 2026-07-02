@@ -160,7 +160,7 @@ def write_version(version: str):
 
 
 def vpk_pack(version: str):
-    """运行 vpk 打包."""
+    """运行 vpk 打包，然后清理旧 nupkg."""
     print("\n=== [5] vpk pack ===")
     run([
         "vpk", "pack",
@@ -173,10 +173,23 @@ def vpk_pack(version: str):
         "--icon", str(ROOT / "desktop" / "icon.ico"),
     ], cwd=ROOT)
 
+    # 清理旧 nupkg：只保留最近两个版本的 full.nupkg（供下次 delta）
+    full_nupkgs = sorted(
+        [f for f in RELEASES.glob("*-full.nupkg")],
+        key=lambda f: [int(x) for x in f.stem.replace(f"{PACK_ID}-", "").replace("-full", "").split(".")],
+        reverse=True,
+    )
+    keep_full = {f.name for f in full_nupkgs[:2]}
+    for f in sorted(RELEASES.glob("*.nupkg")):
+        if f.name not in keep_full:
+            f.unlink()
+            print(f"  Cleaned {f.name}")
+
     print("\n  Release files:")
     for f in sorted(RELEASES.iterdir()):
-        size_mb = f.stat().st_size / (1024 * 1024)
-        print(f"    {f.name} ({size_mb:.1f} MB)")
+        if f.is_file():
+            size_mb = f.stat().st_size / (1024 * 1024)
+            print(f"    {f.name} ({size_mb:.1f} MB)")
 
 
 def publish_github(version: str):
