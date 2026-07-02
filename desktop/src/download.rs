@@ -75,7 +75,7 @@ pub fn download_with_resume(
     packages_dir: &Path,
     filename: &str,
     expected_size: u64,
-    token: &str,
+    token: Option<&str>,
     progress: impl Fn(u32) + Send + 'static,
 ) -> Result<PathBuf, String> {
     fs::create_dir_all(packages_dir)
@@ -132,8 +132,11 @@ pub fn download_with_resume(
     let mut req = agent
         .get(url)
         .header("Accept", "application/octet-stream")
-        .header("Authorization", &format!("Bearer {}", token))
         .header("User-Agent", "LoopDashboard/1.0");
+
+    if let Some(tok) = token {
+        req = req.header("Authorization", &format!("Bearer {}", tok));
+    }
 
     if start_offset > 0 {
         req = req.header("Range", &format!("bytes={}-", start_offset));

@@ -167,9 +167,8 @@ git config --global core.sshCommand "C:/Windows/System32/OpenSSH/ssh.exe"
 
 ### 令牌
 
-- 只读 token（编译在代码里，用于更新检查）：`github_pat_11ADVFDKA01hcOdydLjwLc_...`
-- 完整 token（写在 `release.py` 里，用于发布）：`github_pat_11ADVFDKA0j8rUP5SmI6lv_...`
-- 只读 token（编译在代码里，用于更新检查）：`github_pat_11ADVFDKA01hcOdydLjwLc_...`
+- 发布 token：通过环境变量 `GITHUB_TOKEN` 或 `gh auth token` 获取（不再硬编码）
+- 更新检查：公开仓库不需要 token
 
 仓库：`git@github.com:with007/loop-engineering.git`
 

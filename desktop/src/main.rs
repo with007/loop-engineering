@@ -336,6 +336,10 @@ impl WindowState {
             egui::CentralPanel::default().show(egui_ctx, |ui| {
                 ui.vertical_centered(|ui| {
                     ui.heading("Loop Dashboard 设置");
+                    ui.label(
+                        egui::RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
+                            .color(egui::Color32::GRAY),
+                    );
                 });
                 ui.separator();
 
@@ -379,6 +383,12 @@ impl WindowState {
                 if ui.button("检查更新").clicked() {
                     action = SettingsAction::CheckUpdates;
                 }
+                if ui
+                    .add(egui::Link::new("📦 手动下载最新版 (GitHub)"))
+                    .clicked()
+                {
+                    action = SettingsAction::OpenGitHub;
+                }
 
                 ui.add_space(12.0);
                 ui.separator();
@@ -420,6 +430,7 @@ enum SettingsAction {
     Close,
     Save { port: u16, autostart: bool, auto_open_browser: bool },
     CheckUpdates,
+    OpenGitHub,
 }
 
 // ── App ───────────────────────────────────────────────────────────────────
@@ -572,6 +583,10 @@ impl ApplicationHandler<UserEvent> for App {
                     let msg = format!("Downloading update... {}%", pct);
                     let _ = icon.set_tooltip(Some(&msg));
                 }
+                // Log progress at 10% intervals to avoid too much noise
+                if pct % 10 == 0 {
+                    log!("update: download progress {}%", pct);
+                }
             }
             UserEvent::UpdateStatus(msg) => {
                 self.update_status = Some(msg.clone());
@@ -676,6 +691,11 @@ impl ApplicationHandler<UserEvent> for App {
                             });
                         }
                     }
+                    SettingsAction::OpenGitHub => {
+                        let releases_url = format!("{}/releases", UPDATE_SOURCE_URL);
+                        log!("settings: open_github clicked, opening {}", releases_url);
+                        let _ = open::that(&releases_url);
+                    }
                     SettingsAction::None => {}
                 }
             }
@@ -733,7 +753,7 @@ impl App {
     fn apply_pending_update(&self) {
         // Try to apply any pending update via Velopack
         use velopack::sources;
-        let source = sources::GithubSource::new(UPDATE_SOURCE_URL, Some(UPDATE_GITHUB_TOKEN.to_string()), true);
+        let source = sources::GithubSource::new(UPDATE_SOURCE_URL, None, true);
         if let Ok(um) = velopack::UpdateManager::new(source, None, None) {
             if let Some(asset) = um.get_update_pending_restart() {
                 log!("apply_pending_update: applying {} and restarting", asset.Version);
@@ -1043,10 +1063,8 @@ fn show_update_notification(version: &str) {
     }
 }
 
-/// GitHub repo URL for update checks. Change this to your repo.
+/// GitHub repo URL for update checks.
 const UPDATE_SOURCE_URL: &str = "https://github.com/with007/loop-engineering";
-/// Read-only GitHub token for private repo access (Contents: read).
-const UPDATE_GITHUB_TOKEN: &str = "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";
 
 /// On startup, check for any interrupted downloads from a previous session
 /// and resume them automatically.
@@ -1097,7 +1115,7 @@ fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<Us
         let pkg_dir = packages_dir.clone();
         let fname = filename.clone();
         let ver = version.to_string();
-        let token = UPDATE_GITHUB_TOKEN.to_string();
+        let token: Option<&str> = None;
         let asset_url = url.to_string();
 
         std::thread::spawn(move || {
@@ -1106,7 +1124,7 @@ fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<Us
                 &pkg_dir,
                 &fname,
                 expected_size,
-                &token,
+                token,
                 move |pct| {
                     let _ = proxy_dl.send_event(UserEvent::UpdateProgress(pct));
                 },
@@ -1126,7 +1144,7 @@ fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<Us
                             } else {
                                 let proxy2 = proxy_dl_done.clone();
                                 download::download_with_resume(
-                                    &new_url, &pkg_dir, &fname, expected_size, &token,
+                                    &new_url, &pkg_dir, &fname, expected_size, token,
                                     move |pct| {
                                         let _ = proxy2.send_event(UserEvent::UpdateProgress(pct));
                                     },
@@ -1147,9 +1165,17 @@ fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<Us
                 }
                 Err(e) => {
                     log!("startup: resumed download ultimately failed: {}", e);
-                    // Clean up stale state
-                    let _ = std::fs::remove_file(pkg_dir.join(format!("{}.partial", fname)));
-                    let _ = std::fs::remove_file(pkg_dir.join(format!("{}.download-state.json", fname)));
+                    // Only clean up for permanent errors, keep partial file for transient network errors
+                    let error_str = e.to_string();
+                    let is_permanent = error_str.contains("size mismatch") ||
+                                      error_str.contains("404") ||
+                                      error_str.contains("403");
+                    if is_permanent {
+                        let _ = std::fs::remove_file(pkg_dir.join(format!("{}.partial", fname)));
+                        let _ = std::fs::remove_file(pkg_dir.join(format!("{}.download-state.json", fname)));
+                    } else {
+                        log!("startup: keeping partial file for resume (transient error: {})", e);
+                    }
                     let _ = proxy_dl_done.send_event(UserEvent::UpdateStatus(format!("Resume failed: {}", e)));
                 }
             }
@@ -1159,127 +1185,236 @@ fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<Us
     }
 }
 
-/// Check for updates using Velopack. If `manual` is true, this was triggered
-/// by the user clicking "check for updates" in the menu.
+/// Compare two semver strings. Returns true if `remote` > `current`.
+fn is_newer_version(remote: &str, current: &str) -> bool {
+    let parse = |s: &str| -> (u32, u32, u32) {
+        let parts: Vec<u32> = s.split('.')
+            .filter_map(|p| p.parse().ok())
+            .collect();
+        (
+            parts.first().copied().unwrap_or(0),
+            parts.get(1).copied().unwrap_or(0),
+            parts.get(2).copied().unwrap_or(0),
+        )
+    };
+    parse(remote) > parse(current)
+}
+
+/// Check for updates via a single GitHub API call (replaces Velopack's 11+ request chain).
+///
+/// Velopack's `GithubSource::get_release_feed()` fetches `releases?per_page=10`
+/// and then downloads `releases.{channel}.json` from each release — up to 11
+/// serial HTTP requests.  From China each request can take 10-30 s, so the
+/// check alone takes 2-5 minutes before the download even starts.
+///
+/// We only need the latest release, so one call to `/releases?per_page=1`
+/// suffices.  We use the list endpoint instead of `/releases/latest` because
+/// the latter returns 404 when all releases are marked as pre-releases.
+///
+/// Velopack is still used for applying the update (`apply_pending_update`).
 fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
+    let check_start = Instant::now();
     log!(
         "update: checking (source={}, manual={})",
         UPDATE_SOURCE_URL,
         manual
     );
 
-    use velopack::sources;
-    let source = sources::GithubSource::new(UPDATE_SOURCE_URL, Some(UPDATE_GITHUB_TOKEN.to_string()), true);
-    let um = match velopack::UpdateManager::new(source, None, None) {
-        Ok(um) => um,
+    // ── 1. Single API call to GitHub ────────────────────────────────────
+    // Use /releases?per_page=1 instead of /releases/latest because
+    // /releases/latest returns 404 when all releases are pre-releases.
+    let api_url = "https://api.github.com/repos/with007/loop-engineering/releases?per_page=1";
+
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(30)))
+        .timeout_connect(Some(Duration::from_secs(10)))
+        .build()
+        .into();
+
+    let mut req = agent
+        .get(api_url)
+        .header("Accept", "application/vnd.github.v3+json")
+        .header("User-Agent", "LoopDashboard/1.0");
+
+    // Optional: use GITHUB_TOKEN env var for private repos or higher rate limit
+    if let Ok(token) = std::env::var("GITHUB_TOKEN") {
+        if !token.is_empty() {
+            req = req.header("Authorization", &format!("Bearer {}", token));
+        }
+    }
+
+    let response = match req.call() {
+        Ok(resp) => resp,
         Err(e) => {
-            log!("update: failed to create UpdateManager: {:?}", e);
+            log!("update: API request failed after {:?}: {:?}", check_start.elapsed(), e);
+            let _ = proxy.send_event(UserEvent::UpdateStatus(format!("Update check failed: {}", e)));
             return;
         }
     };
 
-    match um.check_for_updates() {
-        Ok(velopack::UpdateCheck::UpdateAvailable(update)) => {
-            let version = update.TargetFullRelease.Version.clone();
-            log!(
-                "update: found v{} (size={} bytes), downloading...",
-                version,
-                update.TargetFullRelease.Size
-            );
-
-            // Guard: only one download at a time
-            if DOWNLOAD_IN_PROGRESS.swap(true, Ordering::SeqCst) {
-                log!("update: download already in progress, skipping");
+    let releases: Vec<serde_json::Value> = match response.into_body().read_json() {
+        Ok(v) => match v {
+            serde_json::Value::Array(arr) => arr,
+            _ => {
+                log!("update: unexpected response format after {:?}", check_start.elapsed());
+                let _ = proxy.send_event(UserEvent::UpdateStatus("Unexpected response".into()));
                 return;
             }
-
-            // Show immediate feedback — first bytes may take a while on slow links
-            let _ = proxy.send_event(UserEvent::UpdateProgress(0));
-
-            let asset_url = match download::get_github_release_url(
-                UPDATE_SOURCE_URL,
-                &version,
-                &update.TargetFullRelease.FileName,
-            ) {
-                Ok(url) => url,
-                Err(e) => {
-                    log!("update: failed to resolve asset URL: {}", e);
-                    let _ = proxy.send_event(UserEvent::UpdateStatus(format!("Failed: {}", e)));
-                    DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
-                    return;
-                }
-            };
-
-            // Determine packages directory (where Velopack expects .nupkg files)
-            let packages_dir = match std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|p| p.join("packages")))
-            {
-                Some(dir) => dir,
-                None => {
-                    log!("update: cannot determine exe directory");
-                    DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
-                    return;
-                }
-            };
-
-            let expected_size = update.TargetFullRelease.Size;
-            let filename = update.TargetFullRelease.FileName.clone();
-            let version_down = version.clone();
-            let proxy_dl = proxy.clone();
-            let proxy_dl_done = proxy.clone();
-            let token = UPDATE_GITHUB_TOKEN.to_string();
-
-            std::thread::spawn(move || {
-                let result = download::download_with_resume(
-                    &asset_url,
-                    &packages_dir,
-                    &filename,
-                    expected_size,
-                    &token,
-                    move |pct| {
-                        let _ = proxy_dl.send_event(UserEvent::UpdateProgress(pct));
-                    },
-                );
-
-                DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
-
-                match result {
-                    Ok(_final_path) => {
-                        log!("update: v{} downloaded successfully", version_down);
-                        let _ = proxy_dl_done.send_event(UserEvent::UpdateReady { version: version_down });
-                    }
-                    Err(e) => {
-                        log!("update: download failed: {}", e);
-                        let _ = proxy_dl_done.send_event(UserEvent::UpdateStatus(format!("Download failed: {}", e)));
-                        // Clean up on error so next attempt starts fresh
-                        let _ = std::fs::remove_file(packages_dir.join(format!("{}.partial", filename)));
-                        let _ = std::fs::remove_file(packages_dir.join(format!("{}.download-state.json", filename)));
-                    }
-                }
-            });
-
-            // Timeout watchdog — log if download takes longer than expected
-            std::thread::spawn(move || {
-                std::thread::sleep(DOWNLOAD_TIMEOUT);
-                if DOWNLOAD_IN_PROGRESS.load(Ordering::SeqCst) {
-                    log!("update: download still running after {:?}", DOWNLOAD_TIMEOUT);
-                }
-            });
-        }
-        Ok(velopack::UpdateCheck::NoUpdateAvailable) => {
-            log!("update: no updates available");
-            let _ = proxy.send_event(UserEvent::UpdateStatus("Already up to date".into()));
-        }
-        Ok(velopack::UpdateCheck::RemoteIsEmpty) => {
-            log!("update: remote feed is empty (no releases published yet)");
-            let _ = proxy.send_event(UserEvent::UpdateStatus("No releases available".into()));
-        }
+        },
         Err(e) => {
-            log!("update: check failed: {:?}", e);
-            let _ = proxy.send_event(UserEvent::UpdateStatus(format!("Update check failed: {}", e)));
+            log!("update: failed to parse response after {:?}: {:?}", check_start.elapsed(), e);
+            let _ = proxy.send_event(UserEvent::UpdateStatus(format!("Failed to parse response: {}", e)));
+            return;
         }
+    };
+
+    let latest = match releases.first() {
+        Some(r) => r,
+        None => {
+            log!("update: no releases found after {:?}", check_start.elapsed());
+            let _ = proxy.send_event(UserEvent::UpdateStatus("No releases available".into()));
+            return;
+        }
+    };
+
+    let tag_name = latest.get("tag_name").and_then(|v| v.as_str()).unwrap_or("");
+    let version = tag_name.strip_prefix('v').unwrap_or(tag_name);
+
+    if version.is_empty() {
+        log!("update: no tag_name in response after {:?}", check_start.elapsed());
+        let _ = proxy.send_event(UserEvent::UpdateStatus("No release found".into()));
+        return;
     }
+
+    // ── 2. Version comparison ───────────────────────────────────────────
+    let current = env!("CARGO_PKG_VERSION");
+    if !is_newer_version(version, current) {
+        log!("update: up to date (current=v{}, remote=v{}), check took {:?}",
+            current, version, check_start.elapsed());
+        let _ = proxy.send_event(UserEvent::UpdateStatus("Already up to date".into()));
+        return;
+    }
+
+    // ── 3. Find .nupkg asset ────────────────────────────────────────────
+    let assets = match latest.get("assets").and_then(|v| v.as_array()) {
+        Some(a) => a,
+        None => {
+            log!("update: no assets in response after {:?}", check_start.elapsed());
+            let _ = proxy.send_event(UserEvent::UpdateStatus("No assets found".into()));
+            return;
+        }
+    };
+
+    let nupkg = assets.iter().find(|a| {
+        a.get("name")
+            .and_then(|v| v.as_str())
+            .map(|n| n.ends_with(".nupkg"))
+            .unwrap_or(false)
+    });
+
+    let nupkg = match nupkg {
+        Some(a) => a,
+        None => {
+            log!("update: no .nupkg asset found after {:?}", check_start.elapsed());
+            let _ = proxy.send_event(UserEvent::UpdateStatus("No update package found".into()));
+            return;
+        }
+    };
+
+    let filename = nupkg.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let expected_size = nupkg.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
+
+    log!("update: found v{} (size={} bytes), check took {:?}, downloading...",
+        version, expected_size, check_start.elapsed());
+
+    // ── 4. Guard: only one download at a time ───────────────────────────
+    if DOWNLOAD_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+        log!("update: download already in progress, skipping");
+        return;
+    }
+
+    // Show immediate feedback — first bytes may take a while on slow links
+    let _ = proxy.send_event(UserEvent::UpdateProgress(0));
+
+    let download_start = Instant::now();
+    let asset_url = match download::get_github_release_url(
+        UPDATE_SOURCE_URL,
+        version,
+        &filename,
+    ) {
+        Ok(url) => url,
+        Err(e) => {
+            log!("update: failed to resolve asset URL: {}", e);
+            let _ = proxy.send_event(UserEvent::UpdateStatus(format!("Failed: {}", e)));
+            DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
+            return;
+        }
+    };
+
+    // ── 5. Determine packages directory ─────────────────────────────────
+    let packages_dir = match std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.join("packages")))
+    {
+        Some(dir) => dir,
+        None => {
+            log!("update: cannot determine exe directory");
+            DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
+            return;
+        }
+    };
+
+    let version_down = version.to_string();
+    let proxy_dl = proxy.clone();
+    let proxy_dl_done = proxy.clone();
+
+    // ── 6. Spawn download thread ────────────────────────────────────────
+    std::thread::spawn(move || {
+        let token: Option<&str> = None;
+        let result = download::download_with_resume(
+            &asset_url,
+            &packages_dir,
+            &filename,
+            expected_size,
+            token,
+            move |pct| {
+                let _ = proxy_dl.send_event(UserEvent::UpdateProgress(pct));
+            },
+        );
+
+        DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
+
+        match result {
+            Ok(_final_path) => {
+                log!("update: v{} downloaded successfully (size={} bytes) in {:?}",
+                    version_down, expected_size, download_start.elapsed());
+                let _ = proxy_dl_done.send_event(UserEvent::UpdateReady { version: version_down });
+            }
+            Err(e) => {
+                log!("update: download failed after {:?}: {}", download_start.elapsed(), e);
+                let _ = proxy_dl_done.send_event(UserEvent::UpdateStatus(format!("Download failed: {}", e)));
+                // Only clean up for permanent errors, keep partial file for transient network errors
+                let error_str = e.to_string();
+                let is_permanent = error_str.contains("size mismatch") ||
+                                  error_str.contains("404") ||
+                                  error_str.contains("403");
+                if is_permanent {
+                    let _ = std::fs::remove_file(packages_dir.join(format!("{}.partial", filename)));
+                    let _ = std::fs::remove_file(packages_dir.join(format!("{}.download-state.json", filename)));
+                } else {
+                    log!("update: keeping partial file for resume (transient error: {})", e);
+                }
+            }
+        }
+    });
+
+    // Timeout watchdog — log if download takes longer than expected
+    std::thread::spawn(move || {
+        std::thread::sleep(DOWNLOAD_TIMEOUT);
+        if DOWNLOAD_IN_PROGRESS.load(Ordering::SeqCst) {
+            log!("update: download still running after {:?}", DOWNLOAD_TIMEOUT);
+        }
+    });
 }
 
 /// Spawn a background thread that periodically checks for updates.

@@ -40,7 +40,32 @@ PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
 PIP_PACKAGES = ["fastapi", "uvicorn", "jinja2", "pyyaml", "python-multipart", "markdown"]
 PACK_ID = "LoopDashboard"
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "with007/loop-engineering")
-GITHUB_TOKEN = "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"
+
+
+def get_github_token():
+    """Get GitHub token from env var or gh CLI."""
+    # 1. Environment variable
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        return token
+
+    # 2. Try gh CLI (already authenticated)
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "token"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # 3. Prompt user
+    print("GitHub token not found. Set GITHUB_TOKEN env var or install gh CLI.")
+    return input("Enter GitHub token (or press Enter to skip publish): ").strip()
+
+
+GITHUB_TOKEN = get_github_token()
 
 
 def run(cmd, **kwargs):
