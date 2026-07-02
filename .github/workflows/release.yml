@@ -97,7 +97,14 @@ jobs:
           }
 
       - name: Build & Package
-        run: python packaging/release.py ${{ steps.version.outputs.version }} --skip-python
+        run: |
+          if [ -f packaging/dist/python-cache/python.exe ]; then
+            echo "Python cache hit, skipping download"
+            python packaging/release.py ${{ steps.version.outputs.version }} --skip-python
+          else
+            echo "Python cache miss, full build"
+            python packaging/release.py ${{ steps.version.outputs.version }}
+          fi
         env:
           PYTHONIOENCODING: utf-8
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
