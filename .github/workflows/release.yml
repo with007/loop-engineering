@@ -40,6 +40,12 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Cache vpk
+        uses: actions/cache@v4
+        with:
+          path: ~/.dotnet/tools
+          key: vpk-1.2.0
+
       - name: Install vpk CLI
         run: dotnet tool update -g vpk || dotnet tool install -g vpk
 
