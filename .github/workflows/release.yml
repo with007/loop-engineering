@@ -98,11 +98,14 @@ jobs:
       - name: Build & Package
         run: python packaging/release.py ${{ steps.version.outputs.version }} --skip-python
         env:
+          PYTHONIOENCODING: utf-8
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Read changelog
         id: changelog
         shell: bash
+        env:
+          PYTHONIOENCODING: utf-8
         run: |
           NOTES=$(python -c "
           import re
