@@ -146,10 +146,29 @@ jobs:
             --channel win `
             --icon desktop/icon.ico
 
+      - name: Read changelog
+        id: changelog
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          NOTES=$(python -c "
+          import re
+          content = open('CHANGELOG.md', encoding='utf-8').read()
+          m = re.search(rf'## v{re.escape('$VERSION')}\n(.*?)(?=\n## |\Z)', content, re.DOTALL)
+          if m:
+              print(m.group(1).strip())
+          ")
+          # Escape for GitHub Actions output
+          NOTES="${NOTES//'%'/'%25'}"
+          NOTES="${NOTES//$'\n'/'%0A'}"
+          NOTES="${NOTES//$'\r'/'%0D'}"
+          echo "notes=$NOTES" >> $GITHUB_OUTPUT
+
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
           name: "Loop Dashboard v${{ steps.version.outputs.version }}"
+          body: ${{ steps.changelog.outputs.notes }}
           prerelease: ${{ startsWith(steps.version.outputs.version, '0.') }}
           files: packaging/releases/*

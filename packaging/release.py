@@ -192,6 +192,20 @@ def vpk_pack(version: str):
             print(f"    {f.name} ({size_mb:.1f} MB)")
 
 
+def get_release_notes(version: str) -> str:
+    """从 CHANGELOG.md 读取对应版本的发布说明."""
+    changelog = ROOT / "CHANGELOG.md"
+    if not changelog.exists():
+        return f"Loop Dashboard v{version}"
+    content = changelog.read_text(encoding="utf-8")
+    import re
+    pattern = rf"## v{re.escape(version)}\n(.*?)(?=\n## |\Z)"
+    m = re.search(pattern, content, re.DOTALL)
+    if m:
+        return f"Loop Dashboard v{version}\n\n{m.group(1).strip()}"
+    return f"Loop Dashboard v{version}"
+
+
 def publish_github(version: str):
     """发布到 GitHub Releases — 幂等：Release 已存在则只补传缺失文件."""
     print("\n=== [6] Publish to GitHub ===")
@@ -231,11 +245,7 @@ def publish_github(version: str):
             "tag_name": tag,
             "target_commitish": "master",
             "name": f"Loop Dashboard v{version}",
-            "body": f"Loop Dashboard v{version}\n\n"
-                    f"### 安装\n"
-                    f"下载 `LoopDashboard-win-Setup.exe` 运行安装。\n\n"
-                    f"### 便携版\n"
-                    f"下载 `LoopDashboard-win-Portable.zip` 解压运行。",
+            "body": get_release_notes(version),
             "draft": False,
             "prerelease": version.startswith("0."),
         }).encode()
