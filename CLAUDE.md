@@ -169,5 +169,23 @@ git config --global core.sshCommand "C:/Windows/System32/OpenSSH/ssh.exe"
 
 - 只读 token（编译在代码里，用于更新检查）：`github_pat_11ADVFDKA01hcOdydLjwLc_...`
 - 完整 token（写在 `release.py` 里，用于发布）：`github_pat_11ADVFDKA0j8rUP5SmI6lv_...`
+- 只读 token（编译在代码里，用于更新检查）：`github_pat_11ADVFDKA01hcOdydLjwLc_...`
 
 仓库：`git@github.com:with007/loop-engineering.git`
+
+### 发版流程
+
+```bash
+# 1. 写 CHANGELOG.md（在顶部加 ## v0.1.7 段落）
+# 2. 构建 + 打包 + 发布
+python packaging/release.py 0.1.7 --publish        # 本地发布（网好时）
+python packaging/release.py 0.1.7                   # 只打包，手动 push tag 触发 CI
+# 3. 提交版本号更新（release.py 自动改了 Cargo.toml + version.txt）
+git add desktop/Cargo.toml desktop/version.txt && git commit -m "chore: bump to v0.1.7"
+```
+
+- **日常版本**：`python release.py 0.1.7 --skip-python --publish`（跳过 Python 下载）
+- **加了 pip 包**：`python release.py 0.1.7 --publish`（完整重建 Python 环境）
+- **自动递增**：版本号填 `auto` 自动 `0.1.0 → 0.1.1`
+- **VSCode**：`Ctrl+Shift+P` → `🚀 Release + Publish` → 输版本号
+- **CI 触发**：push tag `v*` 或 GitHub Actions 网页手动触发
