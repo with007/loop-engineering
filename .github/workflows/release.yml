@@ -36,12 +36,6 @@ jobs:
           path: packaging/dist/python-cache
           key: python-embed-3.14.3
 
-      - uses: actions/cache/restore@v4
-        id: cache-vpk
-        with:
-          path: ~/.dotnet/tools
-          key: vpk-1.2.0
-
       # ── Setup ──
       - name: Setup .NET SDK (for vpk)
         uses: actions/setup-dotnet@v4
@@ -149,9 +143,3 @@ jobs:
         with:
           path: packaging/dist/python-cache
           key: python-embed-3.14.3
-
-      - if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.dotnet/tools
-          key: vpk-1.2.0
