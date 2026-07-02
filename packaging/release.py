@@ -359,7 +359,7 @@ def main():
             DIST.mkdir(parents=True, exist_ok=True)
             RELEASES.mkdir(parents=True, exist_ok=True)
             # Copy cached Python to dist (CI restores to python-cache)
-            cache_dir = DIST.parent / "python-cache"
+            cache_dir = DIST / "python-cache"
             if cache_dir.exists():
                 print("\n=== [0] Restore Python from cache ===")
                 shutil.copytree(cache_dir, DIST / "python")
@@ -374,7 +374,7 @@ def main():
         if not args.skip_python:
             setup_python()
             # Save to cache dir for CI caching
-            cache_dir = DIST.parent / "python-cache"
+            cache_dir = DIST / "python-cache"
             if cache_dir.exists():
                 shutil.rmtree(cache_dir)
             shutil.copytree(DIST / "python", cache_dir)

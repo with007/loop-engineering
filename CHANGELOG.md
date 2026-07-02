@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.7
+- CI 构建从 ~5 分钟降到 ~2.5 分钟（跳过冗余 cache save、缓存 vpk/dotnet tools、修复 Python embed 缓存）
+- 修复增量 nupkg 下载（Accept header 导致全下载为 JSON）
+
 ## v0.1.6
 - 优化 CI 缓存，重复构建从 6 分钟降到 2 分钟
 - CI 自动下载上一版本 nupkg 生成增量包
