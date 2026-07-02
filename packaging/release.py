@@ -145,9 +145,18 @@ def copy_files():
 
 
 def write_version(version: str):
-    """写入版本文件."""
+    """写入版本文件 + 同步 Cargo.toml."""
     (DIST / "version.txt").write_text(f"{version}\n")
     print(f"  version.txt → {version}")
+
+    # 同步 Cargo.toml
+    cargo_toml = ROOT / "desktop" / "Cargo.toml"
+    content = cargo_toml.read_text()
+    import re
+    new_content = re.sub(r'^version = ".*"', f'version = "{version}"', content, count=1, flags=re.MULTILINE)
+    if new_content != content:
+        cargo_toml.write_text(new_content)
+        print(f"  Cargo.toml → {version}")
 
 
 def vpk_pack(version: str):
