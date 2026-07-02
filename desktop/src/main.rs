@@ -3,7 +3,8 @@
 use std::io::Write;
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 use tray_icon::menu::MenuEvent;
 use winit::application::ApplicationHandler;
@@ -22,6 +23,10 @@ use server::{find_available_port, Server};
 
 // ── 文件日志（因为没有 console）────────────────────────────────────────────
 static LOG_PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+/// Set while a download_update is in progress — prevents concurrent downloads.
+static DOWNLOAD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+/// Timeout for update download (30MB over GitHub should finish in <5min).
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 
 fn init_log(exe_dir: &std::path::Path) {
     let path = exe_dir.join("dashboard.log").to_string_lossy().to_string();
@@ -922,13 +927,39 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
                 update.TargetFullRelease.Size
             );
 
-            match um.download_updates(&update, None) {
-                Ok(()) => {
+            // Guard: only one download at a time
+            if DOWNLOAD_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+                log!("update: download already in progress, skipping");
+                return;
+            }
+
+            // Spawn a separate thread so we can timeout the download.
+            // Velopack's download_updates has no built-in timeout.
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let result = um.download_updates(&update, None);
+                let _ = tx.send(result);
+            });
+
+            match rx.recv_timeout(DOWNLOAD_TIMEOUT) {
+                Ok(Ok(())) => {
+                    DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
                     log!("update: v{} downloaded successfully", version);
                     let _ = proxy.send_event(UserEvent::UpdateReady { version });
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
+                    DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
                     log!("update: download failed: {:?}", e);
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    // Thread is still running — we can't cancel it, but we
+                    // can at least log and let the next check try again.
+                    DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
+                    log!("update: download TIMED OUT after {:?}", DOWNLOAD_TIMEOUT);
+                }
+                Err(_) => {
+                    DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
+                    log!("update: download thread crashed");
                 }
             }
         }
