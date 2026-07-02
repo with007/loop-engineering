@@ -147,7 +147,7 @@ def copy_files():
 def write_version(version: str):
     """写入版本文件 + 同步 Cargo.toml."""
     (DIST / "version.txt").write_text(f"{version}\n")
-    print(f"  version.txt → {version}")
+    print(f"  version.txt -> {version}")
 
     # 同步 Cargo.toml 和 version.txt
     cargo_toml = ROOT / "desktop" / "Cargo.toml"
@@ -156,13 +156,13 @@ def write_version(version: str):
     new_content = re.sub(r'^version = ".*"', f'version = "{version}"', content, count=1, flags=re.MULTILINE)
     if new_content != content:
         cargo_toml.write_text(new_content)
-        print(f"  Cargo.toml → {version}")
+        print(f"  Cargo.toml -> {version}")
 
     version_file = ROOT / "desktop" / "version.txt"
     old_v = version_file.read_text().strip() if version_file.exists() else ""
     if old_v != version:
         version_file.write_text(f"{version}\n")
-        print(f"  version.txt → {version}")
+        print(f"  version.txt -> {version}")
 
 
 def vpk_pack(version: str):
@@ -314,7 +314,7 @@ def get_current_version():
 
 
 def bump_patch(version: str) -> str:
-    """递增 patch 版本号，如 0.1.0 → 0.1.1."""
+    """递增 patch 版本号，如 0.1.0 -> 0.1.1."""
     parts = version.split(".")
     parts[-1] = str(int(parts[-1]) + 1)
     return ".".join(parts)
