@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 0.1.6)'
+        required: true
+        type: string
 
 jobs:
   release:
@@ -63,14 +69,19 @@ jobs:
           Copy-Item -Recurse "src/loop_engineering/*" "packaging/dist/app/src/loop_engineering/"
           Copy-Item -Recurse "templates/*" "packaging/dist/app/templates/"
 
-      - name: Get version from tag
+      - name: Get version
         id: version
         shell: bash
         run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          VERSION=${TAG#v}
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            TAG=${GITHUB_REF#refs/tags/}
+            VERSION=${TAG#v}
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "$VERSION" > packaging/dist/version.txt
+          echo "Building v$VERSION"
 
       - name: vpk pack
         run: |
@@ -86,7 +97,7 @@ jobs:
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: "Loop Dashboard ${{ github.ref_name }}"
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
+          name: "Loop Dashboard v${{ steps.version.outputs.version }}"
           prerelease: ${{ startsWith(steps.version.outputs.version, '0.') }}
           files: packaging/releases/*
