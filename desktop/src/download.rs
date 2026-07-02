@@ -166,9 +166,9 @@ pub fn download_with_resume(
 
     // Build HTTP request
     let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_global(Some(std::time::Duration::from_secs(14400))) // 4h total
-        .timeout_connect(Some(std::time::Duration::from_secs(120)))
-        .timeout_recv_response(Some(std::time::Duration::from_secs(300)))
+        .timeout_global(Some(std::time::Duration::from_secs(7200))) // 2h total
+        .timeout_connect(Some(std::time::Duration::from_secs(60)))
+        .timeout_recv_response(Some(std::time::Duration::from_secs(120)))
         .timeout_recv_body(Some(std::time::Duration::from_secs(120)))
         .build()
         .into();
