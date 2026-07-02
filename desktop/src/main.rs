@@ -603,7 +603,7 @@ impl App {
     fn apply_pending_update(&self) {
         // Try to apply any pending update via Velopack
         use velopack::sources;
-        let source = sources::GithubSource::new(UPDATE_SOURCE_URL, Some(UPDATE_GITHUB_TOKEN.to_string()), false);
+        let source = sources::GithubSource::new(UPDATE_SOURCE_URL, Some(UPDATE_GITHUB_TOKEN.to_string()), true);
         if let Ok(um) = velopack::UpdateManager::new(source, None, None) {
             if let Some(asset) = um.get_update_pending_restart() {
                 log!("apply_pending_update: applying {} and restarting", asset.Version);
@@ -904,7 +904,7 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
     );
 
     use velopack::sources;
-    let source = sources::GithubSource::new(UPDATE_SOURCE_URL, Some(UPDATE_GITHUB_TOKEN.to_string()), false);
+    let source = sources::GithubSource::new(UPDATE_SOURCE_URL, Some(UPDATE_GITHUB_TOKEN.to_string()), true);
     let um = match velopack::UpdateManager::new(source, None, None) {
         Ok(um) => um,
         Err(e) => {
