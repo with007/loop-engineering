@@ -843,6 +843,9 @@ fn main() {
         .unwrap();
     let proxy = event_loop.create_proxy();
 
+    // Resume any interrupted downloads from previous session
+    resume_pending_downloads(&exe_dir, &proxy);
+
     // Register MenuEvent handler — forwards to EventLoopProxy
     MenuEvent::set_event_handler(Some(move |event: tray_icon::menu::MenuEvent| {
         let _ = proxy.send_event(UserEvent::MenuEvent(event));
@@ -950,6 +953,85 @@ fn show_update_notification(version: &str) {
 const UPDATE_SOURCE_URL: &str = "https://github.com/with007/loop-engineering";
 /// Read-only GitHub token for private repo access (Contents: read).
 const UPDATE_GITHUB_TOKEN: &str = "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";
+
+/// On startup, check for any interrupted downloads from a previous session
+/// and resume them automatically.
+fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<UserEvent>) {
+    let packages_dir = exe_dir.join("packages");
+    let state_files = match std::fs::read_dir(&packages_dir) {
+        Ok(entries) => entries
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".download-state.json"))
+            .collect::<Vec<_>>(),
+        Err(_) => return,
+    };
+
+    for entry in state_files {
+        let state_path = entry.path();
+        let content = match std::fs::read_to_string(&state_path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let state: serde_json::Value = match serde_json::from_str(&content) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let url = state.get("url").and_then(|v| v.as_str()).unwrap_or("");
+        let expected_size = state.get("expected_size").and_then(|v| v.as_u64()).unwrap_or(0);
+        let version = state.get("version").and_then(|v| v.as_str()).unwrap_or("");
+
+        // Extract filename from state path: "X.nupkg.download-state.json" → "X.nupkg"
+        let state_name = state_path.file_name().unwrap().to_string_lossy();
+        let filename = state_name
+            .strip_suffix(".download-state.json")
+            .unwrap_or(&state_name)
+            .to_string();
+
+        if url.is_empty() || expected_size == 0 || filename.is_empty() {
+            continue;
+        }
+
+        log!("startup: resuming download of {} ({} bytes at {})", filename, url, expected_size);
+        if DOWNLOAD_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+            continue; // shouldn't happen on startup, but be safe
+        }
+
+        let _ = proxy.send_event(UserEvent::UpdateProgress(0));
+        let proxy_dl = proxy.clone();
+        let proxy_dl_done = proxy.clone();
+        let pkg_dir = packages_dir.clone();
+        let fname = filename.clone();
+        let ver = version.to_string();
+        let token = UPDATE_GITHUB_TOKEN.to_string();
+        let asset_url = url.to_string();
+
+        std::thread::spawn(move || {
+            let result = download::download_with_resume(
+                &asset_url,
+                &pkg_dir,
+                &fname,
+                expected_size,
+                &token,
+                move |pct| {
+                    let _ = proxy_dl.send_event(UserEvent::UpdateProgress(pct));
+                },
+            );
+            DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
+            match result {
+                Ok(_) => {
+                    log!("startup: resumed download of v{} completed", ver);
+                    let _ = proxy_dl_done.send_event(UserEvent::UpdateReady { version: ver });
+                }
+                Err(e) => {
+                    log!("startup: resumed download failed: {}", e);
+                }
+            }
+        });
+
+        break; // Only handle one pending download at a time
+    }
+}
 
 /// Check for updates using Velopack. If `manual` is true, this was triggered
 /// by the user clicking "check for updates" in the menu.
