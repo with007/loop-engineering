@@ -109,6 +109,31 @@ jobs:
           echo "$VERSION" > packaging/dist/version.txt
           echo "Building v$VERSION"
 
+      - name: Download previous nupkg (for delta)
+        shell: pwsh
+        run: |
+          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $repo = "${{ github.repository }}"
+          $headers = @{ Authorization = "Bearer $token"; Accept = "application/vnd.github.v3+json" }
+          $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases?per_page=5" -Headers $headers
+          # Find the latest release that is NOT the current one being built
+          $currentVersion = "${{ steps.version.outputs.version }}"
+          $prevFull = $releases | Where-Object { $_.tag_name -ne "v$currentVersion" } | Select-Object -First 1
+          if ($prevFull) {
+            $nupkgName = "LoopDashboard-$($prevFull.tag_name.Substring(1))-full.nupkg"
+            $asset = $prevFull.assets | Where-Object { $_.name -eq $nupkgName }
+            if ($asset) {
+              New-Item -ItemType Directory -Force -Path "packaging/releases" | Out-Null
+              Write-Host "Downloading $nupkgName for delta generation..."
+              Invoke-WebRequest -Uri $asset.url -Headers $headers -OutFile "packaging/releases/$nupkgName"
+              Write-Host "Downloaded $nupkgName"
+            } else {
+              Write-Host "No previous nupkg found (asset name: $nupkgName)"
+            }
+          } else {
+            Write-Host "No previous release found (first release?)"
+          }
+
       - name: vpk pack
         run: |
           & "$env:USERPROFILE\.dotnet\tools\vpk.exe" pack `

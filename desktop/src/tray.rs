@@ -198,7 +198,7 @@ pub fn create_tray() -> (TrayIcon, TrayMenuItems, TrayMenuIds) {
     let tray_icon = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
         .with_icon(icon)
-        .with_tooltip("Loop Dashboard v0.1.3")
+        .with_tooltip("Loop Dashboard")
         .build()
         .unwrap();
 
