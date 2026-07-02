@@ -161,6 +161,7 @@ def vpk_pack(version: str):
         "--mainExe", "loop-dashboard.exe",
         "--outputDir", str(RELEASES),
         "--channel", "win",
+        "--icon", str(ROOT / "desktop" / "icon.ico"),
     ], cwd=ROOT)
 
     print("\n  Release files:")
