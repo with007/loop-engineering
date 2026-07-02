@@ -1119,6 +1119,10 @@ fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<Us
                 }
                 Err(e) => {
                     log!("startup: resumed download failed: {}", e);
+                    // Clean up stale state — next attempt will get a fresh URL
+                    let _ = std::fs::remove_file(pkg_dir.join(format!("{}.partial", fname)));
+                    let _ = std::fs::remove_file(pkg_dir.join(format!("{}.download-state.json", fname)));
+                    let _ = proxy_dl_done.send_event(UserEvent::UpdateStatus(format!("Resume failed: {}", e)));
                 }
             }
         });
