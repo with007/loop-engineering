@@ -171,14 +171,20 @@ git config --global core.sshCommand "C:/Windows/System32/OpenSSH/ssh.exe"
 
 ### 发布流程
 
+**默认走 CI，不在本地打包**。`.github/workflows/release.yml` 会在 tag 推送后完整执行 cargo build + vpk pack + 上传 release assets。本地 `release.py` 只在 CI 不可用时作为备选。
+
 | 步骤 | 命令 | 谁做 |
 |------|------|------|
-| 1. 构建打包 | `python packaging/release.py 0.1.6` | Claude |
-| 2. 打 tag | `git tag v0.1.6` | Claude |
-| 3. 推送 | `git push origin v0.1.6` | 用户（VSCode Source Control → Push Tags） |
-| 4. CI 发布 | 自动触发 GitHub Actions | 自动 |
+| 1. 写 CHANGELOG | 在 `CHANGELOG.md` 顶部加 `## v0.1.x` 段落 | Claude |
+| 2. 预 bump 版本号 | 改 `desktop/Cargo.toml` + `desktop/version.txt` 为新版本 | Claude |
+| 3. 提交 + 打 tag + 推送 | `git commit && git tag v0.1.x && git push origin master && git push origin v0.1.x` | Claude |
+| 4. CI 构建打包发布 | GitHub Actions `release.yml`（tag `v*` 触发） | 自动 |
 
-备选：`python packaging/release.py 0.1.6 --publish` 可本地直接发布。
+> **关键：必须先 commit 版本号 bump 再推 tag。** `release.py` 里 `build_rust()` 在 `write_version()` 之前执行，CI checkout 出来的 `Cargo.toml` 版本号就是 exe 的 `CARGO_PKG_VERSION`（用于更新检查比对）。不预 bump 会导致打出来的 exe 版本号是上一个版本，更新检查永远找不到新版。
+>
+> **案例（2026-07-03）**：发布 v0.1.12 时先本地跑 `release.py` 再推 tag，本地产物 exe 仍是 0.1.11（build_rust 跑在 bump 前），白干且产物错误。改为"改版本号 → commit → tag → push → CI 构建"后，CI checkout 的 Cargo.toml 已是 0.1.12，构建正确。
+
+备选（CI 不可用时）：`python packaging/release.py 0.1.x --publish` 本地构建+发布。
 
 ### 令牌
 
@@ -191,15 +197,18 @@ git config --global core.sshCommand "C:/Windows/System32/OpenSSH/ssh.exe"
 
 ```bash
 # 1. 写 CHANGELOG.md（在顶部加 ## v0.1.7 段落）
-# 2. 构建 + 打包 + 发布
-python packaging/release.py 0.1.7 --publish        # 本地发布（网好时）
-python packaging/release.py 0.1.7                   # 只打包，手动 push tag 触发 CI
-# 3. 提交版本号更新（release.py 自动改了 Cargo.toml + version.txt）
-git add desktop/Cargo.toml desktop/version.txt && git commit -m "chore: bump to v0.1.7"
+# 2. 预 bump 版本号
+#    编辑 desktop/Cargo.toml 的 version = "0.1.7"
+#    编辑 desktop/version.txt 为 0.1.7
+# 3. 提交 + 打 tag + 推送（CI 自动构建打包发布）
+git add CHANGELOG.md desktop/Cargo.toml desktop/version.txt
+git commit -m "chore: bump to v0.1.7"
+git tag v0.1.7
+git push origin master
+git push origin v0.1.7
 ```
 
-- **日常版本**：`python release.py 0.1.7 --skip-python --publish`（跳过 Python 下载）
-- **加了 pip 包**：`python release.py 0.1.7 --publish`（完整重建 Python 环境）
+- **CI 不可用时的备选**：`python packaging/release.py 0.1.7 --publish`（本地构建+发布，需 `GITHUB_TOKEN`）
 - **自动递增**：版本号填 `auto` 自动 `0.1.0 → 0.1.1`
 - **VSCode**：`Ctrl+Shift+P` → `🚀 Release + Publish` → 输版本号
 - **CI 触发**：push tag `v*` 或 GitHub Actions 网页手动触发
