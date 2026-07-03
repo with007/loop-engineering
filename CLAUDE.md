@@ -146,7 +146,7 @@ cp target/release/loop-dashboard.exe "$LOCALAPPDATA/LoopDashboard/current/loop-d
 # 右键托盘 → 退出 → 重启
 ```
 
-发版（tag push → CI）只在测试**端到端更新流程**（下载 .nupkg → 弹框 → 应用 → 重启升级）时才需要。
+发版（tag push → CI）只在测试**端到端更新流程**（下载 .nupkg → 弹框 → 应用 → 重启升级）时才需要。而且此时只需发**一个**新版作为"下载目标"，当前版本用本地替装 exe 的方式部署，不需要为修一个 bug 连发多个版本。
 
 ### 日志要求
 
