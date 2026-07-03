@@ -780,14 +780,6 @@ impl App {
         }
     }
 
-    fn rebuild_menu_from_state(&mut self) {
-        let (running, paused) = {
-            let s = self.state.lock().unwrap();
-            (s.loop_running, s.loop_paused)
-        };
-        self.rebuild_menu(running, paused);
-    }
-
     fn update_loop_state(&mut self, running: bool, paused: bool) {
         let mut s = self.state.lock().unwrap();
         s.loop_running = running;
