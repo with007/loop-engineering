@@ -61,6 +61,55 @@ pub fn get_github_release_url(repo_url: &str, version: &str, filename: &str) -> 
     ))
 }
 
+/// Fetch the GitHub API asset download URL for a release's nupkg asset.
+///
+/// Uses `api.github.com/repos/{owner}/{repo}/releases/tags/v{version}` to look
+/// up the asset, then returns its `url` field
+/// (`https://api.github.com/repos/.../releases/assets/{id}`). Downloading that
+/// URL with `Accept: application/octet-stream` redirects to the GitHub CDN
+/// (objects.githubusercontent.com).
+///
+/// Why this instead of `get_github_release_url`: some networks block
+/// `github.com` outright (TCP reset) while `api.github.com` and the CDN remain
+/// reachable. The API asset endpoint bypasses `github.com` entirely. It also
+/// supports HTTP Range, so resume still works.
+///
+/// Returns `None` on any network/parse failure (caller can fall back).
+pub fn get_api_asset_url(repo_url: &str, version: &str, filename: &str) -> Option<String> {
+    let path = repo_url
+        .strip_prefix("https://github.com/")
+        .or_else(|| repo_url.strip_prefix("http://github.com/"))?;
+    let path = path.trim_end_matches('/');
+    let parts: Vec<&str> = path.split('/').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let owner = parts[0];
+    let repo = parts[1];
+    let api_url = format!(
+        "https://api.github.com/repos/{}/{}/releases/tags/v{}",
+        owner, repo, version
+    );
+
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(std::time::Duration::from_secs(30)))
+        .timeout_connect(Some(std::time::Duration::from_secs(15)))
+        .build()
+        .into();
+    let resp = agent
+        .get(&api_url)
+        .header("Accept", "application/vnd.github.v3+json")
+        .header("User-Agent", "LoopDashboard/1.0")
+        .call()
+        .ok()?;
+    let release: serde_json::Value = resp.into_body().read_json().ok()?;
+    let assets = release.get("assets")?.as_array()?;
+    let nupkg = assets.iter().find(|a| {
+        a.get("name").and_then(|v| v.as_str()) == Some(filename)
+    })?;
+    nupkg.get("url").and_then(|v| v.as_str()).map(|s| s.to_string())
+}
+
 /// Download a file with HTTP Range resume support.
 ///
 /// The download is streamed to `<packages_dir>/<filename>.partial`, with

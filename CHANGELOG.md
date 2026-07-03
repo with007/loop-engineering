@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.1.14
+- 更新下载改用 api.github.com asset 端点（绕开 github.com 阻断，部分网络 github.com 被防火墙挡但 api.github.com 和 CDN 可达）
+
 ## v0.1.13
 - 移除未使用的 rebuild_menu_from_state 方法（清理死代码，供更新流程端到端测试）
 

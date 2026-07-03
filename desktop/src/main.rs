@@ -1153,10 +1153,10 @@ fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<Us
                 Ok(path) => Ok(path),
                 Err(e) => {
                     log!("startup: first resume attempt failed ({}), refreshing URL...", e);
-                    match download::get_github_release_url(
+                    match download::get_api_asset_url(
                         UPDATE_SOURCE_URL, &ver, &fname,
                     ) {
-                        Ok(new_url) if new_url != asset_url => {
+                        Some(new_url) if new_url != asset_url => {
                             let state_path = pkg_dir.join(format!("{}.download-state.json", fname));
                             if let Err(e2) = download::refresh_state_url(&state_path, &new_url) {
                                 Err(format!("refresh URL: {}", e2))
@@ -1170,8 +1170,8 @@ fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<Us
                                 )
                             }
                         }
-                        Ok(_) => Err(format!("same URL, no retry: {}", e)),
-                        Err(e2) => Err(format!("re-resolve URL: {}", e2)),
+                        Some(_) => Err(format!("same URL, no retry: {}", e)),
+                        None => Err(format!("re-resolve URL: {}", e)),
                     }
                 }
             };
@@ -1368,6 +1368,9 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
 
     let filename = nupkg.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let expected_size = nupkg.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
+    // Prefer the GitHub API asset endpoint (api.github.com) over the github.com
+    // download URL — some networks block github.com but allow api.github.com.
+    let api_asset_url = nupkg.get("url").and_then(|v| v.as_str()).map(|s| s.to_string());
 
     log!("update: found v{} (size={} bytes), check took {:?}, downloading...",
         version, expected_size, check_start.elapsed());
@@ -1385,19 +1388,16 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
     let _ = proxy.send_event(UserEvent::UpdateProgress(0));
 
     let download_start = Instant::now();
-    let asset_url = match download::get_github_release_url(
-        UPDATE_SOURCE_URL,
-        version,
-        &filename,
-    ) {
-        Ok(url) => url,
-        Err(e) => {
-            log!("update: failed to resolve asset URL: {}", e);
-            let _ = proxy.send_event(UserEvent::UpdateStatus(format!("Failed: {}", e)));
-            DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
-            return;
-        }
-    };
+    let asset_url = api_asset_url.unwrap_or_else(|| {
+        download::get_github_release_url(UPDATE_SOURCE_URL, version, &filename)
+            .unwrap_or_default()
+    });
+    if asset_url.is_empty() {
+        log!("update: failed to resolve asset URL for v{}", version);
+        let _ = proxy.send_event(UserEvent::UpdateStatus("Failed to resolve download URL".into()));
+        DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
+        return;
+    }
 
     // ── 5. Determine packages directory ─────────────────────────────────
     let packages_dir = match std::env::current_exe()
