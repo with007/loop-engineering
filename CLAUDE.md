@@ -12,6 +12,21 @@
 
 **禁止**在没有日志数据的情况下来回猜测、反复修改同一段代码。如果改了 3 次还没解决，停下来加日志。
 
+### 日志文件路径
+
+不同场景的日志在不同位置，排查问题时先对照此表找到正确文件：
+
+| 场景 | 日志路径 | 说明 |
+|------|----------|------|
+| **Desktop 生产环境**（用户通过安装包安装） | `%LOCALAPPDATA%/LoopDashboard/dashboard.log` | 主日志，包含 Rust 侧所有事件（启动、菜单、更新检查、下载进度、心跳等） |
+| **Desktop 开发构建**（`cargo build --release`） | `desktop/target/release/dashboard.log` | 开发/测试时的日志，与生产环境格式相同 |
+| **Desktop 生产环境 — Python 子进程** | `%LOCALAPPDATA%/LoopDashboard/app/src/loop_engineering/server/dashboard.log` | uvicorn 服务器进程的日志（Python 侧 `_log()` 输出） |
+| **Desktop 开发构建 — Python 子进程** | `desktop/target/release/app/src/loop_engineering/server/dashboard.log` | 与上面路径对应，开发构建中 Python server 的输出 |
+| **Web 仪表盘**（`loop ui start`） | 终端 stdout/stderr | 无文件日志，直接在终端查看 |
+| **Claude Code 会话** | 终端输出 | Claude Code 的输出直接在终端 |
+
+> 所有 Desktop 日志都用 `chrono_now()` 打时间戳（Unix 秒 + 毫秒），用 `f.flush()` 确保每条立即落盘。查找关键事件时用 `grep` 筛选关键词（如 `update:`、`user_event:`、`menu:`、`heartbeat:`、`settings:` 等）。
+
 ## 2. 测试必须贴近真实场景
 
 修改完代码之后，**必须用和生产环境一致的方式跑通测试**。

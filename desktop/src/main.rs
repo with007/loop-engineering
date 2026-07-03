@@ -558,20 +558,22 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::UpdateReady { version } => {
                 log!("user_event: UpdateReady v{}", version);
                 self.update_pending_version = Some(version.clone());
-                self.update_status = Some(format!("v{} ready, restarting...", version));
                 self.update_progress = Some(100);
                 if let Some(ref mut ws) = self.settings_window {
-                    ws.set_update_status(Some(format!("v{} ready, restarting...", version)));
                     ws.set_update_progress(Some(100));
+                    ws.set_update_status(Some(format!("v{} 已就绪", version)));
                 }
-                self.rebuild_menu_from_state();
-                // Auto-restart to apply update — show notification first
                 if let Some(ref icon) = self.tray_icon {
-                    let _ = icon.set_tooltip(Some("Restarting to apply update..."));
+                    let _ = icon.set_tooltip(Some(&format!("v{} 已就绪，重启以应用", version)));
                 }
-                show_update_notification(&version);
-                std::thread::sleep(Duration::from_secs(1));
-                self.apply_pending_update();
+                // Dialog: OK = restart now and apply, Cancel = defer to next launch
+                let restart = show_update_dialog(&version);
+                if restart {
+                    log!("update: user chose restart now (v{})", version);
+                    self.apply_pending_update();
+                } else {
+                    log!("update: user deferred v{}, will prompt on next launch", version);
+                }
             }
             UserEvent::UpdateProgress(pct) => {
                 self.update_progress = Some(pct);
@@ -754,12 +756,17 @@ impl App {
         // Try to apply any pending update via Velopack
         use velopack::sources;
         let source = sources::GithubSource::new(UPDATE_SOURCE_URL, None, true);
-        if let Ok(um) = velopack::UpdateManager::new(source, None, None) {
-            if let Some(asset) = um.get_update_pending_restart() {
-                log!("apply_pending_update: applying {} and restarting", asset.Version);
-                let _ = um.apply_updates_and_restart(&asset);
-            } else {
-                log!("apply_pending_update: no pending update found on disk");
+        match velopack::UpdateManager::new(source, None, None) {
+            Ok(um) => {
+                if let Some(asset) = um.get_update_pending_restart() {
+                    log!("apply_pending_update: applying {} and restarting", asset.Version);
+                    let _ = um.apply_updates_and_restart(&asset);
+                } else {
+                    log!("apply_pending_update: no pending update found on disk");
+                }
+            }
+            Err(e) => {
+                log!("apply_pending_update: failed to create UpdateManager: {:?}", e);
             }
         }
     }
@@ -974,6 +981,10 @@ fn main() {
     // Resume any interrupted downloads from previous session
     resume_pending_downloads(&exe_dir, &proxy);
 
+    // If an update was downloaded in a previous session but not applied (user
+    // deferred), prompt immediately on this launch.
+    check_pending_update_on_startup(&proxy);
+
     // Register MenuEvent handler — forwards to EventLoopProxy
     MenuEvent::set_event_handler(Some(move |event: tray_icon::menu::MenuEvent| {
         let _ = proxy.send_event(UserEvent::MenuEvent(event));
@@ -1053,31 +1064,30 @@ fn poll_background(
 
 // ── update checker (runs in a thread — never blocks the GUI) ─────────────
 
-/// Show a brief Windows notification balloon near the tray icon and then
-/// apply the pending update immediately (restarts the app).
-fn show_update_notification(version: &str) {
+/// Show a modal dialog announcing the downloaded update.
+/// Returns `true` if the user clicked OK (restart now and apply),
+/// `false` if cancelled/closed (defer to next launch).
+fn show_update_dialog(version: &str) -> bool {
     use windows::core::PCWSTR;
     use windows::Win32::UI::WindowsAndMessaging::{
-        MessageBoxW, MB_OK, MB_ICONINFORMATION, MB_SYSTEMMODAL,
+        MessageBoxW, IDOK, MB_DEFBUTTON1, MB_ICONINFORMATION, MB_OKCANCEL, MB_SETFOREGROUND,
+        MB_TOPMOST,
     };
     let msg = format!(
-        "Loop Dashboard v{} is ready.\n\nThe app will restart to apply the update.",
+        "Loop Dashboard v{} 已下载完成。\n\n点击「确定」立即重启并应用更新。\n点击「取消」则在下一次启动时应用。",
         version
     );
     let msg_wide: Vec<u16> = msg.encode_utf16().chain(std::iter::once(0)).collect();
-    unsafe {
+    let title: Vec<u16> = "更新已就绪\0".encode_utf16().collect();
+    let ret = unsafe {
         MessageBoxW(
             None,
             PCWSTR::from_raw(msg_wide.as_ptr()),
-            PCWSTR::from_raw(
-                "Update Ready\0"
-                    .encode_utf16()
-                    .collect::<Vec<u16>>()
-                    .as_ptr(),
-            ),
-            MB_OK | MB_ICONINFORMATION | MB_SYSTEMMODAL,
-        );
-    }
+            PCWSTR::from_raw(title.as_ptr()),
+            MB_OKCANCEL | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND | MB_DEFBUTTON1,
+        )
+    };
+    ret == IDOK
 }
 
 /// GitHub repo URL for update checks.
@@ -1199,6 +1209,39 @@ fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<Us
         });
 
         break; // Only handle one pending download at a time
+    }
+}
+
+/// On startup, check if a previously-downloaded update is waiting to be applied.
+/// If so, fire UpdateReady immediately so the user gets prompted right away
+/// (instead of waiting for the 30s background check). No-op if the app is not
+/// running from a Velopack-installed layout (e.g. portable extraction).
+fn check_pending_update_on_startup(proxy: &EventLoopProxy<UserEvent>) {
+    use velopack::sources;
+    let source = sources::GithubSource::new(UPDATE_SOURCE_URL, None, true);
+    match velopack::UpdateManager::new(source, None, None) {
+        Ok(um) => match um.get_update_pending_restart() {
+            Some(asset) => {
+                log!(
+                    "startup: pending update v{} found on disk, firing UpdateReady",
+                    asset.Version
+                );
+                let _ = proxy.send_event(UserEvent::UpdateProgress(100));
+                let _ = proxy.send_event(UserEvent::UpdateReady {
+                    version: asset.Version,
+                });
+            }
+            None => log!("startup: no pending update to apply"),
+        },
+        Err(e) => {
+            // Expected when running from a portable/non-Velopack layout (no
+            // Update.exe / sq.version manifest). Silently skip — the 30s
+            // background checker will still run and try.
+            log!(
+                "startup: pending-update check skipped (UpdateManager init failed: {:?})",
+                e
+            );
+        }
     }
 }
 
@@ -1401,7 +1444,9 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
             Ok(_final_path) => {
                 log!("update: v{} downloaded successfully (size={} bytes) in {:?}",
                     version_down, expected_size, download_start.elapsed());
-                let _ = proxy_dl_done.send_event(UserEvent::UpdateReady { version: version_down });
+                log!("update: sending UpdateReady event for v{}", version_down);
+                let send_result = proxy_dl_done.send_event(UserEvent::UpdateReady { version: version_down.clone() });
+                log!("update: UpdateReady event sent for v{} (result={:?})", version_down, send_result);
             }
             Err(e) => {
                 log!("update: download failed after {:?}: {}", download_start.elapsed(), e);

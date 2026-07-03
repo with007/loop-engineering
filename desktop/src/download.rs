@@ -90,6 +90,7 @@ pub fn download_with_resume(
         let existing = fs::metadata(&final_path)
             .map_err(|e| format!("stat final: {}", e))?;
         if existing.len() == expected_size {
+            progress(100);
             return Ok(final_path);
         }
         // Size mismatch — delete and re-download
@@ -171,6 +172,7 @@ pub fn download_with_resume(
                 fs::rename(&partial_path, &final_path)
                     .map_err(|e| format!("rename partial→final: {}", e))?;
                 let _ = fs::remove_file(&state_path);
+                progress(100);
                 return Ok(final_path);
             }
             // Size mismatch — restart
