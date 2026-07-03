@@ -1,5 +1,7 @@
 # Changelog
 
+## v0.1.15
+
 ## v0.1.14
 - 更新下载改用 api.github.com asset 端点（绕开 github.com 阻断，部分网络 github.com 被防火墙挡但 api.github.com 和 CDN 可达）
 
