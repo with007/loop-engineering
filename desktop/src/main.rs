@@ -567,7 +567,10 @@ impl ApplicationHandler<UserEvent> for App {
                     let _ = icon.set_tooltip(Some(&format!("v{} 已就绪，重启以应用", version)));
                 }
                 // Dialog: OK = restart now and apply, Cancel = defer to next launch
-                let restart = show_update_dialog(&version);
+                let settings_hwnd = self.settings_window.as_ref().and_then(|ws| {
+                    get_hwnd(ws.gl_window.window())
+                });
+                let restart = show_update_dialog(&version, settings_hwnd);
                 if restart {
                     log!("update: user chose restart now (v{})", version);
                     self.apply_pending_update();
@@ -1056,11 +1059,22 @@ fn poll_background(
 
 // ── update checker (runs in a thread — never blocks the GUI) ─────────────
 
+/// Extract the native HWND from a winit window (for use as MessageBox owner).
+#[cfg(windows)]
+fn get_hwnd(window: &winit::window::Window) -> Option<isize> {
+    use winit::raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
+    match window.window_handle().ok()?.as_raw() {
+        RawWindowHandle::Win32(handle) => Some(handle.hwnd.get() as isize),
+        _ => None,
+    }
+}
+
 /// Show a modal dialog announcing the downloaded update.
 /// Returns `true` if the user clicked OK (restart now and apply),
 /// `false` if cancelled/closed (defer to next launch).
-fn show_update_dialog(version: &str) -> bool {
+fn show_update_dialog(version: &str, settings_hwnd: Option<isize>) -> bool {
     use windows::core::PCWSTR;
+    use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{
         MessageBoxW, IDOK, MB_DEFBUTTON1, MB_ICONINFORMATION, MB_OKCANCEL, MB_SETFOREGROUND,
         MB_TOPMOST,
@@ -1071,9 +1085,10 @@ fn show_update_dialog(version: &str) -> bool {
     );
     let msg_wide: Vec<u16> = msg.encode_utf16().chain(std::iter::once(0)).collect();
     let title: Vec<u16> = "更新已就绪\0".encode_utf16().collect();
+    let owner = HWND(settings_hwnd.unwrap_or(0) as *mut _);
     let ret = unsafe {
         MessageBoxW(
-            None,
+            owner,
             PCWSTR::from_raw(msg_wide.as_ptr()),
             PCWSTR::from_raw(title.as_ptr()),
             MB_OKCANCEL | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND | MB_DEFBUTTON1,
@@ -1088,7 +1103,7 @@ const UPDATE_SOURCE_URL: &str = "https://github.com/with007/loop-engineering";
 /// On startup, check for any interrupted downloads from a previous session
 /// and resume them automatically.
 fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<UserEvent>) {
-    let packages_dir = exe_dir.join("packages");
+    let packages_dir = packages_dir(exe_dir);
     let state_files = match std::fs::read_dir(&packages_dir) {
         Ok(entries) => entries
             .filter_map(|e| e.ok())
@@ -1138,40 +1153,41 @@ fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<Us
         let asset_url = url.to_string();
 
         std::thread::spawn(move || {
-            let result = download::download_with_resume(
-                &asset_url,
-                &pkg_dir,
-                &fname,
-                expected_size,
-                token,
-                move |pct| {
-                    let _ = proxy_dl.send_event(UserEvent::UpdateProgress(pct));
-                },
-            );
+            let mut retry_delay = Duration::from_secs(30);
+            let mut current_url = asset_url.clone();
 
-            let result = match result {
-                Ok(path) => Ok(path),
-                Err(e) => {
-                    log!("startup: first resume attempt failed ({}), refreshing URL...", e);
-                    match download::get_api_asset_url(
-                        UPDATE_SOURCE_URL, &ver, &fname,
-                    ) {
-                        Some(new_url) if new_url != asset_url => {
-                            let state_path = pkg_dir.join(format!("{}.download-state.json", fname));
-                            if let Err(e2) = download::refresh_state_url(&state_path, &new_url) {
-                                Err(format!("refresh URL: {}", e2))
-                            } else {
-                                let proxy2 = proxy_dl_done.clone();
-                                download::download_with_resume(
-                                    &new_url, &pkg_dir, &fname, expected_size, token,
-                                    move |pct| {
-                                        let _ = proxy2.send_event(UserEvent::UpdateProgress(pct));
-                                    },
-                                )
+            let result = loop {
+                let proxy_retry = proxy_dl.clone();
+                match download::download_with_resume(
+                    &current_url, &pkg_dir, &fname, expected_size, token,
+                    move |pct| {
+                        let _ = proxy_retry.send_event(UserEvent::UpdateProgress(pct));
+                    },
+                ) {
+                    Ok(path) => break Ok(path),
+                    Err(e) => {
+                        let is_permanent = e.contains("size mismatch")
+                            || e.contains("404") || e.contains("403");
+                        if is_permanent || retry_delay > Duration::from_secs(90) {
+                            break Err(e);
+                        }
+                        // Try to refresh the download URL (SAS tokens may expire)
+                        log!("startup: resume failed ({}), refreshing URL and retrying in {}s...",
+                            e, retry_delay.as_secs());
+                        if let Some(new_url) = download::get_api_asset_url(
+                            UPDATE_SOURCE_URL, &ver, &fname,
+                        ) {
+                            if new_url != current_url {
+                                let state_path = pkg_dir.join(format!("{}.download-state.json", fname));
+                                if let Err(e2) = download::refresh_state_url(&state_path, &new_url) {
+                                    log!("startup: refresh state URL failed: {}", e2);
+                                } else {
+                                    current_url = new_url;
+                                }
                             }
                         }
-                        Some(_) => Err(format!("same URL, no retry: {}", e)),
-                        None => Err(format!("re-resolve URL: {}", e)),
+                        std::thread::sleep(retry_delay);
+                        retry_delay = retry_delay.mul_f64(1.5);
                     }
                 }
             };
@@ -1204,6 +1220,17 @@ fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<Us
     }
 }
 
+/// Determine the packages directory. In a Velopack install the exe lives under
+/// `current/` and packages are at root level (`current/../packages`). In a
+/// portable install the exe is at root and packages are next to it.
+fn packages_dir(exe_dir: &std::path::Path) -> std::path::PathBuf {
+    // Velopack install: exe in `current/`, packages at root
+    if exe_dir.file_name().map_or(false, |n| n == "current") {
+        exe_dir.parent().map(|p| p.join("packages")).unwrap_or_else(|| exe_dir.join("packages"))
+    } else {
+        exe_dir.join("packages")
+    }
+}
 /// On startup, check if a previously-downloaded update is waiting to be applied.
 /// If so, fire UpdateReady immediately so the user gets prompted right away
 /// (instead of waiting for the 30s background check). No-op if the app is not
@@ -1400,9 +1427,9 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
     }
 
     // ── 5. Determine packages directory ─────────────────────────────────
-    let packages_dir = match std::env::current_exe()
+    let exe_dir = match std::env::current_exe()
         .ok()
-        .and_then(|p| p.parent().map(|p| p.join("packages")))
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
     {
         Some(dir) => dir,
         None => {
@@ -1411,6 +1438,7 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
             return;
         }
     };
+    let packages_dir = packages_dir(&exe_dir);
 
     let version_down = version.to_string();
     let proxy_dl = proxy.clone();
@@ -1419,16 +1447,35 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
     // ── 6. Spawn download thread ────────────────────────────────────────
     std::thread::spawn(move || {
         let token: Option<&str> = None;
-        let result = download::download_with_resume(
-            &asset_url,
-            &packages_dir,
-            &filename,
-            expected_size,
-            token,
-            move |pct| {
-                let _ = proxy_dl.send_event(UserEvent::UpdateProgress(pct));
-            },
-        );
+        let mut retry_delay = Duration::from_secs(30);
+
+        let result = loop {
+            let proxy_dl_attempt = proxy_dl.clone();
+            match download::download_with_resume(
+                &asset_url,
+                &packages_dir,
+                &filename,
+                expected_size,
+                token,
+                move |pct| {
+                    let _ = proxy_dl_attempt.send_event(UserEvent::UpdateProgress(pct));
+                },
+            ) {
+                Ok(path) => break Ok(path),
+                Err(e) => {
+                    let is_permanent = e.contains("size mismatch")
+                        || e.contains("404")
+                        || e.contains("403");
+                    if is_permanent || retry_delay > Duration::from_secs(90) {
+                        break Err(e);
+                    }
+                    log!("update: download failed ({}), retrying in {}s...",
+                        e, retry_delay.as_secs());
+                    std::thread::sleep(retry_delay);
+                    retry_delay = retry_delay.mul_f64(1.5);
+                }
+            }
+        };
 
         DOWNLOAD_IN_PROGRESS.store(false, Ordering::SeqCst);
 
