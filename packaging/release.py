@@ -65,9 +65,6 @@ def get_github_token():
     return input("Enter GitHub token (or press Enter to skip publish): ").strip()
 
 
-GITHUB_TOKEN = get_github_token()
-
-
 def run(cmd, **kwargs):
     """运行命令，失败时退出."""
     print(f"  RUN: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
@@ -241,7 +238,7 @@ def publish_github(version: str):
     """发布到 GitHub Releases — 幂等：Release 已存在则只补传缺失文件."""
     print("\n=== [6] Publish to GitHub ===")
 
-    token = os.environ.get("GITHUB_TOKEN") or GITHUB_TOKEN
+    token = get_github_token()
     tag = f"v{version}"
     api_base = f"https://api.github.com/repos/{GITHUB_REPO}"
 
@@ -387,11 +384,14 @@ def main():
             cache_dir = DIST.parent / "python-cache"
             if cache_dir.exists():
                 print("\n=== [0] Restore Python from cache ===")
-                shutil.copytree(cache_dir, DIST / "python")
+                shutil.copytree(cache_dir, DIST / "python", dirs_exist_ok=True)
             else:
                 print("\n=== [0] Python cache not found, will download ===")
                 args.skip_python = False
                 (DIST / "python").mkdir(parents=True, exist_ok=True)
+        # Bump Cargo.toml + version.txt BEFORE cargo build, so the exe's
+        # CARGO_PKG_VERSION (baked in at compile time) matches the release.
+        write_version(version)
         if not args.skip_build:
             build_rust()
         else:
@@ -407,7 +407,6 @@ def main():
         else:
             print("\n=== [3] Setup Python (SKIPPED) ===")
         copy_files()
-        write_version(version)
         vpk_pack(version)
 
     if args.publish:
