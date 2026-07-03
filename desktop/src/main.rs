@@ -909,9 +909,10 @@ fn main() {
     }
 
     let config = Config::load(&exe_dir);
-    let port = find_available_port(config.port);
+    let mut port = find_available_port(config.port);
     log!(
-        "main: config loaded, port={}, autostart={}",
+        "main: config loaded, config_port={}, using_port={}, autostart={}",
+        config.port,
         port,
         config.autostart
     );
@@ -937,9 +938,25 @@ fn main() {
 
     log!("main: python_exe={}, app_dir={}", *python_exe, *app_dir);
 
-    log!("main: starting server on port {}", port);
-    if !server.lock().unwrap().start(port, &python_exe, &app_dir) {
-        log!("main: FAILED to start server");
+    // Try starting server with port retry
+    let mut retries = 0;
+    loop {
+        log!("main: starting server on port {} (attempt {})", port, retries + 1);
+        if server.lock().unwrap().start(port, &python_exe, &app_dir) {
+            break;
+        }
+        retries += 1;
+        if retries >= 5 {
+            log!("main: FAILED to start server after {} attempts", retries);
+            break;
+        }
+        let next = port + 1;
+        log!("main: port {} failed, trying {}...", port, next);
+        port = next;
+        // Update state port
+        if let Ok(mut s) = state.lock() {
+            s.port = port;
+        }
     }
 
     if config.auto_open_browser {
