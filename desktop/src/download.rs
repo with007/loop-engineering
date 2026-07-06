@@ -117,15 +117,15 @@ pub fn get_api_asset_url(repo_url: &str, version: &str, filename: &str) -> Optio
 /// On successful completion, the `.partial` file is renamed to the final
 /// filename and the state file is deleted.
 ///
-/// `progress` is called with floor-rounded percentage (0-100) whenever it
-/// changes. It is invoked from the download thread.
+/// `progress` is called with (percentage 0-100, bytes_per_sec) whenever the
+/// percentage changes. It is invoked from the download thread.
 pub fn download_with_resume(
     url: &str,
     packages_dir: &Path,
     filename: &str,
     expected_size: u64,
     token: Option<&str>,
-    progress: impl Fn(u32) + Send + 'static,
+    progress: impl Fn(u32, f64) + Send + 'static,
 ) -> Result<PathBuf, String> {
     fs::create_dir_all(packages_dir)
         .map_err(|e| format!("cannot create packages dir: {}", e))?;
@@ -139,7 +139,7 @@ pub fn download_with_resume(
         let existing = fs::metadata(&final_path)
             .map_err(|e| format!("stat final: {}", e))?;
         if existing.len() == expected_size {
-            progress(100);
+            progress(100, 0.0);
             return Ok(final_path);
         }
         // Size mismatch — delete and re-download
@@ -168,7 +168,7 @@ pub fn download_with_resume(
             .map_err(|e| format!("create partial: {}", e))?
     };
 
-    progress(0);
+    progress(0, 0.0);
 
     // Build HTTP request
     let agent: ureq::Agent = ureq::Agent::config_builder()
@@ -221,7 +221,7 @@ pub fn download_with_resume(
                 fs::rename(&partial_path, &final_path)
                     .map_err(|e| format!("rename partial→final: {}", e))?;
                 let _ = fs::remove_file(&state_path);
-                progress(100);
+                progress(100, 0.0);
                 return Ok(final_path);
             }
             // Size mismatch — restart
@@ -239,6 +239,8 @@ pub fn download_with_resume(
     let mut reader = response.into_body().into_reader();
     let mut buf = vec![0u8; 65536]; // 64KB chunks
     let mut last_pct = 0u32;
+    let mut speed_time = std::time::Instant::now();
+    let mut speed_bytes: u64 = 0;
 
     loop {
         let n = reader
@@ -269,7 +271,16 @@ pub fn download_with_resume(
         };
         if pct != last_pct {
             last_pct = pct;
-            progress(pct);
+            // Compute speed (bytes/sec) since last report
+            let elapsed = speed_time.elapsed().as_secs_f64();
+            let speed = if elapsed > 0.5 {
+                (bytes_downloaded - speed_bytes) as f64 / elapsed
+            } else {
+                0.0
+            };
+            speed_time = std::time::Instant::now();
+            speed_bytes = bytes_downloaded;
+            progress(pct, speed);
         }
     }
 
@@ -288,7 +299,7 @@ pub fn download_with_resume(
         .map_err(|e| format!("rename partial→final: {}", e))?;
     let _ = fs::remove_file(&state_path);
 
-    progress(100);
+    progress(100, 0.0);
     Ok(final_path)
 }
 

@@ -83,8 +83,8 @@ enum UserEvent {
     PollServerDown,
     /// Update check found and downloaded a new version
     UpdateReady { version: String },
-    /// Download progress (0-100 percent)
-    UpdateProgress(u32),
+    /// Download progress (0-100 percent, bytes_per_sec)
+    UpdateProgress(u32, f64),
     /// Update check status (for tray tooltip feedback)
     UpdateStatus(String),
 }
@@ -248,6 +248,7 @@ struct WindowState {
     auto_open_browser: bool,
     update_status: Option<String>,
     update_progress: Option<u32>,
+    update_speed: Option<f64>,
 }
 
 impl WindowState {
@@ -258,6 +259,7 @@ impl WindowState {
         auto_open_browser: bool,
         update_status: Option<String>,
         update_progress: Option<u32>,
+        update_speed: Option<f64>,
     ) -> Self {
         log!("WindowState: creating GL context...");
         let gl_window = unsafe { GlutinWindowContext::new(event_loop) };
@@ -306,6 +308,7 @@ impl WindowState {
             auto_open_browser,
             update_status,
             update_progress,
+            update_speed,
         }
     }
 
@@ -314,6 +317,9 @@ impl WindowState {
     }
     fn set_update_progress(&mut self, pct: Option<u32>) {
         self.update_progress = pct;
+    }
+    fn set_update_speed(&mut self, speed: Option<f64>) {
+        self.update_speed = speed;
     }
 
     fn render(&mut self) -> SettingsAction {
@@ -457,6 +463,8 @@ struct App {
     update_status: Option<String>,
     /// Current download progress (0-100, shown in settings)
     update_progress: Option<u32>,
+    /// Current download speed in bytes/sec (shown in settings)
+    update_speed: Option<f64>,
     /// True if this is the first run (no settings file existed on startup)
     first_run: bool,
     /// Auto-open browser on startup (from config)
@@ -578,14 +586,26 @@ impl ApplicationHandler<UserEvent> for App {
                     log!("update: user deferred v{}, will prompt on next launch", version);
                 }
             }
-            UserEvent::UpdateProgress(pct) => {
+            UserEvent::UpdateProgress(pct, speed) => {
                 self.update_progress = Some(pct);
+                self.update_speed = if speed > 0.0 { Some(speed) } else { self.update_speed };
                 if let Some(ref mut ws) = self.settings_window {
                     ws.set_update_progress(Some(pct));
-                    ws.set_update_status(Some(format!("Downloading update... {}%", pct)));
+                    ws.set_update_speed(self.update_speed);
+                    let speed_str = format_speed(self.update_speed);
+                    if speed_str.is_empty() {
+                        ws.set_update_status(Some("下载中...".into()));
+                    } else {
+                        ws.set_update_status(Some(format!("下载中... {}", speed_str)));
+                    }
                 }
                 if let Some(ref icon) = self.tray_icon {
-                    let msg = format!("Downloading update... {}%", pct);
+                    let speed_str = format_speed(self.update_speed);
+                    let msg = if speed_str.is_empty() {
+                        "Downloading...".to_string()
+                    } else {
+                        format!("Downloading... {}", speed_str)
+                    };
                     let _ = icon.set_tooltip(Some(&msg));
                 }
                 // Log progress at 10% intervals to avoid too much noise
@@ -734,7 +754,8 @@ impl App {
         };
         let status = self.update_status.clone();
         let progress = self.update_progress;
-        let mut ws = WindowState::new(event_loop, port, autostart, auto_open_browser, status, progress);
+        let speed = self.update_speed;
+        let mut ws = WindowState::new(event_loop, port, autostart, auto_open_browser, status, progress, speed);
 
         // Render first frame BEFORE showing, so user doesn't see white flash
         log!("open_settings_window: rendering first frame...");
@@ -1009,6 +1030,7 @@ fn main() {
         update_pending_version: None,
         update_status: None,
         update_progress: None,
+        update_speed: None,
         first_run,
         auto_open_browser: config.auto_open_browser,
     };
@@ -1143,7 +1165,7 @@ fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<Us
             continue; // shouldn't happen on startup, but be safe
         }
 
-        let _ = proxy.send_event(UserEvent::UpdateProgress(0));
+        let _ = proxy.send_event(UserEvent::UpdateProgress(0, 0.0));
         let proxy_dl = proxy.clone();
         let proxy_dl_done = proxy.clone();
         let pkg_dir = packages_dir.clone();
@@ -1160,8 +1182,8 @@ fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<Us
                 let proxy_retry = proxy_dl.clone();
                 match download::download_with_resume(
                     &current_url, &pkg_dir, &fname, expected_size, token,
-                    move |pct| {
-                        let _ = proxy_retry.send_event(UserEvent::UpdateProgress(pct));
+                    move |pct, speed| {
+                        let _ = proxy_retry.send_event(UserEvent::UpdateProgress(pct, speed));
                     },
                 ) {
                     Ok(path) => break Ok(path),
@@ -1220,6 +1242,16 @@ fn resume_pending_downloads(exe_dir: &std::path::Path, proxy: &EventLoopProxy<Us
     }
 }
 
+/// Format bytes/sec into a human-readable speed string (e.g., "1.2 MB/s").
+fn format_speed(speed: Option<f64>) -> String {
+    match speed {
+        None | Some(0.0) => String::new(),
+        Some(bps) if bps < 1024.0 => format!("{} B/s", bps as u64),
+        Some(bps) if bps < 1024.0 * 1024.0 => format!("{:.1} KB/s", bps / 1024.0),
+        Some(bps) => format!("{:.1} MB/s", bps / (1024.0 * 1024.0)),
+    }
+}
+
 /// Determine the packages directory. In a Velopack install the exe lives under
 /// `current/` and packages are at root level (`current/../packages`). In a
 /// portable install the exe is at root and packages are next to it.
@@ -1245,7 +1277,7 @@ fn check_pending_update_on_startup(proxy: &EventLoopProxy<UserEvent>) {
                     "startup: pending update v{} found on disk, firing UpdateReady",
                     asset.Version
                 );
-                let _ = proxy.send_event(UserEvent::UpdateProgress(100));
+                let _ = proxy.send_event(UserEvent::UpdateProgress(100, 0.0));
                 let _ = proxy.send_event(UserEvent::UpdateReady {
                     version: asset.Version,
                 });
@@ -1412,7 +1444,7 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
     }
 
     // Show immediate feedback — first bytes may take a while on slow links
-    let _ = proxy.send_event(UserEvent::UpdateProgress(0));
+    let _ = proxy.send_event(UserEvent::UpdateProgress(0, 0.0));
 
     let download_start = Instant::now();
     let asset_url = api_asset_url.unwrap_or_else(|| {
@@ -1457,8 +1489,8 @@ fn check_for_updates_inner(proxy: &EventLoopProxy<UserEvent>, manual: bool) {
                 &filename,
                 expected_size,
                 token,
-                move |pct| {
-                    let _ = proxy_dl_attempt.send_event(UserEvent::UpdateProgress(pct));
+                move |pct, speed| {
+                    let _ = proxy_dl_attempt.send_event(UserEvent::UpdateProgress(pct, speed));
                 },
             ) {
                 Ok(path) => break Ok(path),
