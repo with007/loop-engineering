@@ -249,6 +249,8 @@ struct WindowState {
     update_status: Option<String>,
     update_progress: Option<u32>,
     update_speed: Option<f64>,
+    /// Pending update version (downloaded, waiting for user action)
+    update_pending_version: Option<String>,
 }
 
 impl WindowState {
@@ -260,6 +262,7 @@ impl WindowState {
         update_status: Option<String>,
         update_progress: Option<u32>,
         update_speed: Option<f64>,
+        update_pending_version: Option<String>,
     ) -> Self {
         log!("WindowState: creating GL context...");
         let gl_window = unsafe { GlutinWindowContext::new(event_loop) };
@@ -309,6 +312,7 @@ impl WindowState {
             update_status,
             update_progress,
             update_speed,
+            update_pending_version,
         }
     }
 
@@ -321,6 +325,9 @@ impl WindowState {
     fn set_update_speed(&mut self, speed: Option<f64>) {
         self.update_speed = speed;
     }
+    fn set_update_pending_version(&mut self, version: Option<String>) {
+        self.update_pending_version = version;
+    }
 
     fn render(&mut self) -> SettingsAction {
         let mut action = SettingsAction::None;
@@ -331,6 +338,7 @@ impl WindowState {
         let auto_open_val = &mut self.auto_open_browser;
         let update_status = &self.update_status;
         let update_progress = &self.update_progress;
+        let update_pending = &self.update_pending_version;
 
         self.egui_glow.run(self.gl_window.window(), |egui_ctx| {
             if egui_ctx.input(|i| i.viewport().close_requested()) {
@@ -385,6 +393,31 @@ impl WindowState {
                     );
                 }
 
+                // Update ready — show restart/defer buttons
+                if let Some(ref ver) = update_pending {
+                    ui.add_space(8.0);
+                    ui.colored_label(
+                        egui::Color32::from_rgb(100, 255, 100),
+                        format!("✅ v{} 已下载完成", ver),
+                    );
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        if ui
+                            .add(egui::Button::new(
+                                egui::RichText::new("立即重启安装")
+                                    .color(egui::Color32::WHITE),
+                            )
+                            .fill(egui::Color32::from_rgb(0, 120, 30)))
+                            .clicked()
+                        {
+                            action = SettingsAction::ApplyUpdate;
+                        }
+                        if ui.button("稍后提醒").clicked() {
+                            action = SettingsAction::DeferUpdate;
+                        }
+                    });
+                }
+
                 ui.add_space(4.0);
                 if ui.button("检查更新").clicked() {
                     action = SettingsAction::CheckUpdates;
@@ -437,6 +470,10 @@ enum SettingsAction {
     Save { port: u16, autostart: bool, auto_open_browser: bool },
     CheckUpdates,
     OpenGitHub,
+    /// User clicked "restart now" in the update-ready UI
+    ApplyUpdate,
+    /// User clicked "later" in the update-ready UI
+    DeferUpdate,
 }
 
 // ── App ───────────────────────────────────────────────────────────────────
@@ -567,23 +604,25 @@ impl ApplicationHandler<UserEvent> for App {
                 log!("user_event: UpdateReady v{}", version);
                 self.update_pending_version = Some(version.clone());
                 self.update_progress = Some(100);
+                self.update_speed = None;
                 if let Some(ref mut ws) = self.settings_window {
                     ws.set_update_progress(Some(100));
+                    ws.set_update_speed(None);
                     ws.set_update_status(Some(format!("v{} 已就绪", version)));
+                    ws.set_update_pending_version(Some(version.clone()));
+                    ws.render();
+                } else {
+                    // Auto-open settings so user sees the restart/later buttons
+                    self.open_settings_window(event_loop);
+                    if let Some(ref mut ws) = self.settings_window {
+                        ws.set_update_pending_version(Some(version.clone()));
+                        ws.set_update_status(Some(format!("v{} 已就绪", version)));
+                        ws.set_update_progress(Some(100));
+                        ws.set_update_speed(None);
+                    }
                 }
                 if let Some(ref icon) = self.tray_icon {
                     let _ = icon.set_tooltip(Some(&format!("v{} 已就绪，重启以应用", version)));
-                }
-                // Dialog: OK = restart now and apply, Cancel = defer to next launch
-                let settings_hwnd = self.settings_window.as_ref().and_then(|ws| {
-                    get_hwnd(ws.gl_window.window())
-                });
-                let restart = show_update_dialog(&version, settings_hwnd);
-                if restart {
-                    log!("update: user chose restart now (v{})", version);
-                    self.apply_pending_update();
-                } else {
-                    log!("update: user deferred v{}, will prompt on next launch", version);
                 }
             }
             UserEvent::UpdateProgress(pct, speed) => {
@@ -716,6 +755,23 @@ impl ApplicationHandler<UserEvent> for App {
                             });
                         }
                     }
+                    SettingsAction::ApplyUpdate => {
+                        log!("settings: user clicked 'restart now' for update");
+                        self.apply_pending_update();
+                    }
+                    SettingsAction::DeferUpdate => {
+                        log!("settings: user clicked 'later' for update, deferring");
+                        self.update_pending_version = None;
+                        if let Some(ref mut ws) = self.settings_window {
+                            ws.set_update_pending_version(None);
+                            ws.set_update_status(Some("更新已推迟，重启后应用".into()));
+                            ws.set_update_progress(None);
+                            ws.set_update_speed(None);
+                        }
+                        if let Some(ref icon) = self.tray_icon {
+                            let _ = icon.set_tooltip(Some("Loop Dashboard"));
+                        }
+                    }
                     SettingsAction::OpenGitHub => {
                         let releases_url = format!("{}/releases", UPDATE_SOURCE_URL);
                         log!("settings: open_github clicked, opening {}", releases_url);
@@ -755,7 +811,8 @@ impl App {
         let status = self.update_status.clone();
         let progress = self.update_progress;
         let speed = self.update_speed;
-        let mut ws = WindowState::new(event_loop, port, autostart, auto_open_browser, status, progress, speed);
+        let pending = self.update_pending_version.clone();
+        let mut ws = WindowState::new(event_loop, port, autostart, auto_open_browser, status, progress, speed, pending);
 
         // Render first frame BEFORE showing, so user doesn't see white flash
         log!("open_settings_window: rendering first frame...");
@@ -1080,44 +1137,6 @@ fn poll_background(
 }
 
 // ── update checker (runs in a thread — never blocks the GUI) ─────────────
-
-/// Extract the native HWND from a winit window (for use as MessageBox owner).
-#[cfg(windows)]
-fn get_hwnd(window: &winit::window::Window) -> Option<isize> {
-    use winit::raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
-    match window.window_handle().ok()?.as_raw() {
-        RawWindowHandle::Win32(handle) => Some(handle.hwnd.get() as isize),
-        _ => None,
-    }
-}
-
-/// Show a modal dialog announcing the downloaded update.
-/// Returns `true` if the user clicked OK (restart now and apply),
-/// `false` if cancelled/closed (defer to next launch).
-fn show_update_dialog(version: &str, settings_hwnd: Option<isize>) -> bool {
-    use windows::core::PCWSTR;
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::UI::WindowsAndMessaging::{
-        MessageBoxW, IDOK, MB_DEFBUTTON1, MB_ICONINFORMATION, MB_OKCANCEL, MB_SETFOREGROUND,
-        MB_TOPMOST,
-    };
-    let msg = format!(
-        "Loop Dashboard v{} 已下载完成。\n\n点击「确定」立即重启并应用更新。\n点击「取消」则在下一次启动时应用。",
-        version
-    );
-    let msg_wide: Vec<u16> = msg.encode_utf16().chain(std::iter::once(0)).collect();
-    let title: Vec<u16> = "更新已就绪\0".encode_utf16().collect();
-    let owner = HWND(settings_hwnd.unwrap_or(0) as *mut _);
-    let ret = unsafe {
-        MessageBoxW(
-            owner,
-            PCWSTR::from_raw(msg_wide.as_ptr()),
-            PCWSTR::from_raw(title.as_ptr()),
-            MB_OKCANCEL | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND | MB_DEFBUTTON1,
-        )
-    };
-    ret == IDOK
-}
 
 /// GitHub repo URL for update checks.
 const UPDATE_SOURCE_URL: &str = "https://github.com/with007/loop-engineering";
