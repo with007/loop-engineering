@@ -142,8 +142,13 @@ def generate_mcp_configs(config):
     main_port = config["main"]["mcp_port"]
     agent_port = config["agent"]["mcp_port"]
 
+    # 检查是否为 Unity 工程（根据 loop-config.yaml 中的 type 字段）
+    is_unity = "unity" in config.get("type", "").lower()
+
     # 主工程 .mcp.json
-    main_servers = {"UnityMCP": {"type": "http", "url": f"http://127.0.0.1:{main_port}/mcp"}}
+    main_servers = {}
+    if is_unity:
+        main_servers["UnityMCP"] = {"type": "http", "url": f"http://127.0.0.1:{main_port}/mcp"}
     main_mcp = _merge_mcp_config(os.path.join(project_root, ".mcp.json"), main_servers, "主工程 .mcp.json")
     _write_json_if_changed(os.path.join(project_root, ".mcp.json"), main_mcp, "主工程 .mcp.json")
     _ensure_gitignore(project_root, ".mcp.json")
@@ -151,15 +156,17 @@ def generate_mcp_configs(config):
     # Agent .mcp.json — 从主工程配置派生，只改端口，保留所有用户添加的服务器
     import copy
     agent_mcp = copy.deepcopy(main_mcp)
-    agent_mcp["mcpServers"]["UnityMCP"]["url"] = f"http://127.0.0.1:{agent_port}/mcp"
+    if is_unity:
+        agent_mcp["mcpServers"]["UnityMCP"]["url"] = f"http://127.0.0.1:{agent_port}/mcp"
     _write_json_if_changed(os.path.join(agent_dir, ".mcp.json"), agent_mcp, "Agent .mcp.json")
 
-    # Agent McpProjectConfig.json (Unity 特定)
-    _write_mcp_project_config(agent_dir, project_name, agent_port, "Agent")
+    if is_unity:
+        # Agent McpProjectConfig.json (Unity 特定)
+        _write_mcp_project_config(agent_dir, project_name, agent_port, "Agent")
 
-    # 主工程 McpProjectConfig.json
-    _write_mcp_project_config(project_root, project_name, main_port, "主工程")
-    _ensure_gitignore(project_root, "ProjectSettings/McpProjectConfig.json")
+        # 主工程 McpProjectConfig.json
+        _write_mcp_project_config(project_root, project_name, main_port, "主工程")
+        _ensure_gitignore(project_root, "ProjectSettings/McpProjectConfig.json")
 
 
 def _write_mcp_project_config(worktree_dir, project_name, port, label):
