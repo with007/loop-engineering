@@ -228,6 +228,8 @@
                 verifySteps: [],
                 testTemplate: '',
                 previewSkills: [],
+                activePreviewSkill: '',
+                previewSkillContent: '',
                 loadingTest: false,
                 loadingSkills: false,
                 mainPort: 8080,
@@ -254,6 +256,8 @@
                     if (!type) {
                         this.testTemplate = '';
                         this.previewSkills = [];
+                        this.activePreviewSkill = '';
+                        this.previewSkillContent = '';
                         return;
                     }
                     this.loadingTest = true;
@@ -273,6 +277,9 @@
                         this.previewSkills = (sData.skills || []).map(function(s) {
                             return { name: s.name, label: s.label, content: '', loading: false };
                         });
+                        if (this.previewSkills.length > 0) {
+                            await this.switchPreviewSkill(this.previewSkills[0].name);
+                        }
                     } catch(e) {
                         this.previewSkills = [];
                     }
@@ -286,10 +293,22 @@
                         var resp = await fetch('/api/docs/preview?type=' + encodeURIComponent(this.selectedType) + '&doc=' + skillName);
                         var data = await resp.json();
                         skill.content = data.content || '';
+                        this.previewSkillContent = skill.content;
                     } catch(e) {
                         skill.content = '加载失败: ' + e.message;
+                        this.previewSkillContent = skill.content;
                     }
                     skill.loading = false;
+                },
+                async switchPreviewSkill(skillName) {
+                    this.activePreviewSkill = skillName;
+                    var skill = this.previewSkills.find(function(s) { return s.name === skillName; });
+                    if (skill && skill.content) {
+                        this.previewSkillContent = skill.content;
+                    } else {
+                        this.previewSkillContent = '';
+                        await this.loadSkillPreview(skillName);
+                    }
                 },
                 async pickFolder(target) {
                     console.log('pickFolder called:', target);
