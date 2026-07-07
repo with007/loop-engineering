@@ -337,7 +337,7 @@ def deploy_scripts(config):
 
 
 def deploy_verify_docs(config):
-    """从 Jinja2 模板渲染 VERIFY.md 和 TEST.md 到项目根目录."""
+    """从 Jinja2 模板渲染 TEST.md 到项目根目录."""
     print("--- 部署验证文档 ---")
     from jinja2 import Environment, FileSystemLoader
 
@@ -365,7 +365,7 @@ def deploy_verify_docs(config):
     }
 
     env = Environment(loader=FileSystemLoader(templates_dir))
-    for doc_name in ["VERIFY.md", "TEST.md"]:
+    for doc_name in ["TEST.md"]:
         template_file = doc_name + ".j2"
         template_path = os.path.join(templates_dir, template_file)
         if not os.path.exists(template_path):
@@ -606,6 +606,26 @@ def deploy_skills(config):
         else:
             print(f"  跳过 settings.local.json（内容相同）")
 
+    # Verifier skills — 从 templates/verify/<type>/skills/ 复制到 .claude/skills/
+    project_type = config.get("type", "generic")
+    verifier_src = os.path.join(templates_dir, "verify", project_type, "skills")
+    if os.path.isdir(verifier_src):
+        skills_dst = os.path.join(project_root, ".claude", "skills")
+        for name in os.listdir(verifier_src):
+            skill_src = os.path.join(verifier_src, name)
+            if not os.path.isdir(skill_src):
+                continue
+            src_file = os.path.join(skill_src, "SKILL.md")
+            if not os.path.exists(src_file):
+                continue
+            dst_file = os.path.join(skills_dst, name, "SKILL.md")
+            os.makedirs(os.path.dirname(dst_file), exist_ok=True)
+            if _file_changed(src_file, dst_file):
+                shutil.copy2(src_file, dst_file)
+                print(f"  [OK] verifier skill: {name}")
+            else:
+                print(f"  跳过 verifier skill: {name}（内容相同）")
+
 
 def _file_changed(src, dst):
     """检查目标文件是否需要更新."""
@@ -694,7 +714,6 @@ def _commit_setup_files(config):
         "Packages/manifest.json",
         ".gitignore",
         "TEST.md",
-        "VERIFY.md",
     ]
     for f in files_to_add:
         full = os.path.join(project_root, f)

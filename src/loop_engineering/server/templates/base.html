@@ -226,9 +226,7 @@
                 agentWorkspace: '',
                 selectedType: '',
                 verifySteps: [],
-                verifyTemplate: '',
                 testTemplate: '',
-                loadingVerify: false,
                 loadingTest: false,
                 mainPort: 8080,
                 agentPort: 9080,
@@ -252,20 +250,10 @@
                 },
                 async fetchTemplates(type) {
                     if (!type) {
-                        this.verifyTemplate = '';
                         this.testTemplate = '';
                         return;
                     }
-                    this.loadingVerify = true;
                     this.loadingTest = true;
-                    try {
-                        var vResp = await fetch('/api/docs/preview?type=' + encodeURIComponent(type) + '&doc=verify');
-                        var vData = await vResp.json();
-                        this.verifyTemplate = vData.content || '';
-                    } catch(e) {
-                        this.verifyTemplate = '加载失败: ' + e.message;
-                    }
-                    this.loadingVerify = false;
                     try {
                         var tResp = await fetch('/api/docs/preview?type=' + encodeURIComponent(type) + '&doc=test');
                         var tData = await tResp.json();
@@ -423,10 +411,11 @@
             };
         }
 
-        // Docs editor — VERIFY.md / TEST.md online editing
+        // Docs editor — verifier skills / TEST.md online editing
         function docsEditor() {
             return {
-                activeDoc: 'verify',
+                activeDoc: '',
+                skills: [],
                 content: '',
                 previewHtml: '',
                 saving: false,
@@ -435,7 +424,18 @@
                 timer: null,
 
                 async init() {
-                    await this.switchDoc('verify');
+                    // Fetch available skills, then load first one
+                    try {
+                        var url = window.Project.bind('/api/docs/skills');
+                        var resp = await fetch(url);
+                        var data = await resp.json();
+                        this.skills = data.skills || [];
+                    } catch(e) {
+                        this.error = '加载 skills 列表失败: ' + e.message;
+                    }
+                    // Load first skill, or test as fallback
+                    var first = this.skills.length > 0 ? this.skills[0].name : 'test';
+                    await this.switchDoc(first);
                 },
 
                 async switchDoc(doc) {
@@ -476,7 +476,7 @@
                             this.saved = true;
                         } else {
                             var data = await resp.json();
-                            this.error = data.detail || '保存失败';
+                            this.error = data.detail || data.error || '保存失败';
                         }
                     } catch(e) {
                         this.error = '保存失败: ' + e.message;

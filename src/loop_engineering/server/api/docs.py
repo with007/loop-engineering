@@ -1,4 +1,4 @@
-"""验证文档 API — VERIFY.md / TEST.md 读取和编辑."""
+"""验证文档 API — 读取和编辑 verifier skills 和 TEST.md."""
 
 import os
 from fastapi import APIRouter, Request, Query
@@ -8,59 +8,67 @@ from loop_engineering.path_utils import resolve_project_root
 router = APIRouter()
 
 
-def _verify_dir(project_root):
-    return project_root
+def _skills_dir(project_root):
+    """verifier skills 目录."""
+    return os.path.join(project_root, ".claude", "skills")
 
 
-def _template_dir(preset_type):
-    """获取模板目录路径."""
-    import loop_engineering
-    pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(loop_engineering.__file__)))
-    return os.path.join(os.path.dirname(pkg_dir), "templates", "verify", preset_type)
+@router.get("/skills")
+async def list_skills(request: Request, project: str = Query(None)):
+    """列出可用的 verifier skills."""
+    pr = resolve_project_root(project=project, request=request)
+    sd = _skills_dir(pr)
+
+    skills = []
+    if os.path.isdir(sd):
+        for name in sorted(os.listdir(sd)):
+            if not name.startswith("verifier-"):
+                continue
+            skill_md = os.path.join(sd, name, "SKILL.md")
+            skills.append({
+                "name": name,
+                "label": name.replace("verifier-", ""),
+                "exists": os.path.exists(skill_md),
+            })
+
+    return {"skills": skills}
 
 
 @router.get("/preview")
-async def preview_template(request: Request, type: str = Query(...), doc: str = Query(...)):
-    """返回模板文件原始 markdown 内容（setup 页面预览用）.
-
-    Args:
-        type: preset 名称（如 python-server, unity-tolua, generic）
-        doc: verify 或 test
-    """
-    if doc not in ("verify", "test"):
-        return JSONResponse({"error": "doc 必须是 verify 或 test"}, status_code=400)
-
-    tmpl_dir = _template_dir(type)
+async def preview_template(request: Request, type: str = Query(...), doc: str = Query("test")):
+    """返回 TEST.md.j2 模板内容（setup 页面预览用）."""
+    import loop_engineering
+    pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(loop_engineering.__file__)))
+    tmpl_dir = os.path.join(os.path.dirname(pkg_dir), "templates", "verify", type)
     if not os.path.isdir(tmpl_dir):
-        # fallback to generic
-        tmpl_dir = _template_dir("generic")
+        tmpl_dir = os.path.join(os.path.dirname(pkg_dir), "templates", "verify", "generic")
 
-    # 查找模板文件: VERIFY.md.j2 或 TEST.md.j2
-    filename = "VERIFY.md.j2" if doc == "verify" else "TEST.md.j2"
-    filepath = os.path.join(tmpl_dir, filename)
+    filepath = os.path.join(tmpl_dir, "TEST.md.j2")
     if not os.path.exists(filepath):
-        return JSONResponse({"error": f"模板不存在: {filename}（preset: {type}）"}, status_code=404)
+        return JSONResponse({"error": f"模板不存在: TEST.md.j2"}, status_code=404)
 
     with open(filepath, "r", encoding="utf-8") as f:
         content = f.read()
 
-    return {"content": content, "type": type, "doc": doc}
+    return {"content": content, "type": type, "doc": "test"}
 
 
 @router.get("/{doc}")
 async def get_doc(request: Request, doc: str, project: str = Query(None)):
-    """读取已部署的 VERIFY.md 或 TEST.md.
+    """读取 verifier skill 或 TEST.md.
 
     Args:
-        doc: verify 或 test
+        doc: verifier skill 名 (如 verifier-web) 或 "test"
         project: 项目根目录（query param）
     """
-    if doc not in ("verify", "test"):
-        return JSONResponse({"error": "doc 必须是 verify 或 test"}, status_code=400)
-
     pr = resolve_project_root(project=project, request=request)
-    filename = "VERIFY.md" if doc == "verify" else "TEST.md"
-    filepath = os.path.join(_verify_dir(pr), filename)
+
+    if doc == "test":
+        filepath = os.path.join(pr, "TEST.md")
+    elif doc.startswith("verifier-"):
+        filepath = os.path.join(_skills_dir(pr), doc, "SKILL.md")
+    else:
+        return JSONResponse({"error": "doc 必须是 verifier skill 名或 test"}, status_code=400)
 
     if not os.path.exists(filepath):
         return JSONResponse({"content": "", "exists": False})
@@ -73,25 +81,25 @@ async def get_doc(request: Request, doc: str, project: str = Query(None)):
 
 @router.put("/{doc}")
 async def save_doc(request: Request, doc: str, project: str = Query(None)):
-    """保存编辑后的 VERIFY.md 或 TEST.md.
+    """保存 verifier skill 或 TEST.md.
 
     Args:
-        doc: verify 或 test
+        doc: verifier skill 名 (如 verifier-web) 或 "test"
         project: 项目根目录（query param）
     """
-    if doc not in ("verify", "test"):
-        return JSONResponse({"error": "doc 必须是 verify 或 test"}, status_code=400)
-
     pr = resolve_project_root(project=project, request=request)
 
     body = await request.json()
     content = body.get("content", "")
 
-    target_dir = _verify_dir(pr)
-    os.makedirs(target_dir, exist_ok=True)
+    if doc == "test":
+        filepath = os.path.join(pr, "TEST.md")
+    elif doc.startswith("verifier-"):
+        filepath = os.path.join(_skills_dir(pr), doc, "SKILL.md")
+    else:
+        return JSONResponse({"error": "doc 必须是 verifier skill 名或 test"}, status_code=400)
 
-    filename = "VERIFY.md" if doc == "verify" else "TEST.md"
-    filepath = os.path.join(target_dir, filename)
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(content)

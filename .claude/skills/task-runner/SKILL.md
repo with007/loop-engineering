@@ -145,7 +145,6 @@ python .claude/scripts/task_pick.py $whoami --project-root D:/work_pvp/loop-engi
 - `openSpec=true` → 任务关联 `openspec/changes/<taskID>/`，implementer 按 OpenSpec apply 流程处理
 - 无匹配则 `NONE` → `ExitWorktree(action="keep")` → 停止。
 
-
 ### Step 2: Fork 分支 + 标记进行中
 
 ```bash
@@ -350,20 +349,12 @@ pwd  # 必须输出 D:/work_pvp-agent/loop-engineering
 <implementer 输出的完整报告 — 包含实现思路、实现过程、变更概要、向后兼容性>
 
 ## 你的工作（只能验证，不能改代码）
-**禁止 commit、禁止修改任何文件。** 验证 = 读代码 + 跑测试 + 检查 diff，不做任何写操作。
+**禁止 commit、禁止修改任何文件。**
 
-1. **读 VERIFY.md 并按其中说明执行验证**（如不存在则跳过）
-2. 读 openspec/changes/<taskID>/proposal.md 确认目标
-3. 读 openspec/changes/<taskID>/tasks.md 确认全部子任务 [x]
-4. 读完整 diff 和 implementer 报告，理解变更全貌
-5. 确认变更范围正确、无多余文件
-6. 识别已知局限：哪些场景未覆盖、哪些边界条件未测试
-
-
-**如果 VERIFY.md 不存在，使用以下默认流程**:
-- 设计验证方案：列出测试点、验证方法、覆盖场景
-- 按方案逐项验证：模板变更则渲染检查关键字段；代码变更则确认逻辑正确
-
+使用 `/loop-verify` 执行验证：
+1. 读完整 diff 和 implementer 报告，理解变更全貌
+2. 按 `/loop-verify` 的方法论执行验证：表面识别 → 驱动 → 探测 → 报告
+3. 项目中的 `verifier-*` skills 会自动被 `/loop-verify` 发现和使用
 
 ## 输出
 
@@ -414,18 +405,12 @@ pwd  # 必须输出 D:/work_pvp-agent/loop-engineering
 <implementer 输出的完整报告 — 包含实现思路、实现过程、变更概要、向后兼容性>
 
 ## 你的工作（只能验证，不能改代码）
-**禁止 commit、禁止修改任何文件。** 验证 = 读代码 + 跑测试 + 检查 diff，不做任何写操作。
+**禁止 commit、禁止修改任何文件。**
 
-1. **读 VERIFY.md 并按其中说明执行验证**（如不存在则跳过）
-2. 读完整 diff 和 implementer 报告，理解变更全貌
-3. 确认变更范围正确、无多余文件
-4. 识别已知局限：哪些场景未覆盖、哪些边界条件未测试
-
-
-**如果 VERIFY.md 不存在，使用以下默认流程**:
-- 设计验证方案：列出测试点、验证方法、覆盖场景
-- 按方案逐项验证
-
+使用 `/loop-verify` 执行验证：
+1. 读完整 diff 和 implementer 报告，理解变更全貌
+2. 按 `/loop-verify` 的方法论执行验证：表面识别 → 驱动 → 探测 → 报告
+3. 项目中的 `verifier-*` skills 会自动被 `/loop-verify` 发现和使用
 
 ## 输出
 

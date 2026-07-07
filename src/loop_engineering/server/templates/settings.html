@@ -71,7 +71,7 @@
     <div class="card" style="margin-bottom: 20px;">
         <h3>模板与管理文件</h3>
         <p style="color: var(--muted); font-size: 13px; margin-bottom: 12px;">
-            重新部署 templates/ 下的所有模板到 .claude/：Skills、Commands、Settings、Scripts、VERIFY.md/TEST.md、MCP 配置。<br>
+            重新部署 templates/ 下的所有模板到 .claude/：Skills、Commands、Settings、Scripts、verifier skills、TEST.md、MCP 配置。<br>
             <strong>会覆盖 .claude/ 下的部署副本。</strong>修改请编辑 <code>templates/</code> 下的模板源。
         </p>
         <div id="sync-msg"></div>
@@ -89,18 +89,20 @@
     <div class="card" style="margin-bottom: 20px;" x-data="docsEditor()">
         <h3>验证文档</h3>
         <p style="color: var(--muted); font-size: 13px; margin-bottom: 12px;">
-            编辑项目根目录下的 VERIFY.md 和 TEST.md。
+            编辑 verifier skills 和 TEST.md。
             <strong>重新运行 <code>loop setup</code> 或点击上方"重新部署"会覆盖修改。</strong>
         </p>
 
-        <!-- Tab switcher -->
-        <div style="display: flex; gap: 4px; margin-bottom: 12px;">
-            <button :class="activeDoc === 'verify' ? 'btn btn-primary' : 'btn btn-sm'"
-                    style="border-radius: 6px;"
-                    @click="switchDoc('verify')"
-                    :style="activeDoc === 'verify' ? '' : 'background: var(--surface2); color: var(--text); border: 1px solid var(--border);'">
-                VERIFY.md（验证子代理）
-            </button>
+        <!-- Skill switcher -->
+        <div style="display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap; align-items: center;">
+            <template x-for="skill in skills" :key="skill.name">
+                <button :class="activeDoc === skill.name ? 'btn btn-primary' : 'btn btn-sm'"
+                        style="border-radius: 6px;"
+                        @click="switchDoc(skill.name)"
+                        :style="activeDoc === skill.name ? '' : 'background: var(--surface2); color: var(--text); border: 1px solid var(--border);'">
+                    <span x-text="skill.label"></span>
+                </button>
+            </template>
             <button :class="activeDoc === 'test' ? 'btn btn-primary' : 'btn btn-sm'"
                     style="border-radius: 6px;"
                     @click="switchDoc('test')"

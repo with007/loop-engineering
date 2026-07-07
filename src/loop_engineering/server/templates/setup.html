@@ -87,18 +87,6 @@
 
         <!-- 模板预览 -->
         <div x-show="selectedType" style="margin-top: 16px;">
-            <!-- VERIFY.md 预览 -->
-            <details style="margin-bottom: 12px;">
-                <summary style="cursor: pointer; font-weight: 600; padding: 8px 0; color: var(--text);">
-                    验证文档预览 (VERIFY.md)
-                    <span x-show="loadingVerify" style="color: var(--dim); font-weight: 400; font-size: 12px;">加载中...</span>
-                </summary>
-                <div x-show="loadingVerify" style="color: var(--dim); font-size: 13px; padding: 12px 0;">加载模板...</div>
-                <div x-show="!loadingVerify && verifyTemplate" class="report-md" x-html="marked.parse(verifyTemplate)"
-                     style="max-height: 400px; overflow-y: auto; border: 1px solid var(--border); border-radius: 7px; padding: 16px; background: var(--surface2);"></div>
-                <div x-show="!loadingVerify && !verifyTemplate" style="color: var(--dim); font-size: 13px; padding: 12px 0;">无模板内容</div>
-            </details>
-
             <!-- TEST.md 预览 -->
             <details style="margin-bottom: 12px;">
                 <summary style="cursor: pointer; font-weight: 600; padding: 8px 0; color: var(--text);">
