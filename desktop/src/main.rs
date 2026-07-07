@@ -236,9 +236,15 @@ impl GlutinWindowContext {
     }
 }
 
+enum WindowType {
+    Settings,
+    UpdateReady { version: String },
+}
+
 // ── WindowState ───────────────────────────────────────────────────────────
 
 struct WindowState {
+    window_type: WindowType,
     gl_window: GlutinWindowContext,
     gl: Arc<glow::Context>,
     egui_glow: egui_glow::EguiGlow,
@@ -256,6 +262,7 @@ struct WindowState {
 impl WindowState {
     fn new(
         event_loop: &ActiveEventLoop,
+        window_type: WindowType,
         port: u16,
         autostart: bool,
         auto_open_browser: bool,
@@ -303,6 +310,7 @@ impl WindowState {
 
         log!("WindowState: created");
         Self {
+            window_type,
             gl_window,
             gl,
             egui_glow,
@@ -332,6 +340,12 @@ impl WindowState {
     fn render(&mut self) -> SettingsAction {
         let mut action = SettingsAction::None;
 
+        let is_update_dialog = matches!(self.window_type, WindowType::UpdateReady { .. });
+        let update_version = match &self.window_type {
+            WindowType::UpdateReady { version } => Some(version.clone()),
+            _ => None,
+        };
+
         // Extract fields before the closure to avoid borrow-of-self conflicts
         let port_str = &mut self.port_str;
         let autostart_val = &mut self.autostart;
@@ -342,12 +356,40 @@ impl WindowState {
 
         self.egui_glow.run(self.gl_window.window(), |egui_ctx| {
             if egui_ctx.input(|i| i.viewport().close_requested()) {
-                log!("settings: close_requested by user");
                 action = SettingsAction::Close;
                 return;
             }
 
             egui::CentralPanel::default().show(egui_ctx, |ui| {
+                // ── Update-ready dialog (compact) ──
+                if is_update_dialog {
+                    if let Some(ref ver) = update_version {
+                        ui.vertical_centered(|ui| {
+                            ui.heading("更新已就绪");
+                            ui.add_space(8.0);
+                            ui.label(format!("Loop Dashboard v{} 已下载完成。", ver));
+                            ui.add_space(8.0);
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .add(egui::Button::new(
+                                        egui::RichText::new("立即重启安装")
+                                            .color(egui::Color32::WHITE),
+                                    )
+                                    .fill(egui::Color32::from_rgb(0, 120, 30)))
+                                    .clicked()
+                                {
+                                    action = SettingsAction::ApplyUpdate;
+                                }
+                                if ui.button("稍后提醒").clicked() {
+                                    action = SettingsAction::DeferUpdate;
+                                }
+                            });
+                        });
+                    }
+                    return;
+                }
+
+                // ── Settings window (full) ──
                 ui.vertical_centered(|ui| {
                     ui.heading("Loop Dashboard 设置");
                     ui.label(
@@ -482,7 +524,7 @@ struct App {
     tray_icon: Option<tray_icon::TrayIcon>,
     menu_items: Option<tray::TrayMenuItems>,
     menu_ids: Option<tray::TrayMenuIds>,
-    settings_window: Option<WindowState>,
+    windows: Vec<WindowState>,
     state: Arc<Mutex<AppState>>,
     server: Arc<Mutex<Server>>,
     python_exe: Arc<String>,
@@ -536,8 +578,8 @@ impl ApplicationHandler<UserEvent> for App {
             log!("heartbeat: poll mode active");
         }
 
-        // Keep rendering while settings window is open
-        if let Some(ref ws) = self.settings_window {
+        // Keep rendering while any window is open
+        for ws in &self.windows {
             ws.gl_window.window().request_redraw();
         }
 
@@ -605,33 +647,28 @@ impl ApplicationHandler<UserEvent> for App {
                 self.update_pending_version = Some(version.clone());
                 self.update_progress = Some(100);
                 self.update_speed = None;
-                if let Some(ref mut ws) = self.settings_window {
+                // Update settings window if open
+                if let Some(ws) = self.settings_window_mut() {
                     ws.set_update_progress(Some(100));
                     ws.set_update_speed(None);
                     ws.set_update_status(Some(format!("v{} 已就绪", version)));
                     ws.set_update_pending_version(Some(version.clone()));
                     ws.render();
-                } else {
-                    // Auto-open settings so user sees the restart/later buttons
-                    self.open_settings_window(event_loop);
-                    if let Some(ref mut ws) = self.settings_window {
-                        ws.set_update_pending_version(Some(version.clone()));
-                        ws.set_update_status(Some(format!("v{} 已就绪", version)));
-                        ws.set_update_progress(Some(100));
-                        ws.set_update_speed(None);
-                    }
                 }
+                // Open a separate update-ready dialog window
+                self.open_update_dialog(event_loop, &version);
                 if let Some(ref icon) = self.tray_icon {
                     let _ = icon.set_tooltip(Some(&format!("v{} 已就绪，重启以应用", version)));
                 }
             }
             UserEvent::UpdateProgress(pct, speed) => {
                 self.update_progress = Some(pct);
-                self.update_speed = if speed > 0.0 { Some(speed) } else { self.update_speed };
-                if let Some(ref mut ws) = self.settings_window {
+                let speed_val = if speed > 0.0 { Some(speed) } else { self.update_speed };
+                self.update_speed = speed_val;
+                if let Some(ws) = self.settings_window_mut() {
                     ws.set_update_progress(Some(pct));
-                    ws.set_update_speed(self.update_speed);
-                    let speed_str = format_speed(self.update_speed);
+                    ws.set_update_speed(speed_val);
+                    let speed_str = format_speed(speed_val);
                     if speed_str.is_empty() {
                         ws.set_update_status(Some("下载中...".into()));
                     } else {
@@ -655,7 +692,7 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::UpdateStatus(msg) => {
                 self.update_status = Some(msg.clone());
                 self.update_progress = None;
-                if let Some(ref mut ws) = self.settings_window {
+                if let Some(ws) = self.settings_window_mut() {
                     ws.set_update_status(Some(msg.clone()));
                     ws.set_update_progress(None);
                 }
@@ -672,12 +709,8 @@ impl ApplicationHandler<UserEvent> for App {
         window_id: WindowId,
         event: WindowEvent,
     ) {
-        // Only process events for our settings window
-        let settings_window_id = match &self.settings_window {
-            Some(ref ws) => ws.gl_window.window().id(),
-            None => return,
-        };
-        if window_id != settings_window_id {
+        // Find which window this event belongs to
+        if self.find_window(window_id).is_none() {
             return;
         }
 
@@ -690,7 +723,7 @@ impl ApplicationHandler<UserEvent> for App {
                 // Handled below — we render in the event processing
             }
             WindowEvent::Resized(physical_size) => {
-                if let Some(ref ws) = self.settings_window {
+                if let Some(ref ws) = self.find_window(window_id) {
                     ws.gl_window.resize(physical_size);
                 }
             }
@@ -698,7 +731,7 @@ impl ApplicationHandler<UserEvent> for App {
         }
 
         // Forward event to egui for input handling
-        if let Some(ref mut ws) = self.settings_window {
+        if let Some(ref mut ws) = self.find_window_mut(window_id) {
             let event_response = ws
                 .egui_glow
                 .on_window_event(ws.gl_window.window(), &event);
@@ -710,9 +743,15 @@ impl ApplicationHandler<UserEvent> for App {
             // Render on RedrawRequested or after input events that need repaint
             if matches!(event, WindowEvent::RedrawRequested) || event_response.repaint {
                 let action = ws.render();
+                let is_settings = matches!(ws.window_type, WindowType::Settings);
                 match action {
                     SettingsAction::Close => {
-                        self.hide_settings_window();
+                        if is_settings {
+                            self.hide_settings_window();
+                        } else {
+                            // Close non-settings windows (e.g. update dialog)
+                            self.close_window(window_id);
+                        }
                     }
                     SettingsAction::Save { port, autostart, auto_open_browser } => {
                         log!(
@@ -745,7 +784,7 @@ impl ApplicationHandler<UserEvent> for App {
                             log!("settings: check_updates clicked");
                             self.update_status = Some("Checking for updates...".into());
                             self.update_progress = None;
-                            if let Some(ref mut ws) = self.settings_window {
+                            if let Some(ws) = self.settings_window_mut() {
                                 ws.set_update_status(Some("Checking for updates...".into()));
                                 ws.set_update_progress(None);
                             }
@@ -762,7 +801,15 @@ impl ApplicationHandler<UserEvent> for App {
                     SettingsAction::DeferUpdate => {
                         log!("settings: user clicked 'later' for update, deferring");
                         self.update_pending_version = None;
-                        if let Some(ref mut ws) = self.settings_window {
+                        // Close all update dialogs
+                        let update_ids: Vec<WindowId> = self.windows.iter()
+                            .filter(|w| matches!(w.window_type, WindowType::UpdateReady { .. }))
+                            .map(|w| w.gl_window.window().id())
+                            .collect();
+                        for id in update_ids {
+                            self.close_window(id);
+                        }
+                        if let Some(ws) = self.settings_window_mut() {
                             ws.set_update_pending_version(None);
                             ws.set_update_status(Some("更新已推迟，重启后应用".into()));
                             ws.set_update_progress(None);
@@ -793,7 +840,7 @@ impl ApplicationHandler<UserEvent> for App {
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         log!("exiting: cleaning up");
-        if let Some(ref mut ws) = self.settings_window {
+        for ws in &mut self.windows {
             ws.egui_glow.destroy();
         }
     }
@@ -802,6 +849,23 @@ impl ApplicationHandler<UserEvent> for App {
 // ── App methods ───────────────────────────────────────────────────────────
 
 impl App {
+    // ── Window helpers ────────────────────────────────────────────────────
+
+    fn settings_window(&self) -> Option<&WindowState> {
+        self.windows.iter().find(|w| matches!(w.window_type, WindowType::Settings))
+    }
+    fn settings_window_mut(&mut self) -> Option<&mut WindowState> {
+        self.windows.iter_mut().find(|w| matches!(w.window_type, WindowType::Settings))
+    }
+    fn find_window_mut(&mut self, id: WindowId) -> Option<&mut WindowState> {
+        self.windows.iter_mut().find(|w| w.gl_window.window().id() == id)
+    }
+    fn find_window(&self, id: WindowId) -> Option<&WindowState> {
+        self.windows.iter().find(|w| w.gl_window.window().id() == id)
+    }
+
+    // ── open / hide ───────────────────────────────────────────────────────
+
     fn open_settings_window(&mut self, event_loop: &ActiveEventLoop) {
         log!("open_settings_window: creating new window");
         let (port, autostart, auto_open_browser) = {
@@ -812,7 +876,7 @@ impl App {
         let progress = self.update_progress;
         let speed = self.update_speed;
         let pending = self.update_pending_version.clone();
-        let mut ws = WindowState::new(event_loop, port, autostart, auto_open_browser, status, progress, speed, pending);
+        let mut ws = WindowState::new(event_loop, WindowType::Settings, port, autostart, auto_open_browser, status, progress, speed, pending);
 
         // Render first frame BEFORE showing, so user doesn't see white flash
         log!("open_settings_window: rendering first frame...");
@@ -821,16 +885,48 @@ impl App {
         ws.gl_window.window().request_redraw();
         log!("open_settings_window: window visible, redraw requested");
 
-        self.settings_window = Some(ws);
+        self.windows.push(ws);
+    }
+
+    fn open_update_dialog(&mut self, event_loop: &ActiveEventLoop, version: &str) {
+        log!("open_update_dialog: creating update-ready window for v{}", version);
+        let (port, autostart, auto_open_browser) = {
+            let s = self.state.lock().unwrap();
+            (s.port, s.autostart, s.auto_open_browser)
+        };
+        let mut ws = WindowState::new(
+            event_loop,
+            WindowType::UpdateReady { version: version.to_string() },
+            port, autostart, auto_open_browser,
+            Some(format!("v{} 已就绪", version)),
+            Some(100),
+            None,
+            Some(version.to_string()),
+        );
+        ws.render();
+        ws.gl_window.window().set_visible(true);
+        ws.gl_window.window().request_redraw();
+        log!("open_update_dialog: window visible");
+        self.windows.push(ws);
     }
 
     fn hide_settings_window(&mut self) {
-        if let Some(mut ws) = self.settings_window.take() {
+        if let Some(pos) = self.windows.iter().position(|w| matches!(w.window_type, WindowType::Settings)) {
+            let mut ws = self.windows.remove(pos);
             ws.gl_window.window().set_visible(false);
             ws.egui_glow.destroy();
             log!("hide_settings_window: window hidden and GL resources released");
         }
         // WindowState dropped here → GlutinWindowContext (window, GL context, surface) freed
+    }
+
+    fn close_window(&mut self, id: WindowId) {
+        if let Some(pos) = self.windows.iter().position(|w| w.gl_window.window().id() == id) {
+            let mut ws = self.windows.remove(pos);
+            ws.gl_window.window().set_visible(false);
+            ws.egui_glow.destroy();
+            log!("close_window: window {:?} closed", id);
+        }
     }
 
     fn apply_pending_update(&self) {
@@ -1072,7 +1168,7 @@ fn main() {
         tray_icon: None,
         menu_items: None,
         menu_ids: None,
-        settings_window: None,
+        windows: Vec::new(),
         state,
         server,
         python_exe,

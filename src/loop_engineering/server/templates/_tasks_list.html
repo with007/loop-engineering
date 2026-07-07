@@ -48,7 +48,7 @@ if (!window._tasksFilterBound) {
         // Read current state from #tasks-items hx-get URL (always up-to-date)
         var items = document.getElementById('tasks-items');
         if (!items) return;
-        var hxUrl = items.getAttribute('hx-get') || '';
+        var hxUrl = items.getAttribute('data-hx-url') || '';
         var params = new URLSearchParams(hxUrl.split('?')[1] || '');
         var currentOrder = params.get('order') || 'desc';
         var currentStatus = params.get('status') || 'pending,in_progress';
@@ -88,7 +88,7 @@ if (!window._tasksFilterBound) {
         filterTimer = setTimeout(function() {
             var items = document.getElementById('tasks-items');
             if (!items) return;
-            var hxUrl = items.getAttribute('hx-get') || '';
+            var hxUrl = items.getAttribute('data-hx-url') || '';
             var params = new URLSearchParams(hxUrl.split('?')[1] || '');
             var currentOrder = params.get('order') || 'desc';
             var currentStatus = params.get('status') || 'pending,in_progress';
