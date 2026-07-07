@@ -87,6 +87,24 @@
 
         <!-- 模板预览 -->
         <div x-show="selectedType" style="margin-top: 16px;">
+            <!-- Verifier Skills 预览 -->
+            <details style="margin-bottom: 12px;" open>
+                <summary style="cursor: pointer; font-weight: 600; padding: 8px 0; color: var(--text);">
+                    验证技能预览 (Verifier Skills)
+                    <span x-show="loadingSkills" style="color: var(--dim); font-weight: 400; font-size: 12px;">加载中...</span>
+                </summary>
+                <div x-show="loadingSkills" style="color: var(--dim); font-size: 13px; padding: 12px 0;">加载模板列表...</div>
+                <div x-show="!loadingSkills && previewSkills.length === 0" style="color: var(--dim); font-size: 13px; padding: 12px 0;">该类型无 verifier skill 模板</div>
+                <template x-for="skill in previewSkills" :key="skill.name">
+                    <details style="margin-bottom: 6px; margin-left: 12px;">
+                        <summary @click="loadSkillPreview(skill.name)" style="cursor: pointer; padding: 4px 0; color: var(--pass); font-family: monospace; font-size: 13px;" x-text="skill.name"></summary>
+                        <div x-show="skill.loading" style="color: var(--dim); font-size: 12px; padding: 8px 0;">加载中...</div>
+                        <div x-show="!skill.loading && skill.content" class="report-md" x-html="marked.parse(skill.content || '*（空）*')"
+                             style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: 7px; padding: 12px; background: var(--surface2); margin-top: 4px;"></div>
+                    </details>
+                </template>
+            </details>
+
             <!-- TEST.md 预览 -->
             <details style="margin-bottom: 12px;">
                 <summary style="cursor: pointer; font-weight: 600; padding: 8px 0; color: var(--text);">

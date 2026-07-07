@@ -36,12 +36,21 @@ async def list_skills(request: Request, project: str = Query(None)):
 
 @router.get("/preview")
 async def preview_template(request: Request, type: str = Query(...), doc: str = Query("test")):
-    """返回 TEST.md.j2 模板内容（setup 页面预览用）."""
+    """返回 TEST.md.j2 或 verifier skill 模板内容（setup 页面预览用）."""
     import loop_engineering
     pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(loop_engineering.__file__)))
     tmpl_dir = os.path.join(os.path.dirname(pkg_dir), "templates", "verify", type)
     if not os.path.isdir(tmpl_dir):
         tmpl_dir = os.path.join(os.path.dirname(pkg_dir), "templates", "verify", "generic")
+
+    # verifier skill preview: /api/docs/preview?type=...&doc=verifier-web
+    if doc.startswith("verifier-"):
+        filepath = os.path.join(tmpl_dir, "skills", doc, "SKILL.md")
+        if not os.path.exists(filepath):
+            return JSONResponse({"error": f"模板不存在: {doc}"}, status_code=404)
+        with open(filepath, "r", encoding="utf-8") as f:
+            content = f.read()
+        return {"content": content, "type": type, "doc": doc}
 
     filepath = os.path.join(tmpl_dir, "TEST.md.j2")
     if not os.path.exists(filepath):
@@ -51,6 +60,30 @@ async def preview_template(request: Request, type: str = Query(...), doc: str = 
         content = f.read()
 
     return {"content": content, "type": type, "doc": "test"}
+
+
+@router.get("/skills/preview")
+async def preview_skills(request: Request, type: str = Query(...)):
+    """列出某类型的 verifier skill 模板."""
+    import loop_engineering
+    pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(loop_engineering.__file__)))
+    tmpl_dir = os.path.join(os.path.dirname(pkg_dir), "templates", "verify", type, "skills")
+
+    skills = []
+    if os.path.isdir(tmpl_dir):
+        for name in sorted(os.listdir(tmpl_dir)):
+            if os.path.isdir(os.path.join(tmpl_dir, name)):
+                skills.append({"name": name, "label": name.replace("verifier-", "")})
+
+    if not skills:
+        # fallback to generic
+        tmpl_dir = os.path.join(os.path.dirname(pkg_dir), "templates", "verify", "generic", "skills")
+        if os.path.isdir(tmpl_dir):
+            for name in sorted(os.listdir(tmpl_dir)):
+                if os.path.isdir(os.path.join(tmpl_dir, name)):
+                    skills.append({"name": name, "label": name.replace("verifier-", "")})
+
+    return {"skills": skills}
 
 
 @router.get("/{doc}")

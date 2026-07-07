@@ -227,7 +227,9 @@
                 selectedType: '',
                 verifySteps: [],
                 testTemplate: '',
+                previewSkills: [],
                 loadingTest: false,
+                loadingSkills: false,
                 mainPort: 8080,
                 agentPort: 9080,
                 get isUnity() { return this.selectedType.startsWith('unity'); },
@@ -251,9 +253,11 @@
                 async fetchTemplates(type) {
                     if (!type) {
                         this.testTemplate = '';
+                        this.previewSkills = [];
                         return;
                     }
                     this.loadingTest = true;
+                    this.loadingSkills = true;
                     try {
                         var tResp = await fetch('/api/docs/preview?type=' + encodeURIComponent(type) + '&doc=test');
                         var tData = await tResp.json();
@@ -262,6 +266,30 @@
                         this.testTemplate = '加载失败: ' + e.message;
                     }
                     this.loadingTest = false;
+                    // Fetch skills preview list
+                    try {
+                        var sResp = await fetch('/api/docs/skills/preview?type=' + encodeURIComponent(type));
+                        var sData = await sResp.json();
+                        this.previewSkills = (sData.skills || []).map(function(s) {
+                            return { name: s.name, label: s.label, content: '', loading: false };
+                        });
+                    } catch(e) {
+                        this.previewSkills = [];
+                    }
+                    this.loadingSkills = false;
+                },
+                async loadSkillPreview(skillName) {
+                    var skill = this.previewSkills.find(function(s) { return s.name === skillName; });
+                    if (!skill || skill.content || skill.loading) return;
+                    skill.loading = true;
+                    try {
+                        var resp = await fetch('/api/docs/preview?type=' + encodeURIComponent(this.selectedType) + '&doc=' + skillName);
+                        var data = await resp.json();
+                        skill.content = data.content || '';
+                    } catch(e) {
+                        skill.content = '加载失败: ' + e.message;
+                    }
+                    skill.loading = false;
                 },
                 async pickFolder(target) {
                     console.log('pickFolder called:', target);
