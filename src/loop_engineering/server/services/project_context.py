@@ -5,6 +5,7 @@ import subprocess
 from loop_engineering.registry import list_projects, register_project
 from loop_engineering.config import is_project_dir, read_config
 from loop_engineering.path_utils import get_default_branch
+from loop_engineering.runlog import get_pass_rate
 from .task_parser import parse_tasks
 
 
