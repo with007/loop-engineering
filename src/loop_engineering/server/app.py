@@ -2,6 +2,7 @@
 
 import os
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(title="Loop Engineering Dashboard")
 
@@ -24,6 +25,10 @@ app.include_router(pages.router)
 from .routers import fragments  # noqa: E402
 app.include_router(fragments.router)
 
+
+# ── Static files ──
+_static_dir = os.path.join(os.path.dirname(__file__), "static")
+app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 # ── Startup ──
 
