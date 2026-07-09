@@ -6,7 +6,7 @@ import subprocess
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from loop_engineering.task_id import parse_task_id, extract_task_id_from_branch, TaskLine, generate_task_id, FEEDBACK_LINE_RE, write_feedback_to_task
-from loop_engineering.path_utils import resolve_project_root
+from loop_engineering.path_utils import resolve_project_root, get_default_branch
 
 router = APIRouter()
 
@@ -118,7 +118,7 @@ def delete_task(task_id: str, project: str = Query(None)):
             b = line.strip().lstrip("*+ ")
             if extract_task_id_from_branch(b) == task_id:
                 # detach 当前 worktree 再删分支
-                subprocess.run(f"git checkout --detach master 2>/dev/null", shell=True, cwd=pr, timeout=5)
+                subprocess.run(f"git checkout --detach {get_default_branch(pr)} 2>/dev/null", shell=True, cwd=pr, timeout=5)
                 subprocess.run(f"git branch -D {b}", shell=True, capture_output=True, text=True,
                                encoding='utf-8', errors='replace', cwd=pr, timeout=5)
                 branch_deleted.append(b)

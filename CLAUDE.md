@@ -239,3 +239,17 @@ git push origin v0.1.7
 - **自动递增**：版本号填 `auto` 自动 `0.1.0 → 0.1.1`
 - **VSCode**：`Ctrl+Shift+P` → `🚀 Release + Publish` → 输版本号
 - **CI 触发**：push tag `v*` 或 GitHub Actions 网页手动触发
+
+<!-- loop:rule:python-import-boundary-start -->
+## 9. Python 模块边界
+
+- **`src/` 下的包代码**：直接 `from loop_engineering.xxx import yyy`
+- **`.claude/scripts/` 下的独立脚本**：零依赖，纯 stdlib，不 import loop_engineering
+- **SKILL.md 或 bash 命令**：通过 `python .claude/scripts/xxx.py` 调用独立脚本，不 import
+<!-- loop:rule:python-import-boundary-end -->
+
+<!-- loop:rule:venv-activation-start -->
+## Python 虚拟环境
+
+运行或测试 Python 代码前，确保在项目根目录的 `.venv` 虚拟环境中操作。
+<!-- loop:rule:venv-activation-end -->

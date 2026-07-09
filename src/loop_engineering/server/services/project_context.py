@@ -4,7 +4,7 @@ import os
 import subprocess
 from loop_engineering.registry import list_projects, register_project
 from loop_engineering.config import is_project_dir, read_config
-from loop_engineering.runlog import get_pass_rate
+from loop_engineering.path_utils import get_default_branch
 from .task_parser import parse_tasks
 
 
@@ -85,13 +85,13 @@ def build_projects_context(current_pr, agent_filter=""):
                 # Check merge status
                 if ref.startswith("origin/"):
                     r2 = subprocess.run(
-                        f"git merge-base --is-ancestor {ref} origin/master",
+                        f"git merge-base --is-ancestor {ref} origin/{get_default_branch(pr)}",
                         shell=True, capture_output=True, cwd=pr, timeout=5
                     )
                     branches_list.append({"name": b, "merged": r2.returncode == 0})
                 else:
                     r_merged = subprocess.run(
-                        f"git branch --merged master --list {b}", shell=True, capture_output=True,
+                        f"git branch --merged {get_default_branch(pr)} --list {b}", shell=True, capture_output=True,
                         text=True, encoding='utf-8', errors='replace', cwd=pr, timeout=5
                     )
                     branches_list.append({"name": b, "merged": r_merged.stdout.strip() != ""})

@@ -455,12 +455,91 @@ def sync_to_agent(config):
     # 同步 git 内容（skills/commands 等已在主 worktree 提交）
     print("  同步 git 内容...")
     try:
-        rc, _, _ = _run("git checkout --detach origin/master", cwd=agent_dir)
+        default_ref = get_default_branch(agent_dir)
+        rc, _, _ = _run(f"git checkout --detach {default_ref}", cwd=agent_dir)
         if rc != 0:
-            _run("git checkout --detach master", cwd=agent_dir)
-        print("  [OK] Agent worktree 已同步到最新")
+            print(f"  [FAIL] git checkout --detach {default_ref} 失败")
+        else:
+            print(f"  [OK] Agent worktree 已同步到 {default_ref}")
     except Exception as e:
         print(f"  [OFFLINE] git 同步失败: {str(e)[:120]}")
+
+
+def ensure_claude_rules(config):
+    """按项目类型补全 CLAUDE.md 规则。
+
+    从 templates/claude/ 读取规则模板（_base.md + <project_type>.md），
+    按 marker 逐段对比目标 CLAUDE.md：
+    - 新规则（marker 不存在）→ 追加
+    - 已存在但内容不同 → 替换
+    - 内容相同 → 跳过
+    """
+    import re as _re
+
+    print("--- 补全 CLAUDE.md 规则 ---")
+    project_root = config["project"]["root"]
+    project_type = config.get("type", "generic")
+    templates_dir = os.path.join(_get_templates_root(), "claude")
+    target = os.path.join(project_root, "CLAUDE.md")
+
+    # 收集所有模板文件
+    section_files = []
+    for fname in ["_base.md", f"{project_type}.md"]:
+        fp = os.path.join(templates_dir, fname)
+        if os.path.exists(fp):
+            section_files.append(fp)
+
+    if not section_files:
+        print("  无 CLAUDE.md 规则模板，跳过")
+        return
+
+    # 读取目标 CLAUDE.md
+    target_content = ""
+    if os.path.exists(target):
+        with open(target, "r", encoding="utf-8") as f:
+            target_content = f.read()
+
+    marker_re = _re.compile(
+        r'<!-- loop:rule:(\S+?)-start -->(.*?)<!-- loop:rule:\1-end -->',
+        _re.DOTALL,
+    )
+
+    updated = False
+    for sf in section_files:
+        with open(sf, "r", encoding="utf-8") as f:
+            template = f.read()
+        for m in marker_re.finditer(template):
+            marker = m.group(1)
+            new_section = m.group(0)
+
+            # 在目标中查找同名 marker
+            pattern = _re.compile(
+                rf'<!-- loop:rule:{_re.escape(marker)}-start -->.*?<!-- loop:rule:{_re.escape(marker)}-end -->',
+                _re.DOTALL,
+            )
+            existing = pattern.search(target_content)
+
+            if existing is None:
+                # 不存在 → 追加
+                if not target_content.endswith("\n"):
+                    target_content += "\n"
+                target_content += "\n" + new_section + "\n"
+                print(f"  [+] {marker} → 新增")
+                updated = True
+            elif existing.group(0) != new_section:
+                # 存在但不同 → 替换
+                target_content = target_content.replace(existing.group(0), new_section)
+                print(f"  [~] {marker} → 已更新")
+                updated = True
+            else:
+                print(f"  跳过 {marker}（内容相同）")
+
+    if updated:
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(target_content)
+        print(f"  [OK] CLAUDE.md 已更新")
+    else:
+        print("  [OK] CLAUDE.md 无需更新")
 
 
 
@@ -660,6 +739,7 @@ def run_setup(config, force=False):
         ("添加 Unity MCP 依赖", lambda: add_unity_mcp(config)),
         ("部署验证文档", lambda: deploy_verify_docs(config)),
         ("注册通知协议", lambda: register_protocol(config)),
+        ("补全 CLAUDE.md 规则", lambda: ensure_claude_rules(config)),
         ("提交 Setup 文件", lambda: _commit_setup_files(config)),
         ("同步到 Agent Worktree", lambda: sync_to_agent(config)),
     ]
@@ -714,6 +794,7 @@ def _commit_setup_files(config):
         "Packages/manifest.json",
         ".gitignore",
         "TEST.md",
+        "CLAUDE.md",
     ]
     for f in files_to_add:
         full = os.path.join(project_root, f)
