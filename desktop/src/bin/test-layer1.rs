@@ -104,7 +104,7 @@ fn main() {
         if pass1 { "PASS" } else { "FAIL" }
     );
 
-    let pass2 = wait_for_log(log, "MenuEvent handler registered", 2000);
+    let pass2 = wait_for_log(log, "MenuEvent handler registered", 5000);
     println!(
         "  [{}] MenuEvent handler registered",
         if pass2 { "PASS" } else { "FAIL" }

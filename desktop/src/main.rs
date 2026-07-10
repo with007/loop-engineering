@@ -1686,12 +1686,18 @@ fn spawn_update_checker(proxy: EventLoopProxy<UserEvent>) {
 // ── helpers ───────────────────────────────────────────────────────────────
 
 fn find_python(exe_dir: &std::path::Path) -> String {
+    // 1. Embedded Python (production: exe_dir/python/python.exe)
     let embedded = exe_dir.join("python").join("python.exe");
     if embedded.exists() {
-        embedded.to_string_lossy().to_string()
-    } else {
-        "python".to_string()
+        return embedded.to_string_lossy().to_string();
     }
+    // 2. Dev venv (exe_dir is desktop/target/release/ or desktop/target/debug/ → go up 3 levels to project root)
+    let venv = exe_dir.join("../../../.venv/Scripts/python.exe");
+    if venv.exists() {
+        return venv.to_string_lossy().to_string();
+    }
+    // 3. System fallback
+    "python".to_string()
 }
 
 fn enable_autostart() {

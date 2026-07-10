@@ -192,6 +192,18 @@ impl Server {
         }
 
         // ── Spawn new process ─────────────────────────────────────────────
+        // Redirect stderr to log file so Python import errors are visible
+        let log_path = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("dashboard.log");
+        let stderr_file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .ok();
+
         let mut cmd = Command::new(python_exe);
         cmd.args([
             "-c",
@@ -202,8 +214,13 @@ impl Server {
         ])
         .current_dir(app_dir)
         .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
+        .stdout(std::process::Stdio::null());
+
+        if let Some(f) = stderr_file {
+            cmd.stderr(std::process::Stdio::from(f));
+        } else {
+            cmd.stderr(std::process::Stdio::null());
+        }
 
         #[cfg(windows)]
         {
@@ -238,16 +255,26 @@ impl Server {
                     // Check if process died
                     if let Some(ref mut child) = self.child {
                         match child.try_wait() {
-                            Ok(Some(_)) => {
-                                // Process died, log error
-                                let _ = std::fs::write(
-                                    std::env::current_exe()
-                                        .unwrap()
-                                        .parent()
-                                        .unwrap()
-                                        .join("dashboard.log"),
-                                    "Server process exited unexpectedly\n",
-                                );
+                            Ok(Some(status)) => {
+                                // Process died, log error (append — don't truncate)
+                                if let Ok(mut f) = std::fs::OpenOptions::new()
+                                    .create(true)
+                                    .append(true)
+                                    .open(&log_path)
+                                {
+                                    use std::io::Write;
+                                    let ts = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default();
+                                    let _ = write!(
+                                        f,
+                                        "[{}.{:03}] server: process exited unexpectedly, exit_code={:?}\n",
+                                        ts.as_secs(),
+                                        ts.subsec_millis(),
+                                        status.code(),
+                                    );
+                                    let _ = f.flush();
+                                }
                                 return false;
                             }
                             _ => {}
@@ -257,14 +284,25 @@ impl Server {
                 is_port_open(port)
             }
             Err(e) => {
-                let _ = std::fs::write(
-                    std::env::current_exe()
-                        .unwrap()
-                        .parent()
-                        .unwrap()
-                        .join("dashboard.log"),
-                    format!("Failed to start server: {}\n", e),
-                );
+                // Log error (append — don't truncate)
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&log_path)
+                {
+                    use std::io::Write;
+                    let ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default();
+                    let _ = write!(
+                        f,
+                        "[{}.{:03}] server: failed to start: {}\n",
+                        ts.as_secs(),
+                        ts.subsec_millis(),
+                        e
+                    );
+                    let _ = f.flush();
+                }
                 false
             }
         }
