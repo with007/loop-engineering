@@ -14,6 +14,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime
 
@@ -107,6 +108,65 @@ def _get_default_branch(repo_path=None):
     return "master"
 
 
+def _do_commit(branch, task_desc, cwd):
+    """读取 imp-output.md 和 vfy-output.md，组装 commit message，git add/commit/push."""
+    imp_path = os.path.join(cwd, ".loop-engineering", "imp-output.md")
+    vfy_path = os.path.join(cwd, ".loop-engineering", "vfy-output.md")
+
+    imp_content = ""
+    vfy_content = ""
+    try:
+        with open(imp_path, "r", encoding="utf-8") as f:
+            imp_content = f.read().strip()
+    except Exception:
+        pass
+    try:
+        with open(vfy_path, "r", encoding="utf-8") as f:
+            vfy_content = f.read().strip()
+    except Exception:
+        pass
+
+    # 组装 commit message：subject = task_desc, body = 实现报告 + 验证报告
+    subject = task_desc if task_desc else "task"
+    lines = [subject, ""]
+    if imp_content:
+        lines.append("## 实现报告")
+        lines.append("")
+        lines.append(imp_content)
+        lines.append("")
+    if vfy_content:
+        lines.append("## 验证报告")
+        lines.append("")
+        lines.append(vfy_content)
+        lines.append("")
+    lines.append("Co-Authored-By: Claude <noreply@anthropic.com>")
+    msg = "\n".join(lines)
+
+    fd, tmp = tempfile.mkstemp(suffix=".txt", prefix="commit-msg-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(msg)
+        r = _run("git add -A")
+        if r.returncode != 0:
+            print(f"git add failed: {r.stderr}")
+            return False
+        r = _run(f'git commit -F "{tmp}"')
+        if r.returncode != 0:
+            print(f"git commit failed: {r.stderr}")
+            return False
+        r = _run(f"git push origin {branch}")
+        if r.returncode != 0:
+            print(f"git push failed: {r.stderr}")
+            return False
+        print(f"Committed and pushed to {branch}")
+        return True
+    finally:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+
+
 def _write_run_log(project_root, task_id, whoami, imp_n, vfy_n, branch):
     """写结构化 run log."""
     runs_dir = os.path.join(project_root, ".loop-engineering", "runs")
@@ -165,13 +225,14 @@ def _read_output_file(path):
 def main():
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     if len(sys.argv) < 3:
-        print("Usage: task_done.py <username> <taskID> [IMP序号] [VFY轮数] [--project-root <dir>] [--format shell]")
+        print("Usage: task_done.py <username> <taskID> [IMP序号] [VFY轮数] [--project-root <dir>] [--task-desc <desc>] [--do-commit] [--format shell]")
         sys.exit(1)
 
     whoami = sys.argv[1]
     task_id = sys.argv[2]
     imp_n = sys.argv[3] if len(sys.argv) > 3 else "1"
     vfy_n = sys.argv[4] if len(sys.argv) > 4 else "1"
+    do_commit = "--do-commit" in sys.argv
 
     # 过滤掉位置参数中可能误传入的非数字
     if not imp_n.isdigit():
@@ -198,6 +259,8 @@ def main():
             do_commit = True
         elif arg == "--format" and i + 1 < len(sys.argv):
             fmt = sys.argv[i + 1]
+        elif arg == "--task-desc" and i + 1 < len(sys.argv):
+            task_desc = sys.argv[i + 1]
     if not project_root:
         project_root = _find_project_root()
 

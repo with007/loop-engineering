@@ -25,7 +25,6 @@ def _find_all_projects(pr=None):
 def _project_info(project_root):
     """读取项目的 loop-config.yaml 返回摘要."""
     from loop_engineering.config import read_config
-    from loop_engineering.runlog import get_pass_rate
 
     cfg = read_config(project_root)
     name = cfg.get("project", {}).get("name", os.path.basename(project_root))
@@ -43,9 +42,6 @@ def _project_info(project_root):
                 elif line.startswith("- [x]"):
                     done += 1
 
-    # PASS 率
-    passed, total, rate = get_pass_rate(project_root, days=7)
-
     # 未合入分支数
     branch_count = _count_agent_branches(project_root)
 
@@ -53,7 +49,6 @@ def _project_info(project_root):
         "name": name,
         "root": project_root,
         "tasks": {"pending": pending, "in_progress": in_progress, "done": done},
-        "pass_rate": {"passed": passed, "total": total, "rate": round(rate * 100, 1)},
         "unmerged_branches": branch_count,
     }
 

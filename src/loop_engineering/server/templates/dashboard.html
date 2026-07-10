@@ -11,7 +11,7 @@
     <h1>{{ proj.name }}</h1>
     <p style="color: var(--muted); margin-bottom: 24px;">{{ proj.root }}</p>
 
-    <div class="grid grid-4" style="margin-bottom: 24px;">
+    <div class="grid grid-3" style="margin-bottom: 24px;">
         <div class="card stat">
             <div class="stat-value pending">{{ proj.tasks.pending }}</div>
             <div class="stat-label">待办</div>
@@ -24,53 +24,19 @@
             <div class="stat-value pass">{{ proj.tasks.done }}</div>
             <div class="stat-label">已完成</div>
         </div>
-        <div class="card stat">
-            <div class="stat-value" style="color: {{ 'var(--pass)' if proj.pass_rate.rate >= 80 else 'var(--active)' if proj.pass_rate.rate >= 50 else 'var(--fail)' }}">{{ proj.pass_rate.rate }}%</div>
-            <div class="stat-label">7日通过率</div>
-        </div>
     </div>
 
-    <div class="grid grid-2" style="margin-bottom: 24px;">
-        <div class="card">
-            <h3>7日通过率</h3>
-            {% if proj.pass_rate.total > 0 %}
-            <div class="chart-wrap">
-                <canvas id="passChart"></canvas>
-                <div class="chart-center">
-                    <div class="pct" style="color: {{ 'var(--pass)' if proj.pass_rate.rate >= 80 else 'var(--active)' if proj.pass_rate.rate >= 50 else 'var(--fail)' }}">{{ proj.pass_rate.rate }}%</div>
-                    <div class="lbl">{{ proj.pass_rate.passed }}/{{ proj.pass_rate.total }}</div>
-                </div>
-            </div>
-            <script>
-                (function() {
-                    var ctx = document.getElementById('passChart');
-                    if (!ctx) return;
-                    new Chart(ctx, {
-                        type: 'doughnut',
-                        data: {
-                            labels: ['通过', '失败'],
-                            datasets: [{data: [{{ proj.pass_rate.passed }}, {{ proj.pass_rate.total - proj.pass_rate.passed }}], backgroundColor: ['#3b82f6','#f97316'], borderColor: '#111827', borderWidth: 3}]
-                        },
-                        options: { cutout: '75%', plugins: { legend: { display: false } } }
-                    });
-                })();
-            </script>
-            {% else %}
-            <p style="color: var(--dim); padding: 40px 0; text-align: center;">暂无运行数据</p>
-            {% endif %}
+    <div class="card" style="margin-bottom: 24px;">
+        <h3>任务进度</h3>
+        {% set total = proj.tasks.pending + proj.tasks.in_progress + proj.tasks.done %}
+        {% set pct_done = (proj.tasks.done / total * 100) if total > 0 else 0 %}
+        <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px;">
+            <span style="color: var(--pending);">待办 {{ proj.tasks.pending }}</span>
+            <span style="color: var(--active);">进行中 {{ proj.tasks.in_progress }}</span>
+            <span style="color: var(--pass);">已完成 {{ proj.tasks.done }}</span>
         </div>
-        <div class="card">
-            <h3>任务进度</h3>
-            {% set total = proj.tasks.pending + proj.tasks.in_progress + proj.tasks.done %}
-            {% set pct_done = (proj.tasks.done / total * 100) if total > 0 else 0 %}
-            <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px;">
-                <span style="color: var(--pending);">待办 {{ proj.tasks.pending }}</span>
-                <span style="color: var(--active);">进行中 {{ proj.tasks.in_progress }}</span>
-                <span style="color: var(--pass);">已完成 {{ proj.tasks.done }}</span>
-            </div>
-            <div class="progress-bar"><div class="progress-fill pass" style="width: {{ pct_done }}%"></div></div>
-            <div style="margin-top: 12px; font-size: 13px; color: var(--dim);">{{ total }} 个任务</div>
-        </div>
+        <div class="progress-bar"><div class="progress-fill pass" style="width: {{ pct_done }}%"></div></div>
+        <div style="margin-top: 12px; font-size: 13px; color: var(--dim);">{{ total }} 个任务</div>
     </div>
 
     {% set pending_br = proj.branches | selectattr('merged', 'equalto', false) | list %}

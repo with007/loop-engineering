@@ -5,7 +5,6 @@ import subprocess
 from loop_engineering.registry import list_projects, register_project
 from loop_engineering.config import is_project_dir, read_config
 from loop_engineering.path_utils import get_default_branch
-from loop_engineering.runlog import get_pass_rate
 from .task_parser import parse_tasks
 
 
@@ -32,7 +31,7 @@ def build_projects_context(current_pr, agent_filter=""):
         agent_filter: optional agent name to filter branches by.
 
     Returns:
-        list of project dicts with tasks, pass_rate, branches info.
+        list of project dicts with tasks, branches info.
     """
     projects = list_projects()
 
@@ -57,7 +56,6 @@ def build_projects_context(current_pr, agent_filter=""):
         except Exception:
             pass
         tasks = parse_tasks(pr)
-        passed, total, rate = get_pass_rate(pr, days=7)
 
         # Branches — use git for-each-ref, sorted by commit time desc
         branches_list = []
@@ -109,7 +107,6 @@ def build_projects_context(current_pr, agent_filter=""):
                 "done": sum(1 for t in tasks if t["status"] == "done"),
                 "pending_merge": sum(1 for t in tasks if t["status"] == "pending_merge"),
             },
-            "pass_rate": {"passed": passed, "total": total, "rate": round(rate * 100, 1)},
             "branches": branches_list,
         })
 

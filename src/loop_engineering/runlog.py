@@ -90,18 +90,3 @@ def list_runs(project_root, whoami=None, result=None, days=None, limit=50):
     # 按 completed 倒序
     entries.sort(key=lambda e: e.get("completed", ""), reverse=True)
     return entries[:limit]
-
-
-def get_pass_rate(project_root, days=7):
-    """计算指定天数内的 PASS 率。
-
-    返回 (pass_count, total_count, rate)。
-    """
-    entries = list_runs(project_root, days=days, limit=10000)
-    # 只统计 verify 阶段
-    verify_entries = [e for e in entries if e.get("phase") == "verify"]
-    total = len(verify_entries)
-    if total == 0:
-        return 0, 0, 0.0
-    passed = sum(1 for e in verify_entries if e.get("result") == "PASS")
-    return passed, total, passed / total
