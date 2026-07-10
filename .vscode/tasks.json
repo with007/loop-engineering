@@ -64,7 +64,7 @@
             "problemMatcher": []
         },
         {
-            "label": "Release (Build + Package only)",
+            "label": "🔧 Build Installer (生成 Setup.exe，本地测试用)",
             "type": "shell",
             "command": "python",
             "args": [
