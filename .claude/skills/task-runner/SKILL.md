@@ -45,7 +45,7 @@ Agent 身份从 `loop-config.yaml` 的 `agent.name` 读取：
 
 ```bash
 # 从 loop-config.yaml 读取 agent name
-whoami = $(python -c "import yaml; print(yaml.safe_load(open('.loop-engineering/loop-config.yaml'))['agent']['name'])")
+whoami = $(python -c "import yaml; print(yaml.safe_load(open('.loop-engineering/loop-config.yaml', encoding='utf-8'))['agent']['name'])")
 # 如: "with"
 ```
 
@@ -73,9 +73,9 @@ fi
 ```bash
 python -c "
 import yaml, sys
-with open('.loop-engineering/loop-config.yaml') as f:
+with open('.loop-engineering/loop-config.yaml', encoding='utf-8') as f:
     whoami = yaml.safe_load(f)['agent']['name']
-with open('D:/work_pvp/loop-engineering/tasks.md') as f:
+with open('D:/work_pvp/loop-engineering/tasks.md', encoding='utf-8') as f:
     for line in f:
         if line.startswith('- [~]') and f'(→ {whoami})' in line:
             print('BUSY'); sys.exit(0)
@@ -119,9 +119,9 @@ ls D:/work_pvp-agent/loop-engineering/.git 2>/dev/null || {
 ```bash
 python -c "
 import yaml, sys
-with open('.loop-engineering/loop-config.yaml') as f:
+with open('.loop-engineering/loop-config.yaml', encoding='utf-8') as f:
     whoami = yaml.safe_load(f)['agent']['name']
-with open('D:/work_pvp/loop-engineering/tasks.md') as f:
+with open('D:/work_pvp/loop-engineering/tasks.md', encoding='utf-8') as f:
     for line in f:
         if line.startswith('- [~]') and f'(→ {whoami})' in line:
             print('BUSY'); sys.exit(0)
@@ -449,7 +449,7 @@ test -s .loop-engineering/vfy-output.md && echo "OK" || echo "EMPTY"
 
 ```bash
 python -c "
-with open('.loop-engineering/vfy-output.md') as f:
+with open('.loop-engineering/vfy-output.md', encoding='utf-8') as f:
     for line in f:
         if '**PASS**' in line:
             print('PASS'); break
