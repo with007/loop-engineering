@@ -88,7 +88,7 @@ print('IDLE')
 
 ```bash
 git fetch origin --prune 2>/dev/null || true
-python .claude/scripts/task_cleanup.py $whoami
+python .claude/scripts/task_cleanup.py $whoami --project-root D:/work_pvp/loop-engineering
 ```
 
 然后直接进入 Step 1 选任务。子代理自动继承当前 worktree 上下文 + agent MCP。
@@ -141,7 +141,7 @@ git branch --list "agent/*" | xargs -r git branch -D 2>/dev/null
 **0e. 检查已合入的远程分支**：
 
 ```bash
-python .claude/scripts/task_cleanup.py $whoami
+python .claude/scripts/task_cleanup.py $whoami --project-root D:/work_pvp/loop-engineering
 ```
 
 > **注意**：Step 6 完成后必须 `ExitWorktree(action="keep")` 回到主 worktree。
@@ -476,6 +476,7 @@ with open('.loop-engineering/vfy-output.md', encoding='utf-8') as f:
    ```bash
    python .claude/scripts/task_done.py $whoami [taskID] [IMP序号] [VFY轮数] \
      --project-root D:/work_pvp/loop-engineering \
+     --output-dir D:/work_pvp-agent/loop-engineering \
      --task-desc "<task_pick 输出的 desc= 字段>" \
      --do-commit
    ```

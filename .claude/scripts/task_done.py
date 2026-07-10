@@ -3,10 +3,12 @@
 
 零包依赖，纯 stdlib + git 命令 + 内置 TaskLine 解析器。
 由 loop setup 部署到 .claude/scripts/。
-用法: python .claude/scripts/task_done.py <username> <taskID> [IMP序号] [VFY轮数] [--project-root <dir>] [--task-desc <desc>] [--do-commit] [--format shell]
+用法: python .claude/scripts/task_done.py <username> <taskID> [IMP序号] [VFY轮数] [--project-root <dir>] [--output-dir <dir>] [--task-desc <desc>] [--do-commit] [--format shell]
 
---do-commit: 读取 imp-output.md + vfy-output.md 组装 commit message，git add/commit/push
---task-desc: 任务描述（用于 commit message 标题）
+--project-root: 主工程根目录（tasks.md、diff、run_log 所在）
+--output-dir:   imp-output.md / vfy-output.md 所在目录，默认当前目录
+--do-commit:    读取 imp-output.md + vfy-output.md 组装 commit message，git add/commit/push
+--task-desc:    任务描述（用于 commit message 标题）
 """
 import json
 import os
@@ -14,6 +16,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime
 
@@ -165,7 +168,7 @@ def _read_output_file(path):
 def main():
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     if len(sys.argv) < 3:
-        print("Usage: task_done.py <username> <taskID> [IMP序号] [VFY轮数] [--project-root <dir>] [--format shell]")
+        print("Usage: task_done.py <username> <taskID> [IMP序号] [VFY轮数] [--project-root <dir>] [--output-dir <dir>] [--task-desc <desc>] [--do-commit] [--format shell]")
         sys.exit(1)
 
     whoami = sys.argv[1]
@@ -186,28 +189,34 @@ def main():
     diff_file = f"agent-{whoami}-{task_id}.diff"
 
     project_root = None
+    output_dir = None
     fmt = None
     task_desc = ""
     do_commit = False
     for i, arg in enumerate(sys.argv):
         if arg == "--project-root" and i + 1 < len(sys.argv):
             project_root = sys.argv[i + 1]
+        elif arg == "--output-dir" and i + 1 < len(sys.argv):
+            output_dir = sys.argv[i + 1]
         elif arg == "--task-desc" and i + 1 < len(sys.argv):
             task_desc = sys.argv[i + 1]
         elif arg == "--do-commit":
             do_commit = True
         elif arg == "--format" and i + 1 < len(sys.argv):
             fmt = sys.argv[i + 1]
+
     if not project_root:
         project_root = _find_project_root()
+    if not output_dir:
+        output_dir = os.getcwd()
 
     print(f"=== 任务完成: {task_id} ===")
 
     # ── commit + push ──
     if do_commit:
         commit_title = task_desc or task_id
-        imp_output = _read_output_file(os.path.join(project_root, ".loop-engineering", "imp-output.md"))
-        vfy_output = _read_output_file(os.path.join(project_root, ".loop-engineering", "vfy-output.md"))
+        imp_output = _read_output_file(os.path.join(output_dir, ".loop-engineering", "imp-output.md"))
+        vfy_output = _read_output_file(os.path.join(output_dir, ".loop-engineering", "vfy-output.md"))
 
         commit_msg = f"[{task_id}] {commit_title}\n\n"
         if imp_output:
