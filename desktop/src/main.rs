@@ -605,7 +605,8 @@ impl ApplicationHandler<UserEvent> for App {
                 }
                 2 => {
                     if secs >= 1 {
-                        log!("test: step 2→3, calling std::process::exit(0)");
+                        log!("test: step 2→3, stopping server before exit");
+                        self.server.lock().unwrap().stop();
                         log!("test: ====== ALL TESTS PASSED ======");
                         std::process::exit(0);
                     }
@@ -839,10 +840,13 @@ impl ApplicationHandler<UserEvent> for App {
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
-        log!("exiting: cleaning up");
+        log!("exiting: cleaning up server and GL resources");
+        self.server.lock().unwrap().stop();
+        log!("exiting: server stopped");
         for ws in &mut self.windows {
             ws.egui_glow.destroy();
         }
+        log!("exiting: cleanup complete");
     }
 }
 
@@ -990,7 +994,9 @@ impl App {
             log!("menu: settings -> open_settings_window");
             self.open_settings_window(event_loop);
         } else if id == &ids.quit {
-            log!("menu: QUIT -> calling std::process::exit(0)");
+            log!("menu: QUIT -> stopping server and exiting");
+            self.server.lock().unwrap().stop();
+            log!("menu: QUIT -> server stopped, calling std::process::exit(0)");
             std::process::exit(0);
         } else {
             // Check per-project menu items
