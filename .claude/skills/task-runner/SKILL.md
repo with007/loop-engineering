@@ -135,7 +135,6 @@ print('IDLE')
 ```bash
 git fetch origin --prune
 git checkout --detach master 2>/dev/null
-git branch --list "agent/*" | xargs -r git branch -D 2>/dev/null
 ```
 
 **0e. 检查已合入的远程分支**：

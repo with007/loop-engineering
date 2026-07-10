@@ -26,3 +26,4 @@
   2. write_feedback_to_task（task-merge 拒绝时调用）同样缺少标题头 — 需与 reopen 统一格式
 - [x] dashboard页面现在还没有图标 (→ with) [fd26b9e7] — 11:30 IMP1 VFY1 PASS
 - [x] 任务实际上没有失败的概率，也不需要统计7日失败率 (→ with) [50deb6ff] — 15:54 IMP1 VFY1 PASS · 16:35 IMP1 VFY1 PASS
+- [x] 现在托盘应用被关闭，后台服务还在跑，应该跟着一起关闭 (→ with) [a0d94d9f] — 17:50 IMP1 VFY2 PASS
