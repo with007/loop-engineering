@@ -24,3 +24,5 @@
   ## IMP1 反馈
   1. reopen_task（API）缺少 ## IMP{N} 反馈 标题头 — 当前只写裸文本缩进，需自动统计已有 IMP 条数并追加标题
   2. write_feedback_to_task（task-merge 拒绝时调用）同样缺少标题头 — 需与 reopen 统一格式
+- [x] dashboard页面现在还没有图标 (→ with) [fd26b9e7] — 11:30 IMP1 VFY1 PASS
+- [ ] 任务实际上没有失败的概率，也不需要统计7日失败率 (→ with) [50deb6ff] — 15:54 IMP1 VFY1 PASS

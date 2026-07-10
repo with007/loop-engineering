@@ -3,10 +3,10 @@
 
 零包依赖，纯 stdlib + git 命令 + 内置 TaskLine 解析器。
 由 loop setup 部署到 .claude/scripts/。
-用法: python .claude/scripts/task_done.py <username> <taskID> [IMP序号] [VFY轮数] [--project-root <dir>] [--format shell]
+用法: python .claude/scripts/task_done.py <username> <taskID> [IMP序号] [VFY轮数] [--project-root <dir>] [--task-desc <desc>] [--do-commit] [--format shell]
 
-生成 diff、更新 tasks.md ([~]→[x])、写 run log、弹通知。
-注意：不 commit、不 push、不 checkout —— 由调用方负责。
+--do-commit: 读取 imp-output.md + vfy-output.md 组装 commit message，git add/commit/push
+--task-desc: 任务描述（用于 commit message 标题）
 """
 import json
 import os
@@ -69,9 +69,12 @@ class TaskLine:
 
 # ── 工具函数 ──
 
-def _run(cmd):
-    return subprocess.run(cmd, shell=True, capture_output=True, text=True,
-                          encoding='utf-8', errors='replace')
+def _run(cmd, input_text=None):
+    kwargs = {"shell": True, "capture_output": True, "text": True,
+              "encoding": "utf-8", "errors": "replace"}
+    if input_text is not None:
+        kwargs["input"] = input_text
+    return subprocess.run(cmd, **kwargs)
 
 
 def _find_project_root(start_dir=None):
@@ -148,6 +151,15 @@ def _write_run_log(project_root, task_id, whoami, imp_n, vfy_n, branch):
         json.dump(entry, f, indent=2, ensure_ascii=False, default=str)
 
 
+def _read_output_file(path):
+    """读取 implementer/verifier 输出文件."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return ""
+
+
 # ── 主逻辑 ──
 
 def main():
@@ -175,15 +187,57 @@ def main():
 
     project_root = None
     fmt = None
+    task_desc = ""
+    do_commit = False
     for i, arg in enumerate(sys.argv):
         if arg == "--project-root" and i + 1 < len(sys.argv):
             project_root = sys.argv[i + 1]
+        elif arg == "--task-desc" and i + 1 < len(sys.argv):
+            task_desc = sys.argv[i + 1]
+        elif arg == "--do-commit":
+            do_commit = True
         elif arg == "--format" and i + 1 < len(sys.argv):
             fmt = sys.argv[i + 1]
     if not project_root:
         project_root = _find_project_root()
 
     print(f"=== 任务完成: {task_id} ===")
+
+    # ── commit + push ──
+    if do_commit:
+        commit_title = task_desc or task_id
+        imp_output = _read_output_file(os.path.join(project_root, ".loop-engineering", "imp-output.md"))
+        vfy_output = _read_output_file(os.path.join(project_root, ".loop-engineering", "vfy-output.md"))
+
+        commit_msg = f"[{task_id}] {commit_title}\n\n"
+        if imp_output:
+            commit_msg += imp_output + "\n"
+        if vfy_output:
+            commit_msg += vfy_output + "\n"
+        commit_msg += f"---\nIMP{imp_n} VFY{vfy_n}"
+
+        # git add 改动文件（排除 tasks.md，只提交代码变更）
+        r = _run("git status --porcelain")
+        for line in r.stdout.strip().split("\n"):
+            if not line.strip():
+                continue
+            status = line[:2]
+            fname = line[3:].strip()
+            if status.strip() in ("M", "A", "??") and fname != "tasks.md" and not fname.startswith(".loop-engineering/"):
+                _run(f'git add "{fname}"')
+
+        # 检查是否有东西可 commit
+        r = _run("git diff --cached --stat")
+        if r.stdout.strip():
+            _run(f'git commit -F -', input_text=commit_msg)
+            print("  [OK] committed")
+            r = _run(f"git push origin {branch}")
+            if r.returncode != 0:
+                print(f"  [WARN] push failed: {r.stderr.strip()[:120]}")
+            else:
+                print(f"  [OK] pushed {branch}")
+        else:
+            print("  (无改动，跳过 commit)")
 
     # 生成 diff
     base = _get_default_branch(project_root)
