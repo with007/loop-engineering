@@ -154,10 +154,19 @@ def main():
         return
 
     tasks = []
-    for line in lines:
+    i = 0
+    while i < len(lines):
+        line = lines[i]
         tl = TaskLine.parse(line)
         if tl and tl.assignee == whoami:
+            # 收集缩进反馈行
+            i += 1
+            while i < len(lines) and lines[i].startswith(("  ", "\t")):
+                tl.feedback.append(lines[i].strip())
+                i += 1
             tasks.append(tl)
+            continue
+        i += 1
 
     for tl in tasks:
         if tl.status == "~":
@@ -198,7 +207,8 @@ def main():
         ) else "false"
         reopen_flag = "true" if is_reopen else "false"
 
-        emit("ok", task_id=task_id, branch=branch, desc=desc, openSpec=open_spec, reopen=reopen_flag)
+        emit("ok", task_id=task_id, branch=branch, desc=desc, openSpec=open_spec, reopen=reopen_flag,
+             feedback="\n".join(tl.feedback) if tl.feedback else "")
         return
 
     emit("none")

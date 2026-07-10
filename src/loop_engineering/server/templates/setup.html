@@ -19,6 +19,18 @@
                 <option value="python-server">Python Server</option>
             </select>
         </div>
+
+        <!-- PackageCache 共享：仅 Unity 项目显示 -->
+        <div x-show="isUnity" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);">
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <input type="checkbox" name="share_package_cache" checked x-model="sharePackageCache"
+                       style="width: 16px; height: 16px; accent-color: var(--pass);">
+                <span>共享 PackageCache（mklink /J，节省 ~1.1GB）</span>
+            </label>
+            <p style="color: var(--dim); font-size: 12px; margin: 4px 0 0 26px;">
+                Agent worktree 的 Library/PackageCache 通过 junction 指向主工程，避免重复下载
+            </p>
+        </div>
     </div>
 
     <!-- 2. Project & Agent directories -->
@@ -136,6 +148,7 @@
         <input type="hidden" name="agent_workspace" :value="agentWorkspace">
         <input type="hidden" name="main_port" :value="mainPort">
         <input type="hidden" name="agent_port" :value="agentPort">
+        <input type="hidden" name="share_package_cache" :value="sharePackageCache">
         <button type="submit" class="btn btn-primary">运行 Setup</button>
     </form>
 

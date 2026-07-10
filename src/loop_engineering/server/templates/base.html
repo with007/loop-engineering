@@ -235,6 +235,7 @@
                 loadingSkills: false,
                 mainPort: 8080,
                 agentPort: 9080,
+                sharePackageCache: true,
                 get isUnity() { return this.selectedType.startsWith('unity'); },
                 init() {
                     this.$watch('projectRoot', val => this.onProjectRootChange(val));

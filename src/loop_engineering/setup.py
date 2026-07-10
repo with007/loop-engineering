@@ -720,7 +720,7 @@ def _file_changed(src, dst):
         return True
 
 
-def run_setup(config, force=False):
+def run_setup(config, force=False, share_package_cache=True):
     """执行完整 setup 流程.
 
     按顺序执行所有步骤，每步前显示进度。
@@ -733,7 +733,7 @@ def run_setup(config, force=False):
     steps = [
         ("创建 Agent Worktree", lambda: create_worktrees(config)),
         ("生成 MCP 配置", lambda: generate_mcp_configs(config)),
-        ("PackageCache 共享", lambda: share_package_cache(config)),
+        ("PackageCache 共享", lambda: share_package_cache(config)) if share_package_cache else None,
         ("部署环境脚本", lambda: deploy_scripts(config)),
         ("部署 Skill 和 Command", lambda: deploy_skills(config)),
         ("添加 Unity MCP 依赖", lambda: add_unity_mcp(config)),
@@ -743,6 +743,7 @@ def run_setup(config, force=False):
         ("提交 Setup 文件", lambda: _commit_setup_files(config)),
         ("同步到 Agent Worktree", lambda: sync_to_agent(config)),
     ]
+    steps = [s for s in steps if s is not None]
 
     # 写入配置文件（在提交步骤之前）
     clean_config = {k: v for k, v in config.items() if not k.startswith("_")}

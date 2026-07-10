@@ -233,6 +233,7 @@ async def setup_run(
     main_port: int = Form(8080),
     agent_port: int = Form(9080),
     type: str = Form(""),
+    share_package_cache: bool = Form(True),
 ):
     import subprocess
     from loop_engineering.registry import register_project
@@ -274,7 +275,7 @@ async def setup_run(
 
     try:
         from loop_engineering.setup import run_setup
-        run_setup(config, force=True)
+        run_setup(config, force=True, share_package_cache=share_package_cache)
         register_project(project_root, config["project"]["name"])
         return Response(status_code=200, headers={"HX-Redirect": f"/?project={quote(project_root)}"})
     except Exception as e:
