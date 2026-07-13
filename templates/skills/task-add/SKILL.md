@@ -80,19 +80,14 @@ user_invocable: true
 **确定 change 名称**：
 
 - 用户已指定名称 → 直接使用
-- 用户没指定 → 扫描 `openspec/changes/` 下所有目录，读取每个 `proposal.md` 的第一行（通常是标题）作为描述，用 **AskUserQuestion** 让用户选择：
+- 用户没指定 → 运行脚本获取选项 JSON，用 **AskUserQuestion** 让用户选择：
 
-```json
-{
-  "header": "选择 Change",
-  "multiSelect": false,
-  "options": [
-    {"label": "<change-name>", "description": "proposal.md 第一行摘要"},
-    ...
-  ],
-  "question": "选择要添加的 OpenSpec change："
-}
+```bash
+python .claude/scripts/task_changes.py
+# 输出: {"total": N, "shown": N, "options": [...], "question": "..."}
 ```
+
+将输出的 `options`、`question`、`total` 填入 AskUserQuestion（`header: "选择 Change"`, `multiSelect: false`）。脚本按修改时间倒序取最新 4 个。
 
 选定 change 后：
 
