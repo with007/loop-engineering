@@ -102,6 +102,50 @@ user_invocable: true
 
 写完后展示关键改动，确认后写入 `.claude/skills/verifier-<surface>/SKILL.md`。
 
+### 3.5. 定制 TEST.md 人工清单
+
+所有表面 skill 处理完后，检查并定制人工验证清单。
+
+#### 读当前 TEST.md
+
+```bash
+test -f "TEST.md" && echo "FOUND" || echo "NOT_FOUND"
+```
+
+- **不存在** → 说明项目没有 TEST.md，询问用户是否需要创建一个（跳转到生成步骤）
+- **存在** → 读取内容
+
+#### 分析项目结构，识别人工验证点
+
+根据项目结构推导需要人眼确认的检查项：
+
+- **Web 项目**（有 `templates/`、`server/`、路由定义）→ 关键页面 URL 路径
+- **Desktop GUI**（有 `desktop/`、`Cargo.toml` 含 gui 依赖）→ 托盘菜单、设置窗口、启动/停止流程
+- **Unity 项目**（有 `Assets/`、`.unity` 场景文件）→ 画面表现、UI 布局、Play Mode 交互
+
+#### 展示并确认
+
+```
+## TEST.md 人工清单定制
+
+当前 TEST.md 内容如上。我根据项目结构推导出以下建议：
+
+**关键页面（需人工检查）**:
+- / — 首页/概览：图表渲染、数据加载
+- /settings — 设置页：表单交互、保存功能
+- /tasks — 任务页：列表显示、状态切换
+
+**其他人工验证项**:
+- Desktop GUI: 托盘右键菜单、设置面板渲染、窗口关闭不退出
+
+请确认（直接按回车跳过此步骤，保留现有 TEST.md）：
+- 需要改什么？增/删/改哪些检查点？
+```
+
+#### 写入
+
+根据用户反馈修改 TEST.md 内容后写回项目根目录。
+
 ### 4. 删除无用 skill
 
 检查 `.claude/skills/verifier-*/`：
@@ -119,6 +163,7 @@ user_invocable: true
 4. 每个原语 = 描述 + 命令 + 适用条件
 5. 探测 = 通用项 + 至少一条项目特有探测
 6. 启动命令和清理命令在当前环境可执行
+7. TEST.md 已定制（如项目有此文件）：检查内容是否匹配项目实际结构
 
 ## 输出
 
@@ -132,6 +177,9 @@ user_invocable: true
 
 ### 删除的 skill
 - verifier-desktop: 已删除（用户确认项目无 GUI）
+
+### TEST.md
+- ✅ 已定制（用户确认了 3 个关键页面和 Desktop GUI 交互检查点）
 
 ### 跳过的表面
 - Unity MCP: 跳过（用户表示暂不需要）
