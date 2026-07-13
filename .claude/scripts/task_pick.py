@@ -139,7 +139,8 @@ def main():
                          f"branch={kwargs.get('branch', '')}",
                          f"desc={kwargs.get('desc', '')}",
                          f"openSpec={kwargs.get('openSpec', 'false')}",
-                         f"reopen={kwargs.get('reopen', 'false')}"]
+                         f"reopen={kwargs.get('reopen', 'false')}",
+                         f"user_feedback={kwargs.get('user_feedback', '')}"]
                 print(" ".join(parts))
             elif status == "none":
                 print("NONE")
@@ -208,7 +209,7 @@ def main():
         reopen_flag = "true" if is_reopen else "false"
 
         emit("ok", task_id=task_id, branch=branch, desc=desc, openSpec=open_spec, reopen=reopen_flag,
-             feedback="\n".join(tl.feedback) if tl.feedback else "")
+             user_feedback="\n".join(tl.feedback) if tl.feedback else "")
         return
 
     emit("none")

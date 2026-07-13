@@ -6,8 +6,8 @@
 用法: python .claude/scripts/task_done.py <username> <taskID> [IMP序号] [VFY轮数] [--project-root <dir>] [--output-dir <dir>] [--task-desc <desc>] [--do-commit] [--format shell]
 
 --project-root: 主工程根目录（tasks.md、diff、run_log 所在）
---output-dir:   imp-output.md / vfy-output.md 所在目录，默认当前目录
---do-commit:    读取 imp-output.md + vfy-output.md 组装 commit message，git add/commit/push
+--output-dir:   imp-output-r*.md / vfy-output-r*.md 所在目录，默认当前目录
+--do-commit:    收集所有轮次文件，交替拼装 commit message，git add/commit/push
 --task-desc:    任务描述（用于 commit message 标题）
 """
 import json
@@ -110,37 +110,45 @@ def _get_default_branch(repo_path=None):
     return "master"
 
 
-def _do_commit(branch, task_desc, cwd):
-    """读取 imp-output.md 和 vfy-output.md，组装 commit message，git add/commit/push."""
-    imp_path = os.path.join(cwd, ".loop-engineering", "imp-output.md")
-    vfy_path = os.path.join(cwd, ".loop-engineering", "vfy-output.md")
+def _do_commit(branch, task_desc, cwd, total_rounds=1):
+    """收集所有轮次 imp-output-r*.md 和 vfy-output-r*.md，交替拼装 commit message."""
+    loop_dir = os.path.join(cwd, ".loop-engineering")
+    imp_rounds = _collect_round_files(loop_dir, "imp-output-r*.md")
+    vfy_rounds = _collect_round_files(loop_dir, "vfy-output-r*.md")
 
-    imp_content = ""
-    vfy_content = ""
-    try:
-        with open(imp_path, "r", encoding="utf-8") as f:
-            imp_content = f.read().strip()
-    except Exception:
-        pass
-    try:
-        with open(vfy_path, "r", encoding="utf-8") as f:
-            vfy_content = f.read().strip()
-    except Exception:
-        pass
-
-    # 组装 commit message：subject = task_desc, body = 实现报告 + 验证报告
     subject = task_desc if task_desc else "task"
     lines = [subject, ""]
-    if imp_content:
-        lines.append("## 实现报告")
+
+    for r in range(1, total_rounds + 1):
+        lines.append(f"## Round {r}")
         lines.append("")
-        lines.append(imp_content)
-        lines.append("")
-    if vfy_content:
-        lines.append("## 验证报告")
-        lines.append("")
-        lines.append(vfy_content)
-        lines.append("")
+        # IMP
+        imp_content = ""
+        if r in imp_rounds:
+            imp_content = _read_output_file(imp_rounds[r])
+        if imp_content:
+            if r < total_rounds:
+                trimmed = _trim_imp_for_earlier_round(imp_content)
+                if trimmed:
+                    lines.append("### IMP")
+                    lines.append("")
+                    lines.append(trimmed)
+            else:
+                lines.append("### IMP")
+                lines.append("")
+                lines.append(imp_content)
+                lines.append("")
+        # VFY
+        vfy_content = ""
+        if r in vfy_rounds:
+            vfy_content = _read_output_file(vfy_rounds[r])
+        if vfy_content:
+            lines.append("### VFY")
+            lines.append("")
+            lines.append(vfy_content)
+            lines.append("")
+
+    lines.append(f"---\nIMP{total_rounds} VFY{total_rounds}")
     lines.append("Co-Authored-By: Claude <noreply@anthropic.com>")
     msg = "\n".join(lines)
 
@@ -222,6 +230,36 @@ def _read_output_file(path):
         return ""
 
 
+def _trim_imp_for_earlier_round(content):
+    """精简非末轮 IMP 报告：只保留反馈和修复内容，去掉实现思路/过程/变更概要/兼容性."""
+    if not content:
+        return ""
+    # 取到 ## 实现思路 之前的内容（即 用户反馈 + 验证反馈）
+    for cutoff in ["\n## 实现思路", "\n## 实现过程"]:
+        idx = content.find(cutoff)
+        if idx > 0:
+            content = content[:idx]
+            break
+    return content.strip() + "\n\n" if content.strip() else ""
+
+
+def _collect_round_files(loop_dir, pattern):
+    """收集轮次文件，返回 {round_num: filepath} 字典."""
+    import glob as _glob
+    result = {}
+    for fpath in _glob.glob(os.path.join(loop_dir, pattern)):
+        # 从文件名提取轮次号: imp-output-r{N}.md 或 vfy-output-r{N}.md
+        basename = os.path.basename(fpath)
+        try:
+            # 提取 -r 后面的数字
+            num_str = basename.split("-r")[-1].replace(".md", "")
+            r = int(num_str)
+            result[r] = fpath
+        except (ValueError, IndexError):
+            continue
+    return result
+
+
 # ── 主逻辑 ──
 
 def main():
@@ -273,15 +311,36 @@ def main():
     # ── commit + push ──
     if do_commit:
         commit_title = task_desc or task_id
-        imp_output = _read_output_file(os.path.join(output_dir, ".loop-engineering", "imp-output.md"))
-        vfy_output = _read_output_file(os.path.join(output_dir, ".loop-engineering", "vfy-output.md"))
+        total_rounds = int(imp_n)  # IMP 和 VFY 共享同一轮次计数
+        loop_dir = os.path.join(output_dir, ".loop-engineering")
+        imp_rounds = _collect_round_files(loop_dir, "imp-output-r*.md")
+        vfy_rounds = _collect_round_files(loop_dir, "vfy-output-r*.md")
 
         commit_msg = f"[{task_id}] {commit_title}\n\n"
-        if imp_output:
-            commit_msg += imp_output + "\n"
-        if vfy_output:
-            commit_msg += vfy_output + "\n"
-        commit_msg += f"---\nIMP{imp_n} VFY{vfy_n}"
+
+        for r in range(1, total_rounds + 1):
+            commit_msg += f"## Round {r}\n\n"
+
+            # IMP
+            imp_content = ""
+            if r in imp_rounds:
+                imp_content = _read_output_file(imp_rounds[r])
+            if imp_content:
+                if r < total_rounds:
+                    trimmed = _trim_imp_for_earlier_round(imp_content)
+                    if trimmed:
+                        commit_msg += "### IMP\n\n" + trimmed
+                else:
+                    commit_msg += "### IMP\n\n" + imp_content + "\n\n"
+
+            # VFY
+            vfy_content = ""
+            if r in vfy_rounds:
+                vfy_content = _read_output_file(vfy_rounds[r])
+            if vfy_content:
+                commit_msg += "### VFY\n\n" + vfy_content + "\n\n"
+
+        commit_msg += f"---\nIMP{imp_n} VFY{imp_n}"
 
         # git add 改动文件（排除 tasks.md，只提交代码变更）
         r = _run("git status --porcelain")

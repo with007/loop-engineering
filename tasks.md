@@ -30,4 +30,5 @@
 
 ## 2026-07-13
 
-- [ ] streamline-test-verify-docs (→ with) [770ea8b5]
+- [x] streamline-test-verify-docs (→ with) [770ea8b5] — 16:01 IMP4 VFY4 PASS
+- [ ] task-runner 子代理报告按轮次独立存放，反馈区分来源，commit 交替拼装 (→ with) [3a80e9e5]
