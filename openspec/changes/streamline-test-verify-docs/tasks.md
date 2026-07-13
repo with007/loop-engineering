@@ -11,7 +11,7 @@
 - [ ] 2.1 重写 `templates/verify/python-server/TEST.md.j2` — 纯人工检查清单
 - [ ] 2.2 重写 `templates/verify/unity-tolua/TEST.md.j2` — 纯人工检查清单
 - [ ] 2.3 重写 `templates/verify/generic/TEST.md.j2` — 纯人工检查清单
-- [ ] 2.4 运行 `loop setup` 渲染并检查生成的 TEST.md
+- [ ] 2.4 用 Jinja2 直接渲染 TEST.md.j2 验证模板正确
 
 ## 3. 删除 loop-test-init
 
@@ -33,7 +33,7 @@
 - [ ] 5.4 简化 3e 汇总：合并 loop-verify 结果 + 手动测试结果
 - [ ] 5.5 更新 3g: 从 verifier-* 取环境恢复命令
 - [ ] 5.6 删除"将新步骤写回 TEST.md"逻辑（精简后不需要）
-- [ ] 5.7 运行 `loop setup` 重新渲染到 `.claude/skills/task-merge/SKILL.md`
+- [ ] 5.7 用 Jinja2 渲染 task-merge SKILL.md.j2 并验证
 
 ## 6. CLAUDE.md §4 更新
 
@@ -50,7 +50,7 @@
 
 ## 8. 验证
 
-- [ ] 8.1 运行 `loop setup`，确认流程正常、无 error
+- [ ] 8.1 单独验证各项：Jinja2 渲染 TEST.md.j2、task-merge SKILL.md.j2，确认流程正常
 - [ ] 8.2 确认 `.claude/skills/` 下无 loop-test-init
 - [ ] 8.3 确认 `.claude/skills/` 下 task-merge Step 3 正确
 - [ ] 8.4 确认项目根目录无 VERIFY.md

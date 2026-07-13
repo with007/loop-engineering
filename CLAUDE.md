@@ -93,6 +93,7 @@ print('OK' if rendered == deployed else 'DIFF')
 
 - 不要直接编辑 `.claude/skills/`、`.claude/commands/` 下的文件
 - 不要同时保留 `.j2` 和闲置 `.md`（用 `.j2` 就删 `.md`）
+- **不要在 agent worktree 中运行 `loop setup`** — `detect_config()` 从 agent worktree 路径自动检测 workspace 和 project_root，会算出错误值（如 `project_name + "-agent"`）并写入 `loop-config.yaml`，导致后续 `build_prompt.py` 生成错误的提示词路径。验证模板用 Jinja2 直接渲染即可，不需要 `loop setup`
 
 ## 4. TEST.md / VERIFY.md 定位
 

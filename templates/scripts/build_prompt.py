@@ -64,11 +64,14 @@ def _feedback_imp(user_feedback, round_num):
     )
 
 
-def _feedback_vfy(user_feedback):
+def _feedback_vfy(user_feedback, round_num):
+    if round_num <= 1:
+        history = "（首轮，无历史验证）"
+    else:
+        history = "<自行读取 `.loop-engineering/vfy-output-r*.md`，了解之前 VFY 发现的全部问题和已修复项>"
     return (
         "## 用户反馈\n" + (user_feedback or "（无）") + "\n\n"
-        "## 历史验证\n"
-        "<自行读取 `.loop-engineering/vfy-output-r*.md`，了解之前 VFY 发现的全部问题和已修复项>"
+        "## 历史验证\n" + history
     )
 
 
@@ -209,7 +212,7 @@ def build_vfy(desc, task_id, branch, round_num, user_feedback, open_spec):
     sections = [
         header, "",
         _wd_vfy(branch), "",
-        _feedback_vfy(user_feedback),
+        _feedback_vfy(user_feedback, round_num),
         "", "---",
         "", "## 你的工作（只能验证，不能改代码）",
         "", _principles_vfy(round_num),

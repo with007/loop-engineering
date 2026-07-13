@@ -25,7 +25,7 @@ def main():
             break
         p = parent
 
-    project_root = cfg.get("project_root", os.getcwd())
+    project_root = cfg.get("project_root") or cfg.get("project", {}).get("root") or p
     agent_workspace = cfg.get("agent", {}).get("workspace", os.getcwd())
     agent_dir = agent_workspace + "/loop-engineering"
     agent_ws_last = agent_workspace.replace("\\", "/").rstrip("/").split("/")[-1]
