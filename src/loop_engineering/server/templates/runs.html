@@ -1,22 +1,6 @@
 <div hx-get="/runs" hx-trigger="every 30s" hx-swap="outerHTML" hx-include="#filter-whoami">
     <h1>运行历史</h1>
 
-    <!-- Stats row -->
-    <div class="grid grid-3" style="margin-bottom: 20px;">
-        <div class="card stat">
-            <div class="stat-value pass">{{ pass_rate.rate }}%</div>
-            <div class="stat-label">7日通过率</div>
-        </div>
-        <div class="card stat">
-            <div class="stat-value pending">{{ pass_rate.passed }}</div>
-            <div class="stat-label">通过</div>
-        </div>
-        <div class="card stat">
-            <div class="stat-value fail">{{ pass_rate.total - pass_rate.passed }}</div>
-            <div class="stat-label">失败</div>
-        </div>
-    </div>
-
     <!-- Filter -->
     <div style="display: flex; gap: 12px; margin-bottom: 16px; align-items: center;">
         <span style="color: var(--muted); font-size: 13px;">Filter:</span>

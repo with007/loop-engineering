@@ -66,16 +66,14 @@ async def tasks_page(
 
 @router.get("/runs")
 async def runs_page(request: Request, whoami: str = "", project: str = Query(None)):
-    from loop_engineering.runlog import list_runs, get_pass_rate
+    from loop_engineering.runlog import list_runs
 
     pr = get_project_root(request, q=project)
     entries = list_runs(pr, whoami=whoami or None, limit=100)
-    passed, total, rate = get_pass_rate(pr, days=7)
     agents = list(set(e.get("whoami", "") for e in entries if e.get("whoami")))
     return render(request, "runs.html", {
         "request": request,
         "runs": entries,
-        "pass_rate": {"passed": passed, "total": total, "rate": round(rate * 100, 1)},
         "agents": agents,
         "filter_whoami": whoami,
         "current_root": pr,
