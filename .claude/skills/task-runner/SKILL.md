@@ -33,7 +33,7 @@ user_invocable: true
 ## [WARNING] 关键禁令
 
 - **禁止 `git checkout master`** — agent worktree 永远不能 checkout master（master 被主 worktree 占用）。只用 `master` 远程引用。
-- **同步用 `git fetch origin && git reset --hard master`**（detached HEAD），或用 `git checkout -B agent/xxx master`（fork 分支）。
+- **同步用 `git fetch origin && git checkout --detach master`**（detached HEAD），或用 `git checkout -B agent/xxx master`（fork 分支）。
 - **禁止在 implementer 运行不到 30 分钟时主动 kill**
 - **禁止在新起 implementer 时用 `checkout -B ... master` 重置分支**（会丢弃 IMP 已做的工作）
 - **禁止在派发 implementer 前研究任务** — 不要读代码、不要看页面、不要分析架构。这些是 implementer 的工作。违反此条会导致 implementer 拿到被 task-runner "污染"过的上下文，而不是原始任务描述
@@ -129,7 +129,7 @@ print('IDLE')
 
 ```bash
 git fetch origin --prune 2>/dev/null || true
-git reset --hard master && git clean -fd
+git checkout --detach master && git clean -fd
 python .claude/scripts/task_cleanup.py $whoami --project-root D:/work_pvp/loop-engineering
 ```
 
@@ -176,7 +176,7 @@ print('IDLE')
 
 ```bash
 git fetch origin --prune
-git reset --hard master && git clean -fd
+git checkout --detach master && git clean -fd
 ```
 
 **0e. 检查已合入的远程分支**：
@@ -544,7 +544,7 @@ with open('.loop-engineering/vfy-output.md', encoding='utf-8') as f:
 2. 清理 phase 文件 + working tree：
    ```bash
    rm -f .loop-engineering/task-phase
-   git reset --hard master && git clean -fd
+   git checkout --detach master && git clean -fd
    ```
 
 > **说明**：`task_done.py --do-commit` 会读取 `.loop-engineering/imp-output.md` 和 `.loop-engineering/vfy-output.md`，组装 commit message，git add/commit/push，然后生成 diff、更新 tasks.md、弹通知。task-runner 不读报告内容。
@@ -569,7 +569,7 @@ with open('.loop-engineering/vfy-output.md', encoding='utf-8') as f:
   ```bash
   python .claude/scripts/notify.py "[任务ID] 需人工介入" "FAIL 数不收敛 IMP1-3"
   ```
-- 清理本地分支和 phase 文件 → `rm -f .loop-engineering/task-phase && git reset --hard master && git clean -fd && git branch -D <BRANCH>`
+- 清理本地分支和 phase 文件 → `rm -f .loop-engineering/task-phase && git checkout --detach master && git clean -fd && git branch -D <BRANCH>`
 
 ### Step 6: 收尾
 

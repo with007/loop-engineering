@@ -30,11 +30,12 @@ user_invocable: true
 - **Agent 不能自己合入 master** — 推送后等人审查
 - **每个任务从 master fork** — 分支 `agent/[用户名]/[任务ID]`，从最新 {{ default_ref }} 创建
 - **透明管道** — task-runner 不参与任务具体实现。不研究代码、不分析需求、不补充上下文。原样传递 tasks.md 中的描述给 implementer，implementer 自行理解代码并设计方案
+- **子代理只输出结果信号** — IMP/VFY 的最终输出只能是一行 `PASS` 或 `FAIL: <原因>`。完整报告只写入文件（`imp-output.md` / `vfy-output.md`），由 `task_done.py` 脚本读取组装 commit message。禁止子代理在最终输出中回传报告全文，避免污染 task-runner 上下文
 
 ## [WARNING] 关键禁令
 
 - **禁止 `git checkout master`** — agent worktree 永远不能 checkout master（master 被主 worktree 占用）。只用 `{{ default_ref }}` 远程引用。
-- **同步用 `git fetch origin && git reset --hard {{ default_ref }}`**（detached HEAD），或用 `git checkout -B agent/xxx {{ default_ref }}`（fork 分支）。
+- **同步用 `git fetch origin && git checkout --detach {{ default_ref }}`**（detached HEAD），或用 `git checkout -B agent/xxx {{ default_ref }}`（fork 分支）。
 - **禁止在 implementer 运行不到 30 分钟时主动 kill**
 - **禁止在新起 implementer 时用 `checkout -B ... {{ default_ref }}` 重置分支**（会丢弃 IMP 已做的工作）
 - **禁止在派发 implementer 前研究任务** — 不要读代码、不要看页面、不要分析架构。这些是 implementer 的工作。违反此条会导致 implementer 拿到被 task-runner "污染"过的上下文，而不是原始任务描述
@@ -130,7 +131,7 @@ print('IDLE')
 
 ```bash
 git fetch origin --prune 2>/dev/null || true
-git reset --hard {{ default_ref }} && git clean -fd
+git checkout --detach {{ default_ref }} && git clean -fd
 python .claude/scripts/task_cleanup.py $whoami --project-root {{ project_root }}
 ```
 
@@ -177,7 +178,7 @@ print('IDLE')
 
 ```bash
 git fetch origin --prune
-git reset --hard {{ default_ref }} && git clean -fd
+git checkout --detach {{ default_ref }} && git clean -fd
 ```
 
 **0e. 检查已合入的远程分支**：
@@ -273,7 +274,8 @@ $feedback
 
 **原则**
 - **禁止 commit。** task-runner 会在验收通过后统一提交。
-- 你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行、输出结果。你是一个纯函数——输入任务，输出结果。如果失败，输出 FAIL + 原因；如果成功，输出 PASS + 完整报告。绝不输出问句。
+- 你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行、输出结果。你是一个纯函数——输入任务，输出结果。
+- **最终输出只能是一行 `PASS` 或 `FAIL: <原因>`。** 完整报告写入 `.loop-engineering/imp-output.md` 文件，不要在最终输出中回传报告全文。task-runner 通过脚本读文件获取细节，不需要在上下文中看到报告内容。
 
 **流程**
 1. 读 openspec/changes/$desc/proposal.md 理解目标与范围
@@ -282,15 +284,17 @@ $feedback
 4. 读 openspec/changes/$desc/specs/ 下各 spec 获取详细规格
 5. 按 openspec-apply-change 流程逐子任务实现
 6. 每个子任务完成后标记 openspec/changes/$desc/tasks.md 中的 [ ] → [x]
-7. 全部完成后输出完整报告（见下方 ## 输出）
-8. 将完整报告写入 `.loop-engineering/imp-output.md`（task-runner 和 verifier 会读这个文件）
+7. 将完整报告写入 `.loop-engineering/imp-output.md`
+8. 最后输出一行：`PASS` 或 `FAIL: <原因>`
 
 ## 分支
 <BRANCH>
 
 ## 输出
 
-完成后按以下格式输出（每节都会写入 git commit message，供人审查时理解全貌）：
+**⚠️ 你的最后一条消息只能是一行：`PASS` 或 `FAIL: <原因>`。**
+
+完整报告写入 `.loop-engineering/imp-output.md` 文件，格式如下（会被 task_done.py 读入 commit message）：
 
 ## 本轮反馈
 $feedback
@@ -345,21 +349,24 @@ $feedback
 
 **原则**
 - **禁止 commit。** task-runner 会在验收通过后统一提交。
-- 你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行、输出结果。你是一个纯函数——输入任务，输出结果。如果失败，输出 FAIL + 原因；如果成功，输出 PASS + 完整报告。绝不输出问句。
+- 你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行、输出结果。你是一个纯函数——输入任务，输出结果。
+- **最终输出只能是一行 `PASS` 或 `FAIL: <原因>`。** 完整报告写入 `.loop-engineering/imp-output.md` 文件，不要在最终输出中回传报告全文。task-runner 通过脚本读文件获取细节，不需要在上下文中看到报告内容。
 
 **流程**
 1. 理解任务描述，自行研究代码库，设计方案
 2. 读相关代码、模板、配置，理解现有架构和上下文
 3. 实现变更
-4. 完成后输出完整报告（见下方 ## 输出）
-5. 将完整报告写入 `.loop-engineering/imp-output.md`（task-runner 和 verifier 会读这个文件）
+4. 将完整报告写入 `.loop-engineering/imp-output.md`
+5. 最后输出一行：`PASS` 或 `FAIL: <原因>`
 
 ## 分支
 <BRANCH>
 
 ## 输出
 
-完成后按以下格式输出（每节都会写入 git commit message，供人审查时理解全貌）：
+**⚠️ 你的最后一条消息只能是一行：`PASS` 或 `FAIL: <原因>`。**
+
+完整报告写入 `.loop-engineering/imp-output.md` 文件，格式如下（会被 task_done.py 读入 commit message）：
 
 ## 本轮反馈
 $feedback
@@ -435,16 +442,18 @@ $feedback
 
 **原则**
 - **禁止 commit、禁止修改任何文件。**
-- 你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行。你是一个纯函数——输入任务，输出验证结果。绝不输出问句。
+- 你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行。你是一个纯函数——输入任务，输出验证结果。
+- **最终输出只能是一行 `PASS` 或 `FAIL: <原因>`。** 完整报告写入 `.loop-engineering/vfy-output.md` 文件，不要在最终输出中回传报告全文。task-runner 通过脚本读文件获取细节，不需要在上下文中看到报告内容。
 
 **流程**
 1. 读 `git diff`，对照任务描述理解变更
 2. 按 `/loop-verify` 的方法论执行验证：表面识别 → 驱动 → 探测 → 报告
-3. 完成后将完整验证报告写入 `.loop-engineering/vfy-output.md`
+3. 将完整验证报告写入 `.loop-engineering/vfy-output.md`
+4. 最后输出一行：`PASS` 或 `FAIL: <原因>`
 
 ## 输出
 
-报告格式遵循 `/loop-verify` 的规定。
+**⚠️ 你的最后一条消息只能是一行：`PASS` 或 `FAIL: <原因>`。** 完整报告已写入 `vfy-output.md`，报告格式遵循 `/loop-verify` 的规定。
 ```
 
 **openSpec=false** 时：
@@ -471,16 +480,18 @@ $feedback
 
 **原则**
 - **禁止 commit、禁止修改任何文件。**
-- 你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行。你是一个纯函数——输入任务，输出验证结果。绝不输出问句。
+- 你是 loop 模式下的子代理，后台无人值守运行。**绝对禁止与用户交互**：不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。遇到任何不确定，自己决策、自己执行。你是一个纯函数——输入任务，输出验证结果。
+- **最终输出只能是一行 `PASS` 或 `FAIL: <原因>`。** 完整报告写入 `.loop-engineering/vfy-output.md` 文件，不要在最终输出中回传报告全文。task-runner 通过脚本读文件获取细节，不需要在上下文中看到报告内容。
 
 **流程**
 1. 读 `git diff`，对照任务描述理解变更
 2. 按 `/loop-verify` 的方法论执行验证：表面识别 → 驱动 → 探测 → 报告
-3. 完成后将完整验证报告写入 `.loop-engineering/vfy-output.md`
+3. 将完整验证报告写入 `.loop-engineering/vfy-output.md`
+4. 最后输出一行：`PASS` 或 `FAIL: <原因>`
 
 ## 输出
 
-报告格式遵循 `/loop-verify` 的规定。
+**⚠️ 你的最后一条消息只能是一行：`PASS` 或 `FAIL: <原因>`。** 完整报告已写入 `vfy-output.md`，报告格式遵循 `/loop-verify` 的规定。
 ```
 
 ### Step 4a: 更新 phase 文件
@@ -535,7 +546,7 @@ with open('.loop-engineering/vfy-output.md', encoding='utf-8') as f:
 2. 清理 phase 文件 + working tree：
    ```bash
    rm -f .loop-engineering/task-phase
-   git reset --hard {{ default_ref }} && git clean -fd
+   git checkout --detach {{ default_ref }} && git clean -fd
    ```
 
 > **说明**：`task_done.py --do-commit` 会读取 `.loop-engineering/imp-output.md` 和 `.loop-engineering/vfy-output.md`，组装 commit message，git add/commit/push，然后生成 diff、更新 tasks.md、弹通知。task-runner 不读报告内容。
@@ -560,7 +571,7 @@ with open('.loop-engineering/vfy-output.md', encoding='utf-8') as f:
   ```bash
   python .claude/scripts/notify.py "[任务ID] 需人工介入" "FAIL 数不收敛 IMP1-3"
   ```
-- 清理本地分支和 phase 文件 → `rm -f .loop-engineering/task-phase && git reset --hard {{ default_ref }} && git clean -fd && git branch -D <BRANCH>`
+- 清理本地分支和 phase 文件 → `rm -f .loop-engineering/task-phase && git checkout --detach {{ default_ref }} && git clean -fd && git branch -D <BRANCH>`
 
 ### Step 6: 收尾
 
