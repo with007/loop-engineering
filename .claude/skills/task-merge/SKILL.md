@@ -15,12 +15,12 @@ user_invocable: true
 
 | 项目 | 路径 |
 |------|------|
-| 主工作树 | `D:/work_pvp/loop-engineering` |
+| 主工作树 | `D:\work_pvp\loop-engineering` |
 | Agent 工作树 | `D:/work_pvp-agent/loop-engineering` |
 
 ## 原则
 
-- **先验证后合入** — 在 agent worktree 中预合入任务分支，先跑 loop-verify 自动验证，再按 TEST.md 执行可选人工测试，通过后才合入 master
+- **先验证后合入** — 在 agent worktree 中预合入任务分支，按 TEST.md 协助用户跑手动测试，通过后才合入 master
 - **测试期间不排查不修复** — 测试结果出来后直接呈现，有 ❌ 就进入 pass/fail 确认环节。不自行分析根因、读源码排查、或思考怎么修复，除非用户明确要求
 - **不做 force push / force delete** — 只做安全的 merge
 - **冲突时先尝试自动分析解决** — 不要立刻交给用户，分析上下文、检查跨文件一致性后再决定。无法判定时才停止
@@ -47,7 +47,7 @@ git branch --no-merged master --list "agent/*"
 - 分支上的 commit 数（`git rev-list master..<branch> --count`）
 - 最后一个 commit 的摘要（`git log master..<branch> --oneline -1`）
 
-让用户选择（输入序号），选择后进入 Step 2。
+让用户通过 **AskUserQuestion** 选择（每个选项的 label 为分支名，description 为 commit 数和最后 commit 摘要），选择后进入 Step 2。
 
 ### Step 1: 解析目标分支
 
@@ -70,7 +70,7 @@ git branch -a | grep "<taskID>"
 ```
 - 0 个匹配 → 报错退出，"未找到包含 <taskID> 的分支"
 - 1 个匹配 → 直接用
-- ≥2 个匹配 → 列出所有匹配分支，让用户选一个
+- ≥2 个匹配 → 用 **AskUserQuestion** 列出所有匹配分支（label 为分支名，description 为 commit 摘要），让用户选择一个
 
 ### Step 2: 显示分支概要
 
@@ -82,13 +82,27 @@ git log master..<branch> --oneline
 git diff master...<branch> --stat
 ```
 
-输出清晰的分支摘要给用户看，然后确认是否继续合入。用户确认后进入 Step 3。
+输出清晰的分支摘要给用户看，然后用 **AskUserQuestion** 确认：
 
-### Step 3: 验证门禁 — 自动验证 + 人工测试
+```json
+{
+  "header": "继续合入",
+  "multiSelect": false,
+  "options": [
+    {"label": "继续", "description": "进入验证门禁测试"},
+    {"label": "取消", "description": "停止合入流程"}
+  ],
+  "question": "分支 <branch>：N 个 commit，M 个文件变更。是否继续合入？"
+}
+```
 
-在真正合入 master 之前，先在 agent worktree 中预合入任务分支，执行自动验证和可选的手动测试。全部通过才允许进入后续步骤执行合入。
+用户确认后进入 Step 3。
 
-> **验证分为两层**：`loop-verify` 做自动验证，TEST.md 提供人工检查清单。环境准备/启动/恢复命令从 `verifier-*` skills 获取。
+### Step 3: 验证门禁 — 手动测试
+
+在真正合入 master 之前，先在 agent worktree 中预合入任务分支，按 TEST.md 执行完整测试流程（含环境准备和测试后恢复）。全部通过才允许进入后续步骤执行合入。
+
+> **TEST.md 是测试流程的唯一权威来源。** 从环境准备、测试执行到停止服务、切回主 worktree 重新安装依赖，每一步都必须遵守 TEST.md，不可省略。
 
 #### 3a. 进入 Agent Worktree
 
@@ -126,110 +140,119 @@ git branch --show-current
 # 必须输出 <branch>
 ```
 
-#### 3c. 自动验证 — loop-verify
-
-**询问用户是否跳过**：
-
-```
-是否运行 /loop-verify 做自动验证？
-回复 **yes** 开始自动验证，或 **skip** 跳过。
-```
-
-- **skip** → 跳到 3d
-- **yes** → 调用 `Skill("loop-verify")` 或 `/loop-verify`
-
-loop-verify 会根据 diff 自动选择匹配的 `verifier-*` skills 执行验证，完成后输出汇总报告（✅/❌）。
-
-#### 3d. 人工测试（可选）
-
-**询问用户是否需要手动测试**：
-
-```
-loop-verify 已完成。是否需要进行人工测试？
-回复 **yes** 开始人工测试，或 **no** 跳到汇总。
-```
-
-- **no** → 跳到 3e 汇总
-- **yes** → 继续
-
-**1) 从 verifier-* skills 获取环境命令**
-
-检查 `.claude/skills/verifier-*/SKILL.md` 是否存在，读出：
-- 启动检查命令（如何确认表面可达）
-- 启动命令
-- 清理命令
-
-```bash
-ls .claude/skills/verifier-*/SKILL.md
-```
-
-- **存在** → 从 skill 的"启动检查"和"清理"章节提取命令
-- **不存在** → 提示用户"项目无 verifier-* skills，请手动安装依赖并启动服务。建议运行 `/loop-verify-init` 初始化。"
-
-**2) 启动服务**
-
-按 verifier-* skill 中的启动检查步骤执行：先确认依赖就绪 → 启动服务 → 确认可达。
-
-**3) 从 TEST.md 获取人工检查清单**
+#### 3c. 读取 TEST.md
 
 ```bash
 test -f "TEST.md" && echo "FOUND" || echo "NOT_FOUND"
 ```
 
-- **不存在** → 提示用户自行检查变更涉及的页面/功能
-- **存在** → 读取 TEST.md 中的人工检查点
+- **不存在** → 输出"项目未配置 TEST.md，跳过手动测试"，直接跳到 3e（汇总确认后继续合入）
+- **存在** → 读取 TEST.md 内容
 
-**4) 生成浏览器指引**
+#### 3d. 按需制定测试计划并执行
 
-根据 TEST.md 中的关键页面和检查点，生成具体操作指引：
+TEST.md 是**测试方法论参考**，不是必须全部执行的死清单。
+
+**1) 分析变更，列出测试点**
+
+先读 diff 和 commit 报告，理解改了什么文件、涉及哪些模块。列出需要覆盖的测试点。
+
+**2) 对照 TEST.md 制定测试计划**
+
+TEST.md 说明了项目中可用的测试手段（pip install、启动服务、curl API、WebFetch 页面、CLI 命令等），以及各模块的测试示例。根据测试点选择相关手段：
+
+- 变更涉及的模块在 TEST.md 有示例 → 按示例执行
+- 变更涉及的模块不在 TEST.md 中 → 参照 TEST.md 的测试方法，为新增模块推导合适的测试
+
+只测变更相关的，不罗列跳过的项。
+
+**3) 执行自动测试**
+
+先跑能自动执行的步骤（`pip install`、`curl`、CLI 命令、pytest 等），每完成一项输出结果（✅/❌），失败时记下原因。
+
+> **测试期间严格遵守"不排查不修复"原则**：结果出来后直接进入 3e 汇总，不要读源码分析为什么失败、不要尝试修复。让用户看到结果后决定 pass/fail。
+
+**4) 询问手动测试**
+
+自动测试跑完后，用 **AskUserQuestion** 询问：
+
+```json
+{
+  "header": "浏览器测试",
+  "multiSelect": false,
+  "options": [
+    {"label": "需要", "description": "启动服务，在浏览器中手动验证页面"},
+    {"label": "跳过", "description": "仅自动测试已足够，跳过浏览器验证"}
+  ],
+  "question": "自动测试已完成。是否需要进行浏览器手动测试？"
+}
+```
+
+如果需要：
+
+- 重启服务（确保端口可用）
+- 根据前面制定的测试计划，为每个需要浏览器验证的测试点生成具体操作步骤，指引格式：
 
 ```
-## 人工测试
+## 🔍 浏览器手动测试
 
-服务已在 http://127.0.0.1:<port> 运行，请按以下步骤操作：
+服务已在 http://127.0.0.1:<port> 运行，请打开浏览器按以下步骤操作：
 
 **Step 1** — <具体操作：打开哪个 URL、点击什么、确认什么>
 **Step 2** — <具体操作>
 ...
-
-完成后回复 **done**。
+**Step N** — 所有页面确认后关闭浏览器标签页
 ```
 
 指引要点：
 - 每一步告诉用户打开哪个 URL、点击哪个导航标签、检查什么内容
-- 基于 TEST.md 中的人工检查点推导，不笼统说"浏览所有页面"
+- 基于测试计划中的测试点推导，不笼统说"浏览所有页面"
 - 等用户确认结果后再继续
 
-**5) 停止服务**
+- 测试完成后停止服务
 
-用户完成操作后，按 verifier-* skill 中的清理命令停止服务。
+> 测试范围由变更驱动，TEST.md 提供方法。
 
-> 测试范围由变更驱动。自动化由 loop-verify 处理，人工部分参考 TEST.md。
+#### 3e. 停止服务 + 汇总确认
 
-#### 3e. 汇总确认
-
-向用户展示汇总表，合并 loop-verify 结果和人工测试结果：
+测试完成后停止后台服务（如有启动），然后向用户展示测试汇总表，区分自动测试和浏览器手动测试：
 
 ```
-## 验证结果 — <branch>
+## 测试结果 — <branch>
 
-### loop-verify 自动验证
-<loop-verify 的输出报告>
+### 自动测试
+| # | 测试项 | 结果 |
+|---|--------|------|
+| 1 | pip install | ✅ |
+| 2 | pytest (N tests) | ✅ N/N passed |
+| ... | ... | ... |
 
-### 人工测试
-（如跳过，标注"跳过"）
-| # | 页面/功能 | 检查点 | 结果 |
-|---|-----------|--------|------|
+### 浏览器手动测试
+| # | 页面 | 检查点 | 结果 |
+|---|------|--------|------|
 | 1 | / 概览 | 图表渲染 | ✅ |
 | ... | ... | ... | ... |
 
 **结论**: <全部通过 → "建议通过" / 有失败 → "存在失败项，建议不通过">
 ```
 
-然后询问：
+然后用 **AskUserQuestion** 确认：
+
+```json
+{
+  "header": "合入确认",
+  "multiSelect": false,
+  "options": [
+    {"label": "pass（建议）", "description": "测试全部通过，继续合入"},
+    {"label": "fail", "description": "取消合入并清理 agent worktree"}
+  ],
+  "question": "测试结果：<汇总>。继续合入还是取消？"
+}
 ```
-回复 **pass** 继续合入，或 **fail** 取消合入并清理 agent worktree。
-```
+
+> 推荐项（pass 或 fail，取决于测试结果）放第一个并标注（建议）。
+
+> 如果本次有为新增模块推导的测试步骤（TEST.md 中未覆盖的），额外询问是否要添加到 TEST.md 作为示例。用户同意后将新步骤写回 agent worktree 中的 TEST.md。
 
 > **如果所有项都 ✅**: 默认建议 pass，但让用户最终决定。
 > **如果有 ❌**: 列出失败项和原因，提醒用户注意。仍可 pass（如果用户认为失败项无关紧要）。
@@ -251,7 +274,7 @@ test -f "TEST.md" && echo "FOUND" || echo "NOT_FOUND"
 from loop_engineering.task_id import write_feedback_to_task
 import os
 
-tasks_path = os.path.join("D:/work_pvp/loop-engineering", "tasks.md")
+tasks_path = os.path.join("D:\work_pvp\loop-engineering", "tasks.md")
 write_feedback_to_task(tasks_path, "<task_id>", "<反馈文本>")
 ```
 
@@ -297,11 +320,11 @@ git checkout --detach master
 ExitWorktree(action="keep")
 ```
 
-**如果执行了人工测试，按 verifier-* skills 中的清理命令恢复环境**（停止服务、切回依赖等），然后再继续。
+**按 TEST.md 执行测试后恢复**（如重新安装依赖等），然后再继续。
 
 输出：
 ```
-## 验证通过 ✅
+## 手动测试通过 ✅
 正在切回主 worktree 继续合入流程...
 ```
 
@@ -336,7 +359,22 @@ git ls-files --others --exclude-standard
 2. **重叠 ≥ 50%** → 工作区改动很可能是分支改动的半成品 → **推荐 stash 路线**
 3. **重叠 < 50%** → 工作区改动是独立工作 → **推荐 commit 路线**
 
-告知用户判断依据（哪些文件重叠、哪些不重叠）和建议的路线。**一步确认**：让用户选择 stash 路线 / commit 路线 / 取消。
+先文字输出判断依据（哪些文件重叠、哪些不重叠）和建议的路线，然后用 **AskUserQuestion** 弹出选项 UI 让用户选择。选项格式：
+
+```json
+{
+  "header": "路线选择",
+  "multiSelect": false,
+  "options": [
+    {"label": "commit（推荐）", "description": "提交工作区改动后合并（工作区改动…不重叠…独立工作）"},
+    {"label": "stash", "description": "暂存工作区改动后合并（…高度重叠…同一件事）"},
+    {"label": "取消", "description": "取消本次合入，保持工作区不变"}
+  ],
+  "question": "工作区有 N 个修改文件，与分支改动 X% 重叠。选择合入路线："
+}
+```
+
+> 推荐项放第一个并标注（推荐），description 填入本次分析的具体结论。
 
 > **注意**: 此处仅记录用户选择，暂不执行。验证通过后（Step 3 已完成）在 Step 6 执行。
 
@@ -345,8 +383,8 @@ git ls-files --others --exclude-standard
 **执行前安全检查**：
 
 ```bash
-# 合入必须在主 worktree（D:/work_pvp/loop-engineering），不在 agent worktree（D:/work_pvp-agent/loop-engineering）
-if echo "$(pwd)" | grep -q "work_pvp-agent"; then
+# 合入必须在主 worktree（D:\work_pvp\loop-engineering），不在 agent worktree（D:/work_pvp-agent/loop-engineering）
+if echo "$(pwd)" | grep -q "loop-engineering"; then
   echo "ERROR: 当前在 agent worktree，合入必须在主 worktree 执行" && exit 1
 fi
 
@@ -487,14 +525,17 @@ Python 代码冲突时，检查：
 - 备份位置（stash 路线：`stash@{0}` / commit 路线：WIP commit）
 - 恢复命令
 
-### Step 7: 验证完成提醒
+### Step 7: 手动测试提醒
 
 合入已在 Step 3 中通过 agent worktree 验证，此处仅提醒：push 前可在 master 上快速复核。
 
+如果 TEST.md 存在，简要提示：
 ```
-## 验证
-已在 agent worktree 中完成 loop-verify 自动验证。push 前可在 master 上快速复核。
+## 手动测试
+已在 agent worktree 中按 TEST.md 完成手动测试并通过。push 前可在 master 上快速复核。
 ```
+
+如果 TEST.md 不存在，跳过。
 
 ### Step 8: 验证结果
 
@@ -509,6 +550,36 @@ git status
 - 工作区是否干净
 - 如果用了 stash 路线，确认 stash 已清理
 
+### Step 9: OpenSpec 归档提示
+
+检查合入的分支是否关联 OpenSpec change：
+
+```bash
+# 在分支的 commit message 和 diff 中搜索 OpenSpec change 引用
+git log master..<branch> --oneline --grep="openspec" --grep="change" --all-match -i
+# 以及检查是否修改了 openspec/changes/ 目录下的文件
+git diff master...<branch> --name-only | grep "openspec/changes/"
+```
+
+- **有关联** → 提取 change 名称，用 **AskUserQuestion** 询问：
+
+```json
+{
+  "header": "归档 Change",
+  "multiSelect": false,
+  "options": [
+    {"label": "立即归档", "description": "调用 openspec-archive-change 归档 <change-name>"},
+    {"label": "稍后再说", "description": "跳过，稍后手动归档"}
+  ],
+  "question": "合入完成。检测到关联 OpenSpec change「<change-name>」，是否立即归档？"
+}
+```
+
+  - 选"立即归档" → 调用 `Skill("openspec-archive-change")`
+  - 选"稍后再说" → 跳过
+
+- **无关联** → 跳过此步骤
+
 ## 输出示例
 
 ### 干净合入
@@ -517,7 +588,7 @@ git status
 ## 合入完成 ✅
 **分支**: agent/with/a1b2c3d4-翻译tab
 **方式**: 直接 merge（工作区干净）
-**验证**: loop-verify 通过 ✅
+**验证**: 手动测试通过 ✅
 **新增 commit**: ffac9d2 a1b2c3d4: 翻译tab页标题为中文
 **当前状态**: master 已前进 2 个 commit，工作区干净
 ```
@@ -528,7 +599,7 @@ git status
 ## 合入完成 ✅
 **分支**: agent/with/a1b2c3d4-翻译tab
 **方式**: stash → merge（工作区改动与分支改动高度重叠，判断为同一件事）
-**验证**: loop-verify 通过 ✅
+**验证**: 手动测试通过 ✅
 **新增 commit**: ffac9d2 task-a35f86a5: 修复页面自动刷新导致输入被清空
 **当前状态**: master 已前进 2 个 commit，工作区干净
 ```
@@ -539,7 +610,7 @@ git status
 ## 合入完成 ✅
 **分支**: agent/with/a1b2c3d4-翻译tab
 **方式**: commit 工作区 → merge（工作区改动与分支改动不重叠，判断为独立工作）
-**验证**: loop-verify 通过 ✅
+**验证**: 手动测试通过 ✅
 **工作区备份**: commit abc1234 "WIP: 合入 agent/with/a1b2c3d4-翻译tab 前的本地改动"
 **新增 commit**: ffac9d2 task-a35f86a5: 修复页面自动刷新导致输入被清空
 **当前状态**: master 已前进 2 个 commit，工作区干净
@@ -551,7 +622,7 @@ git status
 ## 合入完成 ✅
 **分支**: agent/with/a1b2c3d4-翻译tab
 **方式**: commit 工作区 → merge → 自动解决 2 处冲突
-**验证**: loop-verify 通过 ✅
+**验证**: 手动测试通过 ✅
 **冲突解决报告**:
 ### 1. `src/.../branches.py`
 - **选择**: 入方

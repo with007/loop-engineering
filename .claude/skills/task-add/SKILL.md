@@ -7,7 +7,29 @@ user_invocable: true
 
 # Task Add（任务添加）
 
-把用户意图转成 `tasks.md` 中的任务条目。三种模式：
+把用户意图转成 `tasks.md` 中的任务条目。
+
+## 模式选择
+
+先根据用户输入判断走哪种模式：
+
+- 明确提到 OpenSpec change 名称（如"把 xxx change 加到任务"）→ **模式 3**
+- 明确提到"新建 change"、"创建 OpenSpec" → **模式 2**
+- 明确描述了具体任务内容（做什么 + 怎么验证）→ **模式 1**
+- **无法判断时**，用 **AskUserQuestion** 让用户选择：
+
+```json
+{
+  "header": "添加方式",
+  "multiSelect": false,
+  "options": [
+    {"label": "直接添加", "description": "输入任务描述，直接追加到 tasks.md"},
+    {"label": "新建 OpenSpec change", "description": "先用 openspec-new-change 创建完整 change，再添加任务"},
+    {"label": "指定已有 change", "description": "选择已有的 OpenSpec change 添加为任务"}
+  ],
+  "question": "选择任务添加方式："
+}
+```
 
 ## 通用前置步骤
 
@@ -53,12 +75,42 @@ user_invocable: true
 
 ## 模式 3: 指定已有 OpenSpec change
 
-用户说"把 xxx change 加到我的任务"。
+用户说"把 xxx change 加到我的任务"，或用户选了模式 3。
+
+**确定 change 名称**：
+
+- 用户已指定名称 → 直接使用
+- 用户没指定 → 扫描 `openspec/changes/` 下所有目录，读取每个 `proposal.md` 的第一行（通常是标题）作为描述，用 **AskUserQuestion** 让用户选择：
+
+```json
+{
+  "header": "选择 Change",
+  "multiSelect": false,
+  "options": [
+    {"label": "<change-name>", "description": "proposal.md 第一行摘要"},
+    ...
+  ],
+  "question": "选择要添加的 OpenSpec change："
+}
+```
+
+选定 change 后：
 
 1. 确认 `openspec/changes/<name>/` 存在
 2. **确保已提交**：检查 change 文件是否已 commit（`git status` 确认 `openspec/changes/<name>/` 不在 untracked/modified 中）。未提交则先 commit 再继续。不要求 push，但至少本地 commit。
 3. **OpenSpec 状态检查**：读 `openspec/changes/<name>/tasks.md`，统计 `[ ]` 和 `[x]` 数量：
-   - **全完成**（0 个 `[ ]`）→ 警告用户"该 change 所有子任务已完成，无需添加"，询问是否仍要添加
+   - **全完成**（0 个 `[ ]`）→ 警告用户"该 change 所有子任务已完成，无需添加"，用 **AskUserQuestion** 确认是否仍要添加：
+     ```json
+     {
+       "header": "仍要添加",
+       "multiSelect": false,
+       "options": [
+         {"label": "仍要添加", "description": "忽略警告，继续添加任务"},
+         {"label": "取消", "description": "不添加此任务"}
+       ],
+       "question": "该 change 所有子任务已完成。是否仍要添加？"
+     }
+     ```
    - **部分完成**（有 `[ ]` 有 `[x]`）→ 正常添加，输出中标注进度
    - **全未开始**（全部 `[ ]`）→ 正常添加
 4. 去重检查通过后，生成 task_id（用 change-name 作为描述），在当天日期分组末尾追加：

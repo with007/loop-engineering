@@ -47,7 +47,7 @@ git branch --no-merged {{ default_ref }} --list "agent/*"
 - 分支上的 commit 数（`git rev-list {{ default_ref }}..<branch> --count`）
 - 最后一个 commit 的摘要（`git log {{ default_ref }}..<branch> --oneline -1`）
 
-让用户选择（输入序号），选择后进入 Step 2。
+让用户通过 **AskUserQuestion** 选择（每个选项的 label 为分支名，description 为 commit 数和最后 commit 摘要），选择后进入 Step 2。
 
 ### Step 1: 解析目标分支
 
@@ -70,7 +70,7 @@ git branch -a | grep "<taskID>"
 ```
 - 0 个匹配 → 报错退出，"未找到包含 <taskID> 的分支"
 - 1 个匹配 → 直接用
-- ≥2 个匹配 → 列出所有匹配分支，让用户选一个
+- ≥2 个匹配 → 用 **AskUserQuestion** 列出所有匹配分支（label 为分支名，description 为 commit 摘要），让用户选择一个
 
 ### Step 2: 显示分支概要
 
@@ -82,7 +82,21 @@ git log {{ default_ref }}..<branch> --oneline
 git diff {{ default_ref }}...<branch> --stat
 ```
 
-输出清晰的分支摘要给用户看，然后确认是否继续合入。用户确认后进入 Step 3。
+输出清晰的分支摘要给用户看，然后用 **AskUserQuestion** 确认：
+
+```json
+{
+  "header": "继续合入",
+  "multiSelect": false,
+  "options": [
+    {"label": "继续", "description": "进入验证门禁测试"},
+    {"label": "取消", "description": "停止合入流程"}
+  ],
+  "question": "分支 <branch>：N 个 commit，M 个文件变更。是否继续合入？"
+}
+```
+
+用户确认后进入 Step 3。
 
 ### Step 3: 验证门禁 — 手动测试
 
@@ -160,7 +174,21 @@ TEST.md 说明了项目中可用的测试手段（pip install、启动服务、c
 
 **4) 询问手动测试**
 
-自动测试跑完后，**必须询问用户是否需要浏览器手动测试**。如果需要：
+自动测试跑完后，用 **AskUserQuestion** 询问：
+
+```json
+{
+  "header": "浏览器测试",
+  "multiSelect": false,
+  "options": [
+    {"label": "需要", "description": "启动服务，在浏览器中手动验证页面"},
+    {"label": "跳过", "description": "仅自动测试已足够，跳过浏览器验证"}
+  ],
+  "question": "自动测试已完成。是否需要进行浏览器手动测试？"
+}
+```
+
+如果需要：
 
 - 重启服务（确保端口可用）
 - 根据前面制定的测试计划，为每个需要浏览器验证的测试点生成具体操作步骤，指引格式：
@@ -208,10 +236,21 @@ TEST.md 说明了项目中可用的测试手段（pip install、启动服务、c
 **结论**: <全部通过 → "建议通过" / 有失败 → "存在失败项，建议不通过">
 ```
 
-然后询问：
+然后用 **AskUserQuestion** 确认：
+
+```json
+{
+  "header": "合入确认",
+  "multiSelect": false,
+  "options": [
+    {"label": "pass（建议）", "description": "测试全部通过，继续合入"},
+    {"label": "fail", "description": "取消合入并清理 agent worktree"}
+  ],
+  "question": "测试结果：<汇总>。继续合入还是取消？"
+}
 ```
-回复 **pass** 继续合入，或 **fail** 取消合入并清理 agent worktree。
-```
+
+> 推荐项（pass 或 fail，取决于测试结果）放第一个并标注（建议）。
 
 > 如果本次有为新增模块推导的测试步骤（TEST.md 中未覆盖的），额外询问是否要添加到 TEST.md 作为示例。用户同意后将新步骤写回 agent worktree 中的 TEST.md。
 
@@ -320,7 +359,22 @@ git ls-files --others --exclude-standard
 2. **重叠 ≥ 50%** → 工作区改动很可能是分支改动的半成品 → **推荐 stash 路线**
 3. **重叠 < 50%** → 工作区改动是独立工作 → **推荐 commit 路线**
 
-告知用户判断依据（哪些文件重叠、哪些不重叠）和建议的路线。**一步确认**：让用户选择 stash 路线 / commit 路线 / 取消。
+先文字输出判断依据（哪些文件重叠、哪些不重叠）和建议的路线，然后用 **AskUserQuestion** 弹出选项 UI 让用户选择。选项格式：
+
+```json
+{
+  "header": "路线选择",
+  "multiSelect": false,
+  "options": [
+    {"label": "commit（推荐）", "description": "提交工作区改动后合并（工作区改动…不重叠…独立工作）"},
+    {"label": "stash", "description": "暂存工作区改动后合并（…高度重叠…同一件事）"},
+    {"label": "取消", "description": "取消本次合入，保持工作区不变"}
+  ],
+  "question": "工作区有 N 个修改文件，与分支改动 X% 重叠。选择合入路线："
+}
+```
+
+> 推荐项放第一个并标注（推荐），description 填入本次分析的具体结论。
 
 > **注意**: 此处仅记录用户选择，暂不执行。验证通过后（Step 3 已完成）在 Step 6 执行。
 
@@ -495,6 +549,36 @@ git status
 - 当前分支位置
 - 工作区是否干净
 - 如果用了 stash 路线，确认 stash 已清理
+
+### Step 9: OpenSpec 归档提示
+
+检查合入的分支是否关联 OpenSpec change：
+
+```bash
+# 在分支的 commit message 和 diff 中搜索 OpenSpec change 引用
+git log {{ default_ref }}..<branch> --oneline --grep="openspec" --grep="change" --all-match -i
+# 以及检查是否修改了 openspec/changes/ 目录下的文件
+git diff {{ default_ref }}...<branch> --name-only | grep "openspec/changes/"
+```
+
+- **有关联** → 提取 change 名称，用 **AskUserQuestion** 询问：
+
+```json
+{
+  "header": "归档 Change",
+  "multiSelect": false,
+  "options": [
+    {"label": "立即归档", "description": "调用 openspec-archive-change 归档 <change-name>"},
+    {"label": "稍后再说", "description": "跳过，稍后手动归档"}
+  ],
+  "question": "合入完成。检测到关联 OpenSpec change「<change-name>」，是否立即归档？"
+}
+```
+
+  - 选"立即归档" → 调用 `Skill("openspec-archive-change")`
+  - 选"稍后再说" → 跳过
+
+- **无关联** → 跳过此步骤
 
 ## 输出示例
 
