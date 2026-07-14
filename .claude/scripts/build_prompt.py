@@ -202,11 +202,12 @@ def build_vfy(desc, task_id, branch, round_num, user_feedback, open_spec):
 
     flow = (
         "**流程**\n"
-        "1. 读 `git diff`，对照任务描述理解变更\n"
-        "2. 读历史验证文件（`.loop-engineering/vfy-output-r*.md`），了解之前的验证结果和已修复问题\n"
-        "3. 按 `/loop-verify` 的方法论执行验证：表面识别 -> 驱动 -> 探测 -> 报告\n"
-        "4. 将完整验证报告写入 `.loop-engineering/vfy-output-r" + str(round_num) + ".md`\n"
-        "5. 最后输出一行：`PASS` 或 `FAIL: <原因>`"
+        "1. IMP 不 commit，变更在 working tree。用 `git status --short` 看全貌（含新增文件），`git diff` + `git diff --cached` 看具体内容，对照任务描述理解\n"
+        "2. 如需了解历史上下文，可用 `git log " + branch + " --not master --oneline --grep=\"" + task_id + "\"` 查看本任务相关的历史 commit，但**验证对象是 working tree diff，不是已 commit 的内容**\n"
+        "3. 读历史验证文件（`.loop-engineering/vfy-output-r*.md`），了解之前的验证结果和已修复问题\n"
+        "4. 按 `/loop-verify` 的方法论执行验证：表面识别 -> 驱动 -> 探测 -> 报告\n"
+        "5. 将完整验证报告写入 `.loop-engineering/vfy-output-r" + str(round_num) + ".md`\n"
+        "6. 最后输出一行：`PASS` 或 `FAIL: <原因>`"
     )
 
     sections = [
