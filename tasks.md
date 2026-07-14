@@ -30,5 +30,8 @@
 
 ## 2026-07-13
 
-- [ ] task-runner 子代理报告按轮次独立存放，反馈区分来源，commit 交替拼装 (→ with) [3a80e9e5]
-- [ ] streamline-test-verify-docs (→ with) [770ea8b5]
+- [r] streamline-test-verify-docs (→ with) [770ea8b5] — 12:24 IMP1 VFY1 PASS · IMP2 VFY1 FAIL
+  ## IMP2 反馈
+  VFY IMP2: 文件删除缺失 + UI 不一致
+  1. commit message 描述删除了 6 个文件（VERIFY.md.j2 ×3、loop-test-init 模板/部署副本、项目根 VERIFY.md），但实际分支只包含 10 个文件修改，无任何删除。分支改动不完整。
+  2. 部署页(/setup)的 TEST.md 是单独一个预览区域，与设置页(/settings)「verifier skills 和 TEST.md」合并为一个编辑入口的风格不一致。建议统一。

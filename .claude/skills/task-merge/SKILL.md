@@ -270,9 +270,9 @@ TEST.md 说明了项目中可用的测试手段（pip install、启动服务、c
 询问用户拒绝合入的原因，与用户讨论后形成结构化反馈。
 反馈应对后续改进有指导意义，不止于"不通过"。
 
-**3f-2. 写入反馈**
+**3f-2. 写入反馈并更新任务状态**
 
-调用 `write_feedback_to_task` 用统一格式写入 tasks.md：
+调用 `write_feedback_to_task` 用统一格式写入 tasks.md，然后**将任务行 checkbox 从 `[x]` 改为 `[r]`**（reopen），并在行尾追加 `· IMP{N} VFY{N} FAIL`：
 
 ```python
 from loop_engineering.task_id import write_feedback_to_task
@@ -281,6 +281,10 @@ import os
 tasks_path = os.path.join("$PROJECT_ROOT", "tasks.md")
 write_feedback_to_task(tasks_path, "<task_id>", "<反馈文本>")
 ```
+
+写入后编辑任务行：
+- `[x]` → `[r]`（task_id.py 已定义 `r` = reopen）
+- 行尾追加 `· IMP{N} VFY{N} FAIL`，IMP 编号递增（上一轮 +1）
 
 > **注意**: 需要有 task_id 才能写入反馈。如果任务行无 `[task_id]`，产出反馈文本告知用户，
 > 建议后续用 task-add 添加任务以自动生成 task_id。
