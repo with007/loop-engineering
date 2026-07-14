@@ -30,7 +30,7 @@
 
 ## 2026-07-13
 
-- [x] streamline-test-verify-docs (→ with) [770ea8b5] — 12:24 IMP1 VFY1 PASS · IMP1 VFY2 FAIL · 14:44 IMP1 VFY1 PASS · IMP2 VFY1 FAIL · 16:23 IMP2 VFY2 PASS
+- [r] streamline-test-verify-docs (→ with) [770ea8b5] — 12:24 IMP1 VFY1 PASS · IMP1 VFY2 FAIL · 14:44 IMP1 VFY1 PASS · IMP2 VFY1 FAIL
   ## IMP1 反馈
   1. commit message 描述删除了 6 个文件（VERIFY.md.j2 ×3、loop-test-init 模板/部署副本、项目根 VERIFY.md），但实际分支只包含 10 个文件修改，无任何删除。分支改动不完整。
   2. 部署页(/setup)的 TEST.md 是单独一个预览区域，与设置页(/settings)「verifier skills 和 TEST.md」合并为一个编辑入口的风格不一致。建议统一。

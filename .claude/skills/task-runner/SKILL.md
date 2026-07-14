@@ -49,6 +49,13 @@ Agent 身份从 `loop-config.yaml` 的 `agent.name` 读取：
 whoami=$(python -c "import yaml; print(yaml.safe_load(open('.loop-engineering/loop-config.yaml', encoding='utf-8'))['agent']['name'])")
 eval $(python .claude/scripts/project_vars.py)
 
+# 自校验：AGENT_DIR 必须是 /loop-engineering 结尾的完整路径
+echo "$AGENT_DIR" | grep -q "/loop-engineering$" || {
+  echo "FATAL: AGENT_DIR=$AGENT_DIR 不正确，必须以 /loop-engineering 结尾"
+  echo "请确保使用了 eval \$(python .claude/scripts/project_vars.py)，不要手动拼接"
+  exit 1
+}
+
 # 判断启动位置
 if echo "$(pwd)" | grep -q "$AGENT_WS_LAST"; then
   echo "MODE=AGENT"
@@ -56,6 +63,8 @@ else
   echo "MODE=MAIN"
 fi
 ```
+
+> **⚠️ 严禁手动计算 AGENT_DIR。** `AGENT_DIR` 必须通过 `eval $(python .claude/scripts/project_vars.py)` 获取。不能从 `agent.workspace` 直接拼接——workspace 只是父目录，实际 worktree 是 `$AGENT_WS/loop-engineering`。手动拼接会丢失 `/loop-engineering` 后缀，导致 Step 0b `ls $AGENT_DIR/.git` 失败。
 
 | 输出 | 模式 | 处理方式 |
 |------|------|----------|
