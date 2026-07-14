@@ -239,8 +239,8 @@ else
   git checkout -B $BRANCH $DEFAULT_REF
 fi
 
-# 主工程 tasks.md 标记进行中（用 task_update.py，不提交，只给人看）
-python .claude/scripts/task_update.py "$TASK_ID" "~" --project-root "$PROJECT_ROOT"
+# 主工程 tasks.md 标记进行中（用 task_line.py，不提交，只给人看）
+python .claude/scripts/task_line.py "$TASK_ID" "~" --project-root "$PROJECT_ROOT"
 ```
 
 ## 子代理提示词
