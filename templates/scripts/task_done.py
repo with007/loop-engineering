@@ -359,7 +359,23 @@ def main():
             print("  [OK] committed")
             r = _run(f"git push origin {branch}")
             if r.returncode != 0:
-                print(f"  [WARN] push failed: {r.stderr.strip()[:120]}")
+                stderr = r.stderr.strip()
+                print(f"  [WARN] push rejected: {stderr[:120]}")
+                # Agent 分支是单写者，分叉时 force-with-lease 安全
+                if "[rejected]" in stderr or "non-fast-forward" in stderr.lower():
+                    print("  [WARN] 分支分叉，尝试 force-with-lease...")
+                    r2 = _run(f"git push --force-with-lease origin {branch}")
+                    if r2.returncode != 0:
+                        print(f"  [WARN] force-with-lease 也失败: {r2.stderr.strip()[:120]}")
+                        r3 = _run(f"git push --force origin {branch}")
+                        if r3.returncode != 0:
+                            print(f"  [FAIL] force push 也失败: {r3.stderr.strip()[:120]}")
+                        else:
+                            print(f"  [OK] pushed {branch} (--force)")
+                    else:
+                        print(f"  [OK] pushed {branch} (--force-with-lease)")
+                else:
+                    print(f"  [FAIL] push 失败（非分叉原因），跳过")
             else:
                 print(f"  [OK] pushed {branch}")
         else:

@@ -44,7 +44,7 @@ tasks.md 中 `[r]` 行下方的缩进行作为反馈：
 
 ### 3. 分支发现：git branch 查询
 
-task_pick 遇到 `[r]` 时，用 `git branch -a --list "agent/{whoami}/{task_id}-*" --sort=-committerdate` 查找已有分支，取最新。分支不存在时退化为 `[ ]` 行为（从 master fork）。
+task_pick 遇到 `[r]` 时，用 `git branch -a --list "agent/{whoami}/{task_id}-*" --sort=-committerdate` 查找已有分支，取最新。本地找不到时用 `git ls-remote` 二次确认。分支确实不存在时 **跳过该任务**（打 stderr 告警），不降级为 `[ ]` 行为——`[r]` 语义是"在已有分支上修改"，没有分支就无法重开。
 
 ### 4. 分支策略：直接 checkout，不 rebase
 
@@ -69,7 +69,7 @@ task-runner Step 3 派发前：
 
 | 风险 | 缓解 |
 |------|------|
-| 旧分支被手动删除 | task_pick 退化为 `[ ]` 行为 |
+| 旧分支被手动删除 | task_pick 跳过该任务，打 stderr 告警 |
 | 同 task_id 有多个分支 | `--sort=-committerdate` 取最新 |
 | 多轮 reopen 后 tasks.md 缩进行过长 | 反馈不追加历史，只保留本轮 |
 

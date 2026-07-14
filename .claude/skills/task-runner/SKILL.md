@@ -127,7 +127,7 @@ print('IDLE')
 - `IDLE` → 安全清理：
 
 ```bash
-git fetch origin --prune 2>/dev/null || true
+git fetch origin --prune || true
 git checkout --detach --force $DEFAULT_REF && git clean -fd
 python .claude/scripts/task_cleanup.py $whoami --project-root $PROJECT_ROOT
 ```
@@ -223,7 +223,7 @@ REOPEN="<task_pick 输出的 reopen= 字段>"
 
 if [ "$REOPEN" = "true" ]; then
   # reopen: 在已有分支上继续修改
-  git fetch origin --prune 2>/dev/null || true
+  git fetch origin --prune || true
   git checkout $BRANCH
 else
   # 新任务: 从最新 $DEFAULT_REF 创建分支（覆盖已存在的同名分支）

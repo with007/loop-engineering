@@ -30,7 +30,12 @@
 
 ## 2026-07-13
 
-- [~] streamline-test-verify-docs (→ with) [770ea8b5] — 12:24 IMP1 VFY1 PASS · IMP1 VFY2 FAIL
+- [x] streamline-test-verify-docs (→ with) [770ea8b5] — 12:24 IMP1 VFY1 PASS · IMP1 VFY2 FAIL · 14:44 IMP1 VFY1 PASS · IMP2 VFY1 FAIL · 16:23 IMP2 VFY2 PASS
   ## IMP1 反馈
   1. commit message 描述删除了 6 个文件（VERIFY.md.j2 ×3、loop-test-init 模板/部署副本、项目根 VERIFY.md），但实际分支只包含 10 个文件修改，无任何删除。分支改动不完整。
   2. 部署页(/setup)的 TEST.md 是单独一个预览区域，与设置页(/settings)「verifier skills 和 TEST.md」合并为一个编辑入口的风格不一致。建议统一。
+  ## IMP2 反馈
+  agent 用 rm 物理删除文件但未 git add，删除未进入 commit。两次了：
+  1. IMP1: commit 8a285be 声称删除 6 个文件，实际只有 10 个 M
+  2. IMP2: commit 0ce2dc4 声称删除 6 个文件+2 HTML，实际只有 2 个 M
+  根因：删除文件需用 git rm 而非 rm，或 commit 时确保 git add -A。

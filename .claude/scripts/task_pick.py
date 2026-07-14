@@ -192,13 +192,44 @@ def main():
                 if branch.startswith('remotes/origin/'):
                     branch = branch[len('remotes/origin/'):]
             else:
-                branch = _make_branch_name(whoami, task_id, desc)
-                is_reopen = False
+                # 本地无分支记录 → 查远程二次确认
+                r2 = _run(f"git ls-remote --heads origin 'agent/{whoami}/{task_id}-*'")
+                if r2.returncode != 0:
+                    # ls-remote 失败 → 安全默认：跳过，不冒险重复创建
+                    print(f"WARNING: [r] task {task_id} — git ls-remote failed, skipping. stderr: {r2.stderr.strip()[:200]}",
+                          file=sys.stderr)
+                    continue
+                if r2.stdout.strip():
+                    # 远程有分支 → 保持 reopen
+                    branch = _make_branch_name(whoami, task_id, desc)
+                else:
+                    # 远程 ref 已删 → 尝试 reflog 恢复
+                    expected = _make_branch_name(whoami, task_id, desc)
+                    r3 = _run(f"git reflog origin/{expected} --format=%H -1")
+                    if r3.returncode == 0 and r3.stdout.strip():
+                        old_hash = r3.stdout.strip()
+                        r4 = _run(f"git fetch origin {old_hash}")
+                        if r4.returncode == 0:
+                            _run(f"git branch {expected} {old_hash}")
+                            branch = expected
+                            print(f"NOTE: [r] task {task_id} — branch recovered from reflog ({old_hash[:8]})",
+                                  file=sys.stderr)
+                        else:
+                            print(f"WARNING: [r] task {task_id} — reflog found {old_hash[:8]} but fetch failed, skipping.",
+                                  file=sys.stderr)
+                            continue
+                    else:
+                        print(f"WARNING: [r] task {task_id} — branch not found (local/remote/reflog), skipping.",
+                              file=sys.stderr)
+                        continue
         else:
             branch = _make_branch_name(whoami, task_id, desc)
 
         if not is_reopen:
             result = _run(f"git ls-remote --heads origin 'agent/{whoami}/{task_id}-*'")
+            if result.returncode != 0:
+                # ls-remote 失败 → 安全默认：跳过
+                continue
             if result.stdout.strip():
                 continue
 
