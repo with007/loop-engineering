@@ -359,7 +359,7 @@ def deploy_verify_docs(config):
 
     target_dir = project_root
 
-    # 只注入项目标识和路径，其他内容由模板自带占位符，loop-test-init 后续定制
+    # 只注入项目标识和路径，其他内容由模板自带占位符，loop-verify-init 后续定制
     vars_ = {
         "project_name": project_name,
     }

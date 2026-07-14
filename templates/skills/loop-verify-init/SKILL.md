@@ -102,6 +102,51 @@ user_invocable: true
 
 写完后展示关键改动，确认后写入 `.claude/skills/verifier-<surface>/SKILL.md`。
 
+### 3.5. 定制 TEST.md 人工清单
+
+在所有表面处理完成后，为项目定制 TEST.md 人工检查清单。
+
+#### 3.5a. 读取当前 TEST.md
+
+```bash
+test -f "TEST.md" && echo "FOUND" || echo "NOT_FOUND"
+```
+
+- **存在** → 读内容，识别已有检查点和 `<填写...>` 占位符
+- **不存在** → 用当前项目类型的模板 `.j2` 渲染基线（`templates/verify/<type-slug>/TEST.md.j2`）
+
+#### 3.5b. 分析项目识别人工验证点
+
+基于前面步骤 1 扫描的项目结构，识别需要人眼验证的内容：
+
+- **Web 页面**: 扫描 `server/templates/*.html`、路由定义等，列出关键页面 URL 路径及其检查点（图表渲染、元素存在、交互流程）
+- **Desktop GUI**: 如有 `desktop/` 目录，列出 GUI 交互点（托盘菜单、设置面板、窗口行为等）
+- **其他表面**: 根据项目特点识别（Unity 画面表现、帧率等）
+
+用 `AskUserQuestion` 展示：
+
+```
+我发现以下人工验证点：
+
+Web 页面:
+- /overview — 概览页图表是否正常渲染
+- /tasks — 任务列表展开/折叠交互是否正常
+- /settings — 表单提交是否正常
+
+Desktop GUI:
+- 右键托盘菜单弹出是否正常
+- 设置面板渲染是否正确
+
+是否有需要补充、修改或删除的？
+```
+
+#### 3.5c. 写入 TEST.md
+
+用户确认后，将检查点写入项目根目录 `TEST.md`：
+- 替换所有 `<填写...>` 占位符为实际值
+- 删除不适用的示例模块，新增项目特有的模块
+- 保留文档头部的定位说明和覆盖警告
+
 ### 4. 删除无用 skill
 
 检查 `.claude/skills/verifier-*/`：
@@ -119,6 +164,9 @@ user_invocable: true
 4. 每个原语 = 描述 + 命令 + 适用条件
 5. 探测 = 通用项 + 至少一条项目特有探测
 6. 启动命令和清理命令在当前环境可执行
+7. TEST.md 中无残留 `<填写...>` 占位符
+8. TEST.md 中不包含自动化工具名（curl、pytest、MCP 等）
+9. TEST.md 头部声明了"自动化验证由 loop-verify + verifier-* skills 处理"
 
 ## 输出
 
@@ -129,6 +177,9 @@ user_invocable: true
 - verifier-web: ✅ 已定制（用户确认端口 8765，新增 /tasks 页面）
 - verifier-api: ✅ 已定制（用户补充了 /tasks/list 端点校验）
 - verifier-cli: ✅ 已生成（用户提供了完整的子命令列表）
+
+### TEST.md 人工清单
+- ✅ 已定制（/overview、/tasks、/settings 页面检查点）
 
 ### 删除的 skill
 - verifier-desktop: 已删除（用户确认项目无 GUI）
