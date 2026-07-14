@@ -279,7 +279,7 @@ echo "IMP:<IMP_AGENT_ID>:$BRANCH:$ROUND" > .loop-engineering/task-phase
 
 ### Step 3b: 等待 Implementer 完成
 
-Implementer 完成后系统自动推送 `task-notification`。task-runner **不轮询文件**——下一轮 cron 触发时，Step 0b 检测到 phase 文件 + IMP notification 到达后自动进入 Step 4。
+Implementer 完成后系统自动推送 `task-notification`。task-runner **不轮询文件**——同一会话内收到通知时立即处理；若会话已退出，则由下一轮 cron 触发 Step 0b 检测 phase 文件 + notification 到达后自动进入 Step 4。
 
 **允许主动 kill 的条件**（必须同时满足以下三项）：
 1. IMP 已运行 **> 30 分钟**
@@ -314,7 +314,7 @@ echo "VFY:<VFY_AGENT_ID>:$BRANCH:$ROUND" > .loop-engineering/task-phase
 
 ### Step 4b: 等待 Verifier 完成
 
-Verifier 完成后系统自动推送 `task-notification`。不轮询文件——下一轮 cron 触发时，Step 0b 检测到 phase 文件 + VFY notification 到达后自动处理。
+Verifier 完成后系统自动推送 `task-notification`。不轮询文件——同一会话内收到通知时立即处理；若会话已退出，则由下一轮 cron 触发 Step 0b 检测 phase 文件 + notification 到达后自动处理。
 
 **Notification 到达时的处理**（在 Step 0b 中执行）：
 
