@@ -119,7 +119,7 @@ def main():
     print(f"=== 检查已合入的 {prefix} 分支 ===")
 
     # fetch
-    _run("git fetch origin --prune 2>/dev/null || true", cwd=project_root)
+    _run("git fetch origin --prune || true", cwd=project_root)
 
     # 远程分支
     result = _run("git branch -r", cwd=project_root)

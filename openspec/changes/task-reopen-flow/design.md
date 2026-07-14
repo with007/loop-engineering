@@ -44,7 +44,7 @@ tasks.md 中 `[r]` 行下方的缩进行作为反馈：
 
 ### 3. 分支发现：git branch 查询
 
-task_pick 遇到 `[r]` 时，用 `git branch -a --list "agent/{whoami}/{task_id}-*" --sort=-committerdate` 查找已有分支，取最新。本地找不到时用 `git ls-remote` 二次确认。分支确实不存在时 **跳过该任务**（打 stderr 告警），不降级为 `[ ]` 行为——`[r]` 语义是"在已有分支上修改"，没有分支就无法重开。
+task_pick 遇到 `[r]` 时，用 `git branch -a --list "agent/{whoami}/{task_id}-*" --sort=-committerdate` 查找已有分支，取最新。Step 0 已执行 `git fetch --prune`，本地 refs 是最新的，找不到即说明分支不存在。此时尝试 reflog 恢复，仍找不到则跳过（打 stderr），不降级为 `[ ]`。
 
 ### 4. 分支策略：直接 checkout，不 rebase
 

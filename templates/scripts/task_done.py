@@ -354,6 +354,7 @@ def main():
 
         # 检查是否有东西可 commit
         r = _run("git diff --cached --stat")
+        pushed = False
         if r.stdout.strip():
             _run(f'git commit -F -', input_text=commit_msg)
             print("  [OK] committed")
@@ -372,14 +373,21 @@ def main():
                             print(f"  [FAIL] force push 也失败: {r3.stderr.strip()[:120]}")
                         else:
                             print(f"  [OK] pushed {branch} (--force)")
+                            pushed = True
                     else:
                         print(f"  [OK] pushed {branch} (--force-with-lease)")
+                        pushed = True
                 else:
                     print(f"  [FAIL] push 失败（非分叉原因），跳过")
             else:
                 print(f"  [OK] pushed {branch}")
+                pushed = True
         else:
             print("  (无改动，跳过 commit)")
+
+        if not pushed:
+            print("  [FAIL] 未能推送到远程，跳过 tasks.md 更新和通知")
+            return
 
     # 生成 diff
     base = _get_default_branch(project_root)
