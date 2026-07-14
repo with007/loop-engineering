@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """任务完成收尾（独立部署版）。
 
-零包依赖，纯 stdlib + git 命令 + 内置 TaskLine 解析器。
+零包依赖，纯 stdlib + git 命令。
 由 loop setup 部署到 .claude/scripts/。
 用法: python .claude/scripts/task_done.py <username> <taskID> [IMP序号] [VFY轮数] [--project-root <dir>] [--output-dir <dir>] [--task-desc <desc>] [--do-commit] [--format shell]
 
@@ -12,7 +12,7 @@
 """
 import json
 import os
-import re
+import shlex
 import shlex
 import subprocess
 import sys
@@ -20,54 +20,7 @@ import tempfile
 import time
 from datetime import datetime
 
-
-# ── TaskLine 解析器 ──
-
-_TASK_LINE_RE = re.compile(
-    r'^- \[(.)\]\s+'             # checkbox: - [x]
-    r'(.+?)'                      # description (non-greedy)
-    r'(?:\s+\(→\s*(\w+)\))?'     # optional assignee: (→ whoami)
-    r'(?:\s+\[([a-f0-9]{8})\])?' # optional task_id: [xxxxxxxx]
-    r'(?:\s+—\s+(.+))?'          # optional meta: — text
-    r'$'
-)
-
-
-class TaskLine:
-    """tasks.md 中单行任务的解析和格式化（零依赖版）."""
-
-    __slots__ = ("status", "description", "assignee", "task_id", "meta", "feedback")
-
-    def __init__(self, status=" ", description="", assignee="", task_id="", meta="", feedback=None):
-        self.status = status
-        self.description = description
-        self.assignee = assignee
-        self.task_id = task_id
-        self.meta = meta
-        self.feedback = feedback if feedback is not None else []
-
-    @classmethod
-    def parse(cls, line):
-        m = _TASK_LINE_RE.match(line)
-        if not m:
-            return None
-        return cls(
-            status=m.group(1),
-            description=m.group(2).strip(),
-            assignee=m.group(3) or "",
-            task_id=m.group(4) or "",
-            meta=m.group(5) or "",
-        )
-
-    def format(self):
-        parts = [f"- [{self.status}] {self.description}"]
-        if self.assignee:
-            parts.append(f" (→ {self.assignee})")
-        if self.task_id:
-            parts.append(f" [{self.task_id}]")
-        if self.meta:
-            parts.append(f" — {self.meta}")
-        return "".join(parts)
+from task_line import TaskLine, update_task
 
 
 # ── 工具函数 ──
@@ -421,33 +374,14 @@ def main():
 def _update_tasks_md(task_id, whoami, imp_n, vfy_n, project_root):
     """更新 tasks.md: [ ]/[~]/[r] → [x] 并追加运行记录."""
     now = datetime.now().strftime("%H:%M")
-    updated = False
-    tasks_path = os.path.join(project_root, "tasks.md")
-    try:
-        with open(tasks_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-        with open(tasks_path, "w", encoding="utf-8") as f:
-            for line in lines:
-                tl = TaskLine.parse(line.rstrip('\n'))
-                if tl and tl.task_id == task_id and tl.assignee == whoami and tl.status in (" ", "~", "r"):
-                    if tl.status == "r":
-                        old_meta = tl.meta
-                        new_meta = (old_meta + " · " + now + f" IMP{imp_n} VFY{vfy_n} PASS") if old_meta else (now + f" IMP{imp_n} VFY{vfy_n} PASS")
-                        tl.status = "x"
-                        tl.meta = new_meta
-                    else:
-                        tl.status = "x"
-                        tl.meta = (tl.meta + " · " + now + f" IMP{imp_n} VFY{vfy_n} PASS") if tl.meta else (now + f" IMP{imp_n} VFY{vfy_n} PASS")
-                    f.write(tl.format() + "\n")
-                    updated = True
-                else:
-                    f.write(line)
-
-        status = "[x]" if updated else "未匹配"
-        print(f"tasks.md: {task_id} → {status}")
-    except Exception as e:
-        print(f"Warning: tasks.md update failed: {e}")
+    meta_text = f"{now} IMP{imp_n} VFY{vfy_n} PASS"
+    modified, old, new = update_task(
+        os.path.join(project_root, "tasks.md"), task_id,
+        status="x", append_meta=meta_text, assignee=whoami,
+        if_status_in=(" ", "~", "r"),
+    )
+    status = "[x]" if modified else "未匹配"
+    print(f"tasks.md: {task_id} → {status}")
 
 
 if __name__ == "__main__":

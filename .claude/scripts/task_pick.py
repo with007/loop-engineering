@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """从 tasks.md 选取下一个待办任务（独立部署版）。
 
-零包依赖，纯 stdlib + git 命令 + 内置 TaskLine 解析器。
+零包依赖，纯 stdlib + git 命令。
 由 loop setup 部署到 .claude/scripts/。
 用法: python .claude/scripts/task_pick.py <username> [--project-root <dir>] [--format shell]
 输出: taskID=<id> branch=<分支名> desc=<描述> openSpec=<true|false>  或  NONE（无任务） 或  BUSY（有进行中任务）
@@ -13,54 +13,7 @@ import shlex
 import subprocess
 import sys
 
-
-# ── TaskLine 解析器 ──
-
-_TASK_LINE_RE = re.compile(
-    r'^- \[(.)\]\s+'             # checkbox: - [x]
-    r'(.+?)'                      # description (non-greedy)
-    r'(?:\s+\(→\s*(\w+)\))?'     # optional assignee: (→ whoami)
-    r'(?:\s+\[([a-f0-9]{8})\])?' # optional task_id: [xxxxxxxx]
-    r'(?:\s+—\s+(.+))?'          # optional meta: — text
-    r'$'
-)
-
-
-class TaskLine:
-    """tasks.md 中单行任务的解析和格式化（零依赖版）."""
-
-    __slots__ = ("status", "description", "assignee", "task_id", "meta", "feedback")
-
-    def __init__(self, status=" ", description="", assignee="", task_id="", meta="", feedback=None):
-        self.status = status
-        self.description = description
-        self.assignee = assignee
-        self.task_id = task_id
-        self.meta = meta
-        self.feedback = feedback if feedback is not None else []
-
-    @classmethod
-    def parse(cls, line):
-        m = _TASK_LINE_RE.match(line)
-        if not m:
-            return None
-        return cls(
-            status=m.group(1),
-            description=m.group(2).strip(),
-            assignee=m.group(3) or "",
-            task_id=m.group(4) or "",
-            meta=m.group(5) or "",
-        )
-
-    def format(self):
-        parts = [f"- [{self.status}] {self.description}"]
-        if self.assignee:
-            parts.append(f" (→ {self.assignee})")
-        if self.task_id:
-            parts.append(f" [{self.task_id}]")
-        if self.meta:
-            parts.append(f" — {self.meta}")
-        return "".join(parts)
+from task_line import TaskLine
 
 
 # ── 工具函数 ──
