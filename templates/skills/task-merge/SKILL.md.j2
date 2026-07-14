@@ -285,8 +285,18 @@ write_feedback_to_task(tasks_path, "<task_id>", "<反馈文本>")
 写入后编辑任务行：
 - `[x]` → `[r]`（task_id.py 已定义 `r` = reopen）
 - 行尾追加 `· IMP{N} VFY{N} FAIL`
-  - IMP 编号 = 当前实现轮次（不改代码就不递增，只递增 VFY 编号）
-  - 反馈标题 `## IMP{N} 反馈` 与任务行 IMP 编号一致
+  - `write_feedback_to_task` 自动递增 IMP 编号（已有最大 +1），格式 `## IMP{N} 反馈` + 缩进内容
+  - 任务行 IMP 编号跟随反馈标题
+
+**反馈格式参考**（`write_feedback_to_task` 写入后 tasks.md 中的实际效果）：
+
+```
+  ## IMP1 反馈
+  1. reopen_task（API）缺少 ## IMP{N} 反馈 标题头 — 需自动统计已有 IMP 条数并追加标题
+  2. write_feedback_to_task（task-merge 拒绝时调用）同样缺少标题头 — 需与 reopen 统一格式
+```
+
+> 每个反馈条目一行，数字序号 + 冒号 + 具体描述。无需额外前缀（如 `VFY:`）。
 
 > **注意**: 需要有 task_id 才能写入反馈。如果任务行无 `[task_id]`，产出反馈文本告知用户，
 > 建议后续用 task-add 添加任务以自动生成 task_id。
