@@ -13,7 +13,7 @@ import shlex
 import subprocess
 import sys
 
-from task_line import TaskLine
+from task_line import find_project_root, load_tasks
 
 
 # ── 工具函数 ──
@@ -21,24 +21,6 @@ from task_line import TaskLine
 def _run(cmd):
     return subprocess.run(cmd, shell=True, capture_output=True, text=True,
                           encoding='utf-8', errors='replace')
-
-
-def _find_project_root(start_dir=None):
-    """从 start_dir 向上查找 .loop-engineering/loop-config.yaml."""
-    if start_dir is None:
-        start_dir = os.getcwd()
-    start_dir = os.path.abspath(start_dir)
-    p = start_dir
-    for _ in range(10):
-        if os.path.exists(os.path.join(p, ".loop-engineering", "loop-config.yaml")):
-            return p
-        if os.path.exists(os.path.join(p, "loop-config.yaml")):
-            return p
-        parent = os.path.dirname(p)
-        if parent == p:
-            break
-        p = parent
-    return start_dir
 
 
 def _make_readable_slug(description, max_len=40):
@@ -78,7 +60,7 @@ def main():
         elif arg == "--format" and i + 1 < len(sys.argv):
             fmt = sys.argv[i + 1]
     if not project_root:
-        project_root = _find_project_root()
+        project_root = find_project_root()
     tasks_path = os.path.join(project_root, "tasks.md")
 
     def emit(status, **kwargs):
@@ -100,27 +82,10 @@ def main():
             elif status == "busy":
                 print("BUSY")
 
-    try:
-        with open(tasks_path, 'r', encoding='utf-8') as f:
-            lines = f.read().split('\n')
-    except FileNotFoundError:
-        emit("none")
-        return
+    from task_line import load_tasks
 
-    tasks = []
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        tl = TaskLine.parse(line)
-        if tl and tl.assignee == whoami:
-            # 收集缩进反馈行
-            i += 1
-            while i < len(lines) and lines[i].startswith(("  ", "\t")):
-                tl.feedback.append(lines[i].strip())
-                i += 1
-            tasks.append(tl)
-            continue
-        i += 1
+    entries = load_tasks(tasks_path)
+    tasks = [tl for tl, _ in entries if tl and tl.assignee == whoami]
 
     for tl in tasks:
         if tl.status == "~":

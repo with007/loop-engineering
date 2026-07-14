@@ -11,16 +11,15 @@
 --task-desc:    任务描述（用于 commit message 标题）
 """
 import json
+import glob
 import os
-import shlex
 import shlex
 import subprocess
 import sys
-import tempfile
 import time
 from datetime import datetime
 
-from task_line import TaskLine, update_task
+from task_line import update_task, find_project_root
 
 
 # ── 工具函数 ──
@@ -32,23 +31,6 @@ def _run(cmd, input_text=None):
         kwargs["input"] = input_text
     return subprocess.run(cmd, **kwargs)
 
-
-def _find_project_root(start_dir=None):
-    """从 start_dir 向上查找 .loop-engineering/loop-config.yaml."""
-    if start_dir is None:
-        start_dir = os.getcwd()
-    start_dir = os.path.abspath(start_dir)
-    p = start_dir
-    for _ in range(10):
-        if os.path.exists(os.path.join(p, ".loop-engineering", "loop-config.yaml")):
-            return p
-        if os.path.exists(os.path.join(p, "loop-config.yaml")):
-            return p
-        parent = os.path.dirname(p)
-        if parent == p:
-            break
-        p = parent
-    return start_dir
 
 
 def _get_default_branch(repo_path=None):
@@ -63,71 +45,6 @@ def _get_default_branch(repo_path=None):
     return "master"
 
 
-def _do_commit(branch, task_desc, cwd, total_rounds=1):
-    """收集所有轮次 imp-output-r*.md 和 vfy-output-r*.md，交替拼装 commit message."""
-    loop_dir = os.path.join(cwd, ".loop-engineering")
-    imp_rounds = _collect_round_files(loop_dir, "imp-output-r*.md")
-    vfy_rounds = _collect_round_files(loop_dir, "vfy-output-r*.md")
-
-    subject = task_desc if task_desc else "task"
-    lines = [subject, ""]
-
-    for r in range(1, total_rounds + 1):
-        lines.append(f"## Round {r}")
-        lines.append("")
-        # IMP
-        imp_content = ""
-        if r in imp_rounds:
-            imp_content = _read_output_file(imp_rounds[r])
-        if imp_content:
-            if r < total_rounds:
-                trimmed = _trim_imp_for_earlier_round(imp_content)
-                if trimmed:
-                    lines.append("### IMP")
-                    lines.append("")
-                    lines.append(trimmed)
-            else:
-                lines.append("### IMP")
-                lines.append("")
-                lines.append(imp_content)
-                lines.append("")
-        # VFY
-        vfy_content = ""
-        if r in vfy_rounds:
-            vfy_content = _read_output_file(vfy_rounds[r])
-        if vfy_content:
-            lines.append("### VFY")
-            lines.append("")
-            lines.append(vfy_content)
-            lines.append("")
-
-    lines.append(f"---\nIMP{total_rounds} VFY{total_rounds}")
-    lines.append("Co-Authored-By: Claude <noreply@anthropic.com>")
-    msg = "\n".join(lines)
-
-    fd, tmp = tempfile.mkstemp(suffix=".txt", prefix="commit-msg-")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(msg)
-        r = _run("git add -A")
-        if r.returncode != 0:
-            print(f"git add failed: {r.stderr}")
-            return False
-        r = _run(f'git commit -F "{tmp}"')
-        if r.returncode != 0:
-            print(f"git commit failed: {r.stderr}")
-            return False
-        r = _run(f"git push origin {branch}")
-        if r.returncode != 0:
-            print(f"git push failed: {r.stderr}")
-            return False
-        print(f"Committed and pushed to {branch}")
-        return True
-    finally:
-        try:
-            os.unlink(tmp)
-        except Exception:
-            pass
 
 
 def _write_run_log(project_root, task_id, whoami, imp_n, vfy_n, branch):
@@ -198,9 +115,8 @@ def _trim_imp_for_earlier_round(content):
 
 def _collect_round_files(loop_dir, pattern):
     """收集轮次文件，返回 {round_num: filepath} 字典."""
-    import glob as _glob
     result = {}
-    for fpath in _glob.glob(os.path.join(loop_dir, pattern)):
+    for fpath in glob.glob(os.path.join(loop_dir, pattern)):
         # 从文件名提取轮次号: imp-output-r{N}.md 或 vfy-output-r{N}.md
         basename = os.path.basename(fpath)
         try:
@@ -214,6 +130,35 @@ def _collect_round_files(loop_dir, pattern):
 
 
 # ── 主逻辑 ──
+
+def _push_branch(branch):
+    """推送分支到远程，分叉时自动 force-with-lease → force."""
+    r = _run(f"git push origin {branch}")
+    if r.returncode == 0:
+        print(f"  [OK] pushed {branch}")
+        return True
+
+    stderr = r.stderr.strip()
+    print(f"  [WARN] push rejected: {stderr[:120]}")
+    if "[rejected]" not in stderr and "non-fast-forward" not in stderr.lower():
+        print(f"  [FAIL] push 失败（非分叉原因），跳过")
+        return False
+
+    # Agent 分支是单写者，分叉时 force-with-lease 安全
+    print("  [WARN] 分支分叉，尝试 force-with-lease...")
+    r2 = _run(f"git push --force-with-lease origin {branch}")
+    if r2.returncode == 0:
+        print(f"  [OK] pushed {branch} (--force-with-lease)")
+        return True
+
+    print(f"  [WARN] force-with-lease 也失败: {r2.stderr.strip()[:120]}")
+    r3 = _run(f"git push --force origin {branch}")
+    if r3.returncode != 0:
+        print(f"  [FAIL] force push 也失败: {r3.stderr.strip()[:120]}")
+        return False
+    print(f"  [OK] pushed {branch} (--force)")
+    return True
+
 
 def main():
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -255,7 +200,7 @@ def main():
             fmt = sys.argv[i + 1]
 
     if not project_root:
-        project_root = _find_project_root()
+        project_root = find_project_root()
     if not output_dir:
         output_dir = os.getcwd()
 
@@ -307,36 +252,13 @@ def main():
 
         # 检查是否有东西可 commit
         r = _run("git diff --cached --stat")
-        pushed = False
         if r.stdout.strip():
             _run(f'git commit -F -', input_text=commit_msg)
             print("  [OK] committed")
-            r = _run(f"git push origin {branch}")
-            if r.returncode != 0:
-                stderr = r.stderr.strip()
-                print(f"  [WARN] push rejected: {stderr[:120]}")
-                # Agent 分支是单写者，分叉时 force-with-lease 安全
-                if "[rejected]" in stderr or "non-fast-forward" in stderr.lower():
-                    print("  [WARN] 分支分叉，尝试 force-with-lease...")
-                    r2 = _run(f"git push --force-with-lease origin {branch}")
-                    if r2.returncode != 0:
-                        print(f"  [WARN] force-with-lease 也失败: {r2.stderr.strip()[:120]}")
-                        r3 = _run(f"git push --force origin {branch}")
-                        if r3.returncode != 0:
-                            print(f"  [FAIL] force push 也失败: {r3.stderr.strip()[:120]}")
-                        else:
-                            print(f"  [OK] pushed {branch} (--force)")
-                            pushed = True
-                    else:
-                        print(f"  [OK] pushed {branch} (--force-with-lease)")
-                        pushed = True
-                else:
-                    print(f"  [FAIL] push 失败（非分叉原因），跳过")
-            else:
-                print(f"  [OK] pushed {branch}")
-                pushed = True
+            pushed = _push_branch(branch)
         else:
             print("  (无改动，跳过 commit)")
+            pushed = True
 
         if not pushed:
             print("  [FAIL] 未能推送到远程，跳过 tasks.md 更新和通知")
@@ -375,7 +297,7 @@ def _update_tasks_md(task_id, whoami, imp_n, vfy_n, project_root):
     """更新 tasks.md: [ ]/[~]/[r] → [x] 并追加运行记录."""
     now = datetime.now().strftime("%H:%M")
     meta_text = f"{now} IMP{imp_n} VFY{vfy_n} PASS"
-    modified, old, new = update_task(
+    modified, _, _ = update_task(
         os.path.join(project_root, "tasks.md"), task_id,
         status="x", append_meta=meta_text, assignee=whoami,
         if_status_in=(" ", "~", "r"),

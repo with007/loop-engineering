@@ -19,7 +19,27 @@
   python .claude/scripts/task_line.py 770ea8b5 x --append-meta "18:30 IMP1 VFY1 PASS"
 """
 
+import os
 import re
+
+
+def find_project_root(start_dir=None):
+    """从 start_dir 向上查找项目根（有 .loop-engineering/loop-config.yaml 或 loop-config.yaml）."""
+    if start_dir is None:
+        start_dir = os.getcwd()
+    start_dir = os.path.abspath(start_dir)
+    p = start_dir
+    for _ in range(10):
+        if os.path.exists(os.path.join(p, ".loop-engineering", "loop-config.yaml")):
+            return p
+        if os.path.exists(os.path.join(p, "loop-config.yaml")):
+            return p
+        parent = os.path.dirname(p)
+        if parent == p:
+            break
+        p = parent
+    return start_dir
+
 
 _TASK_LINE_RE = re.compile(
     r'^- \[(.)\]\s+'             # checkbox: - [x]
@@ -140,7 +160,8 @@ def save_tasks(tasks_path, entries):
     for tl, raw in entries:
         if tl:
             output.append(tl.format())
-            output.extend(tl.format_feedback())
+            if tl.feedback:
+                output.extend(tl.format_feedback())
         else:
             output.append(raw)
     with open(tasks_path, 'w', encoding='utf-8') as f:
@@ -198,8 +219,7 @@ def update_task(tasks_path, task_id, status=None, append_meta=None, set_meta=Non
 
 # ── CLI ──
 
-if __name__ == "__main__":
-    import os
+def main():
     import sys
 
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -244,22 +264,7 @@ if __name__ == "__main__":
             sys.exit(1)
 
     if not project_root:
-        # 从 cwd 向上查找
-        start = os.path.abspath(os.getcwd())
-        p = start
-        for _ in range(10):
-            if os.path.exists(os.path.join(p, ".loop-engineering", "loop-config.yaml")):
-                project_root = p
-                break
-            if os.path.exists(os.path.join(p, "loop-config.yaml")):
-                project_root = p
-                break
-            parent = os.path.dirname(p)
-            if parent == p:
-                break
-            p = parent
-        if not project_root:
-            project_root = start
+        project_root = find_project_root()
 
     tasks_path = os.path.join(project_root, "tasks.md")
     modified, old_line, new_line = update_task(
@@ -278,3 +283,7 @@ if __name__ == "__main__":
     else:
         print(f"[FAIL] 未找到任务 {task_id}" + (f" (assignee={assignee})" if assignee else ""))
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
