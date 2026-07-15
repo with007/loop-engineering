@@ -152,13 +152,20 @@ def _init_state_from_md(project_root, task_id):
 
 
 def find_active_phase(project_root):
-    """遍历所有 state.json，返回 (task_id, phase_str) 或 (None, None)。"""
+    """遍历所有已有 state.json，返回 (task_id, phase_str) 或 (None, None)。"""
     tasks_dir = _tasks_dir(project_root)
     if not os.path.isdir(tasks_dir):
         return None, None
     for tid in os.listdir(tasks_dir):
-        state = load_state(project_root, tid)
-        if state and state.get("phase"):
+        path = _state_path(project_root, tid)
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, encoding='utf-8') as f:
+                state = json.load(f)
+        except Exception:
+            continue
+        if state.get("phase"):
             return tid, state["phase"]
     return None, None
 
