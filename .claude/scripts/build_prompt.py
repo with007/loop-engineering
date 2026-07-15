@@ -30,12 +30,14 @@ PROJECT_ROOT = None  # set by CLI --project-root
 
 def _tp(task_id, filename):
     """绝对路径：{project_root}/.loop-engineering/tasks/{task_id}/{filename}"""
-    return PROJECT_ROOT + "/.loop-engineering/tasks/" + task_id + "/" + filename
+    root = PROJECT_ROOT.replace('\\', '/')
+    return root + "/.loop-engineering/tasks/" + task_id + "/" + filename
 
 
 def _tp_dir(task_id):
     """绝对路径：{project_root}/.loop-engineering/tasks/{task_id}/"""
-    return PROJECT_ROOT + "/.loop-engineering/tasks/" + task_id + "/"
+    root = PROJECT_ROOT.replace('\\', '/')
+    return root + "/.loop-engineering/tasks/" + task_id + "/"
 
 
 # -- prompt blocks -----------------------------------------------------------

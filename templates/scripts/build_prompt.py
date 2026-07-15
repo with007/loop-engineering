@@ -2,8 +2,8 @@
 """Build IMP/VFY sub-agent prompts. Zero-dependency, reads loop-config.yaml for paths.
 
 Usage:
-  python .claude/scripts/build_prompt.py imp --desc "..." --task-id xxxx --branch [--round 1] [--open-spec] [--reopen] [--user-feedback "..."]
-  python .claude/scripts/build_prompt.py vfy --desc "..." --task-id xxxx --branch [--round 1] [--open-spec] [--user-feedback "..."]
+  python .claude/scripts/build_prompt.py imp --desc "..." --task-id xxxx --branch [--round 1] [--open-spec] [--reopen] [--user-feedback "..."] --project-root <dir>
+  python .claude/scripts/build_prompt.py vfy --desc "..." --task-id xxxx --branch [--round 1] [--open-spec] [--user-feedback "..."] --project-root <dir>
 """
 import argparse, os, sys, yaml
 
@@ -25,6 +25,19 @@ def _find_config():
 CFG = _find_config()
 AGENT_WS = CFG.get("agent", {}).get("workspace", os.getcwd())
 AGENT_DIR = AGENT_WS + "/loop-engineering"
+PROJECT_ROOT = None  # set by CLI --project-root
+
+
+def _tp(task_id, filename):
+    """绝对路径：{project_root}/.loop-engineering/tasks/{task_id}/{filename}"""
+    root = PROJECT_ROOT.replace('\\', '/')
+    return root + "/.loop-engineering/tasks/" + task_id + "/" + filename
+
+
+def _tp_dir(task_id):
+    """绝对路径：{project_root}/.loop-engineering/tasks/{task_id}/"""
+    root = PROJECT_ROOT.replace('\\', '/')
+    return root + "/.loop-engineering/tasks/" + task_id + "/"
 
 
 # -- prompt blocks -----------------------------------------------------------
@@ -57,7 +70,7 @@ def _feedback_imp(user_feedback, round_num, task_id):
     if round_num <= 1:
         vfy = "（首轮，无验证反馈）"
     else:
-        vfy = f"<如果 ROUND > 1，自行读取 `.loop-engineering/tasks/{task_id}/vfy-output-r*.md` 了解之前 VFY 发现的全部问题>"
+        vfy = f"<如果 ROUND > 1，自行读取 `{_tp_dir(task_id)}vfy-output-r*.md` 了解之前 VFY 发现的全部问题>"
     return (
         "## 用户反馈\n" + (user_feedback or "（无）") + "\n\n"
         "## 验证反馈\n" + vfy
@@ -68,7 +81,7 @@ def _feedback_vfy(user_feedback, round_num, task_id):
     if round_num <= 1:
         history = "（首轮，无历史验证）"
     else:
-        history = f"<自行读取 `.loop-engineering/tasks/{task_id}/vfy-output-r*.md`，了解之前 VFY 发现的全部问题和已修复项>"
+        history = f"<自行读取 `{_tp_dir(task_id)}vfy-output-r*.md`，了解之前 VFY 发现的全部问题和已修复项>"
     return (
         "## 用户反馈\n" + (user_feedback or "（无）") + "\n\n"
         "## 历史验证\n" + history
@@ -84,7 +97,7 @@ def _principles_imp(round_num, task_id):
         "不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。"
         "遇到任何不确定，自己决策、自己执行、输出结果。你是一个纯函数——输入任务，输出结果。\n"
         "- **最终输出只能是一行 `PASS` 或 `FAIL: <原因>`。** "
-        "完整报告写入 `.loop-engineering/tasks/" + task_id + "/imp-output-r" + r + ".md` 文件，"
+        "完整报告写入 `" + _tp(task_id, "imp-output-r" + r + ".md") + "` 文件，"
         "不要在最终输出中回传报告全文。task-runner 通过脚本读文件获取细节，"
         "不需要在上下文中看到报告内容。"
     )
@@ -99,7 +112,7 @@ def _principles_vfy(round_num, task_id):
         "不允许 AskUserQuestion、不允许 EnterPlanMode、不允许输出提问性语句。"
         "遇到任何不确定，自己决策、自己执行。你是一个纯函数——输入任务，输出验证结果。\n"
         "- **最终输出只能是一行 `PASS` 或 `FAIL: <原因>`。** "
-        "完整报告写入 `.loop-engineering/tasks/" + task_id + "/vfy-output-r" + r + ".md` 文件，"
+        "完整报告写入 `" + _tp(task_id, "vfy-output-r" + r + ".md") + "` 文件，"
         "不要在最终输出中回传报告全文。task-runner 通过脚本读文件获取细节，"
         "不需要在上下文中看到报告内容。"
     )
@@ -110,10 +123,10 @@ def _output_imp(round_num, user_feedback, task_id):
     return (
         "## 输出\n\n"
         "**⚠️ 你的最后一条消息只能是一行：`PASS` 或 `FAIL: <原因>`。**\n\n"
-        "完整报告写入 `.loop-engineering/tasks/" + task_id + "/imp-output-r" + r + ".md` 文件，格式如下：\n\n"
+        "完整报告写入 `" + _tp(task_id, "imp-output-r" + r + ".md") + "` 文件，格式如下：\n\n"
         "## 用户反馈\n" + (user_feedback or "（无）") + "\n\n"
         "## 验证反馈\n"
-        f"<如果 round > 1，摘录 `.loop-engineering/tasks/{task_id}/vfy-output-r*.md` 中与本轮修复相关的 FAIL 点>\n\n"
+        f"<如果 round > 1，摘录 `{_tp_dir(task_id)}vfy-output-r*.md` 中与本轮修复相关的 FAIL 点>\n\n"
         "## 实现思路\n"
         "<为什么这样做、关键设计决策、考虑过的替代方案>\n\n"
         "## 实现过程\n"
@@ -133,7 +146,7 @@ def _output_vfy(round_num, task_id):
     return (
         "## 输出\n\n"
         "**⚠️ 你的最后一条消息只能是一行：`PASS` 或 `FAIL: <原因>`。** "
-        "完整报告已写入 `.loop-engineering/tasks/" + task_id + "/vfy-output-r" + r + ".md`，报告格式遵循 `/loop-verify` 的规定。"
+        "完整报告已写入 `" + _tp(task_id, "vfy-output-r" + r + ".md") + "`，报告格式遵循 `/loop-verify` 的规定。"
     )
 
 
@@ -157,7 +170,7 @@ def build_imp(desc, task_id, branch, round_num, user_feedback, open_spec, reopen
             "4. 读 openspec/changes/" + desc + "/specs/ 下各 spec 获取详细规格\n"
             "5. 按 openspec-apply-change 流程逐子任务实现\n"
             "6. 每个子任务完成后标记 openspec/changes/" + desc + "/tasks.md 中的 [ ] -> [x]\n"
-            "7. 将完整报告写入 `.loop-engineering/tasks/" + task_id + "/imp-output-r" + str(round_num) + ".md`\n"
+            "7. 将完整报告写入 `" + _tp(task_id, "imp-output-r" + str(round_num) + ".md") + "`\n"
             "8. 最后输出一行：`PASS` 或 `FAIL: <原因>`"
         )
     else:
@@ -166,7 +179,7 @@ def build_imp(desc, task_id, branch, round_num, user_feedback, open_spec, reopen
             "1. 理解任务描述，自行研究代码库，设计方案\n"
             "2. 读相关代码、模板、配置，理解现有架构和上下文\n"
             "3. 实现变更\n"
-            "4. 将完整报告写入 `.loop-engineering/tasks/" + task_id + "/imp-output-r" + str(round_num) + ".md`\n"
+            "4. 将完整报告写入 `" + _tp(task_id, "imp-output-r" + str(round_num) + ".md") + "`\n"
             "5. 最后输出一行：`PASS` 或 `FAIL: <原因>`"
         )
 
@@ -204,9 +217,9 @@ def build_vfy(desc, task_id, branch, round_num, user_feedback, open_spec):
         "**流程**\n"
         "1. IMP 不 commit，变更在 working tree。用 `git status --short` 看全貌（含新增文件），`git diff` + `git diff --cached` 看具体内容，对照任务描述理解\n"
         "2. 如需了解历史上下文，可用 `git log " + branch + " --not master --oneline --grep=\"" + task_id + "\"` 查看本任务相关的历史 commit，但**验证对象是 working tree diff，不是已 commit 的内容**\n"
-        "3. 读历史验证文件（`.loop-engineering/tasks/" + task_id + "/vfy-output-r*.md`），了解之前的验证结果和已修复问题\n"
+        "3. 读历史验证文件（`" + _tp_dir(task_id) + "vfy-output-r*.md`），了解之前的验证结果和已修复问题\n"
         "4. 按 `/loop-verify` 的方法论执行验证：表面识别 -> 驱动 -> 探测 -> 报告\n"
-        "5. 将完整验证报告写入 `.loop-engineering/tasks/" + task_id + "/vfy-output-r" + str(round_num) + ".md`\n"
+        "5. 将完整验证报告写入 `" + _tp(task_id, "vfy-output-r" + str(round_num) + ".md") + "`\n"
         "6. 最后输出一行：`PASS` 或 `FAIL: <原因>`"
     )
 
@@ -237,7 +250,11 @@ def main():
     parser.add_argument("--user-feedback", default="")
     parser.add_argument("--open-spec", action="store_true")
     parser.add_argument("--reopen", action="store_true")
+    parser.add_argument("--project-root", required=True)
     args = parser.parse_args()
+
+    global PROJECT_ROOT
+    PROJECT_ROOT = args.project_root
 
     if args.type == "imp":
         print(build_imp(args.desc, args.task_id, args.branch,
