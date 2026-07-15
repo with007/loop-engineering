@@ -7,10 +7,9 @@
     <div id="control-status" hx-get="/control/status-fragment" hx-trigger="every 5s" hx-swap="outerHTML">
         <div class="card" style="margin-bottom: 20px;">
             <div class="status-indicator" style="margin-bottom: 16px;">
-                <span class="status-dot {% if is_running %}active{% elif status.paused %}paused{% endif %}"></span>
+                <span class="status-dot {% if is_running %}active{% endif %}"></span>
                 <span style="font-weight: 600; font-size: 18px;">
                     {% if is_running %}Loop 运行中
-                    {% elif status.paused %}已暂停
                     {% else %}空闲{% endif %}
                 </span>
                 <span style="color: var(--dim); font-size: 13px; margin-left: auto;">
@@ -48,23 +47,6 @@
                 </button>
                 {% endif %}
 
-                {% if is_running %}
-                {% if status.paused %}
-                <button class="btn btn-primary"
-                        hx-delete="/api/control/pause"
-                        hx-target="#control-status"
-                        hx-swap="outerHTML">
-                    恢复
-                </button>
-                {% else %}
-                <button class="btn btn-warn"
-                        hx-post="/api/control/pause"
-                        hx-target="#control-status"
-                        hx-swap="outerHTML">
-                    暂停
-                </button>
-                {% endif %}
-                {% endif %}
             </div>
         </div>
     </div>
@@ -90,10 +72,6 @@
                     <div style="display: flex; justify-content: space-between;">
                         <span>control/heartbeat</span>
                         <span style="color: {{ 'var(--pass)' if is_running else '#64748b' }}">{{ status.heartbeat or '无' }}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between;">
-                        <span>control/pause</span>
-                        <span style="color: {{ 'var(--active)' if status.paused else '#64748b' }}">{{ 'ON' if status.paused else '关' }}</span>
                     </div>
                     <div style="display: flex; justify-content: space-between;">
                         <span>control/throttle</span>

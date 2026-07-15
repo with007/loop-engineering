@@ -71,23 +71,6 @@ def _parse_duration_minutes(s):
     return 2  # default
 
 
-# ── pause ──
-
-def is_paused(project_root):
-    """检查是否暂停."""
-    return os.path.exists(_flag_path(project_root, "pause"))
-
-
-def set_pause(project_root, paused=True):
-    """设置或取消暂停."""
-    _ensure_dir(project_root)
-    path = _flag_path(project_root, "pause")
-    if paused:
-        open(path, "w").close()
-    elif os.path.exists(path):
-        os.remove(path)
-
-
 # ── throttle ──
 
 def get_throttle(project_root, default="2m"):
@@ -117,7 +100,6 @@ def get_status(project_root):
     running = is_loop_running(project_root)
     pid = _read_pid(project_root)
     return {
-        "paused": running and pid is not None and _pid_alive(pid) and is_paused(project_root),
         "throttle": get_throttle(project_root),
         "running": running and (pid is None or _pid_alive(pid)),
         "heartbeat": hb.isoformat() if hb else None,
@@ -146,7 +128,6 @@ def start_loop(project_root):
 
     _ensure_dir(project_root)
     project_name = os.path.basename(project_root)
-    set_pause(project_root, False)
     write_heartbeat(project_root)
     write_loop_started_at(project_root)
 
@@ -245,7 +226,6 @@ def stop_loop(project_root):
     hb_path = _flag_path(project_root, "heartbeat")
     if os.path.exists(hb_path):
         os.remove(hb_path)
-    set_pause(project_root, False)
 
     return {"stopped": killed, "pid": pid}
 

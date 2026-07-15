@@ -131,7 +131,6 @@ def find_available_port(start=8765):
 
 # ── 全局状态 ──
 loop_running = False
-loop_paused = False
 heartbeat_time = ""
 current_task = ""
 pending_merge_count = 0
@@ -335,7 +334,7 @@ def _load_projects():
 
 def _poll_loop():
     """轮询线程：每 5 秒更新全局状态."""
-    global loop_running, loop_paused, heartbeat_time, current_task, pending_merge_count, projects, agent_name
+    global loop_running, heartbeat_time, current_task, pending_merge_count, projects, agent_name
 
     _last_project_names = None
 
@@ -362,7 +361,6 @@ def _poll_loop():
                 # 读取控制状态
                 ctrl = _read_control_status(primary["root"])
                 loop_running = ctrl["running"]
-                loop_paused = ctrl["paused"]
                 heartbeat_time = ctrl.get("heartbeat", "")
 
                 # 读取任务状态
@@ -389,8 +387,6 @@ def start_polling():
 def _status_text():
     """构建状态行文本."""
     if loop_running:
-        if loop_paused:
-            return "Loop: 已暂停 ⏸"
         return "Loop: 运行中 ●"
     return "Loop: 未启动 ○"
 
@@ -402,11 +398,7 @@ def _sep():
 def _loop_control_items():
     """根据状态动态生成 Loop 控制菜单项."""
     items = []
-    if loop_running and not loop_paused:
-        items.append(pystray.MenuItem("暂停 Loop", _on_pause_loop))
-        items.append(pystray.MenuItem("停止 Loop", _on_stop_loop))
-    elif loop_running and loop_paused:
-        items.append(pystray.MenuItem("恢复 Loop", _on_resume_loop))
+    if loop_running:
         items.append(pystray.MenuItem("停止 Loop", _on_stop_loop))
     else:
         items.append(pystray.MenuItem("启动 Loop", _on_start_loop))
@@ -482,10 +474,6 @@ def build_menu_tuple():
     items.append(_sep())
 
     # Loop 控制 — 全部存在，用 visible 控制显示
-    items.append(pystray.MenuItem("暂停 Loop", _on_pause_loop,
-        visible=lambda _: loop_running and not loop_paused))
-    items.append(pystray.MenuItem("恢复 Loop", _on_resume_loop,
-        visible=lambda _: loop_running and loop_paused))
     items.append(pystray.MenuItem("停止 Loop", _on_stop_loop,
         visible=lambda _: loop_running))
     items.append(pystray.MenuItem("启动 Loop", _on_start_loop,
@@ -565,16 +553,6 @@ def _open_dir(path):
         os.startfile(path)
 
 
-def _on_pause_loop():
-    _log("action: pause_loop")
-    _post_control_api("pause")
-
-
-def _on_resume_loop():
-    _log("action: resume_loop")
-    _post_control_api_resume()
-
-
 def _on_stop_loop():
     _log("action: stop_loop")
     _post_control_api("stop")
@@ -593,21 +571,6 @@ def _post_control_api(action):
             urllib.request.Request(
                 f"http://localhost:{PORT}/api/control/{action}",
                 method="POST",
-            ),
-            timeout=3,
-        )
-    except Exception:
-        pass
-
-
-def _post_control_api_resume():
-    """调用恢复 API（DELETE）."""
-    import urllib.request
-    try:
-        urllib.request.urlopen(
-            urllib.request.Request(
-                f"http://localhost:{PORT}/api/control/pause",
-                method="DELETE",
             ),
             timeout=3,
         )
@@ -703,10 +666,7 @@ def build_tooltip():
     """构建 hover tooltip 文本."""
     lines = ["Loop Engineering"]
     if loop_running:
-        if loop_paused:
-            lines.append("Loop: 已暂停")
-        else:
-            lines.append("Loop: 运行中")
+        lines.append("Loop: 运行中")
     else:
         lines.append("Loop: 未启动")
 

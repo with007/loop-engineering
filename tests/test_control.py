@@ -1,4 +1,4 @@
-"""Tests for control module — heartbeat, pause, throttle state machine."""
+"""Tests for control module — heartbeat, throttle state machine."""
 
 import os
 import time
@@ -34,23 +34,6 @@ class TestHeartbeat:
         assert is_loop_running(tmp_project, threshold_minutes=10) is True
 
 
-class TestPause:
-    def test_set_pause_creates_file(self, tmp_project):
-        from loop_engineering.control import set_pause, is_paused
-        set_pause(tmp_project, True)
-        assert is_paused(tmp_project) is True
-
-    def test_set_pause_removes_file(self, tmp_project):
-        from loop_engineering.control import set_pause, is_paused
-        set_pause(tmp_project, True)
-        set_pause(tmp_project, False)
-        assert is_paused(tmp_project) is False
-
-    def test_is_paused_false_by_default(self, tmp_project):
-        from loop_engineering.control import is_paused
-        assert is_paused(tmp_project) is False
-
-
 class TestThrottle:
     def test_get_throttle_returns_default(self, tmp_project):
         from loop_engineering.control import get_throttle
@@ -72,7 +55,6 @@ class TestStatus:
         status = get_status(tmp_project)
         assert isinstance(status, dict)
         assert "running" in status
-        assert "paused" in status
         assert "throttle" in status
         assert "heartbeat" in status
         assert "pid" in status

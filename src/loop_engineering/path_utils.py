@@ -106,7 +106,7 @@ def get_default_branch(repo_path=None):
 def resolve_control_root(project_root):
     """解析控制信号的读写目录。
 
-    task-runner 在 agent worktree 中运行，控制信号（heartbeat/pause/throttle/loop.pid）
+    task-runner 在 agent worktree 中运行，控制信号（heartbeat/throttle/loop.pid）
     必须写入 agent worktree 的 .loop-engineering/control/，否则 Dashboard 和
     task-runner 操作的是不同的信号文件。
 

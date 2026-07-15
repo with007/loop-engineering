@@ -25,13 +25,12 @@ async def control_status_fragment(request: Request, project: str = Query(None)):
     cr = resolve_control_root(pr)
     status = get_status(cr)
     is_running = status.get("running", False)
-    paused = status.get("paused", False)
     html = f'''<div id="control-status" hx-get="/control/status-fragment" hx-trigger="every 5s" hx-swap="outerHTML">
         <div class="card" style="margin-bottom: 20px;">
             <div class="status-indicator" style="margin-bottom: 16px;">
-                <span class="status-dot {"active" if is_running else ("paused" if paused else "")}"></span>
+                <span class="status-dot {"active" if is_running else ""}"></span>
                 <span style="font-weight: 600; font-size: 18px;">
-                    {"Loop 运行中" if is_running else ("已暂停" if paused else "空闲")}
+                    {"Loop 运行中" if is_running else "空闲"}
                 </span>
                 <span style="color: var(--dim); font-size: 13px; margin-left: auto;">
                     {f'HB: <span id="hb-time" data-iso="{status["heartbeat"]}">{status["heartbeat"][:19].replace("T", " ")}</span>' if status.get("heartbeat") else "无心跳"}
@@ -47,16 +46,6 @@ async def control_status_fragment(request: Request, project: str = Query(None)):
                         hx-post="/api/control/focus"
                         hx-swap="none"
                         style="background: var(--surface2); color: var(--text); border: 1px solid var(--border);">🔍 聚焦窗口</button>'''
-        if paused:
-            html += '''<button class="btn btn-primary"
-                        hx-delete="/api/control/pause"
-                        hx-target="#control-status"
-                        hx-swap="outerHTML">恢复</button>'''
-        else:
-            html += '''<button class="btn btn-warn"
-                        hx-post="/api/control/pause"
-                        hx-target="#control-status"
-                        hx-swap="outerHTML">暂停</button>'''
     else:
         html += '''<button class="btn btn-success"
                         hx-post="/api/control/start"
@@ -94,9 +83,7 @@ async def control_info_fragment(request: Request, project: str = Query(None)):
     cr = resolve_control_root(pr)
     status = get_status(cr)
     is_running = status.get("running", False)
-    paused = status.get("paused", False)
     hb_color = "var(--pass)" if is_running else "#64748b"
-    pause_color = "var(--active)" if paused else "#64748b"
     html = f'''<div id="control-info" hx-get="/control/info-fragment" hx-trigger="every 5s" hx-swap="outerHTML">
         <div class="grid grid-2">
             <div class="card">
@@ -105,10 +92,6 @@ async def control_info_fragment(request: Request, project: str = Query(None)):
                     <div style="display: flex; justify-content: space-between;">
                         <span>control/heartbeat</span>
                         <span style="color: {hb_color}">{status.get("heartbeat") or "无"}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between;">
-                        <span>control/pause</span>
-                        <span style="color: {pause_color}">{"ON" if paused else "关"}</span>
                     </div>
                     <div style="display: flex; justify-content: space-between;">
                         <span>control/throttle</span>

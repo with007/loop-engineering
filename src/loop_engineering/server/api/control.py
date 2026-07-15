@@ -19,20 +19,6 @@ def get_status(project: str = Query(None)):
     return ctrl_status(resolve_control_root(resolve_project_root(project=project)))
 
 
-@router.post("/pause")
-def pause(project: str = Query(None)):
-    from loop_engineering.control import set_pause
-    set_pause(resolve_control_root(resolve_project_root(project=project)), True)
-    return Response(status_code=200, headers={"HX-Refresh": "true"})
-
-
-@router.delete("/pause")
-def resume(project: str = Query(None)):
-    from loop_engineering.control import set_pause
-    set_pause(resolve_control_root(resolve_project_root(project=project)), False)
-    return Response(status_code=200, headers={"HX-Refresh": "true"})
-
-
 @router.put("/throttle")
 def set_throttle(req: ThrottleRequest, project: str = Query(None)):
     from loop_engineering.control import set_throttle as ctrl_set
