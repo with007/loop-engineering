@@ -645,6 +645,7 @@ def cmd_run_start(project_root, task_id):
     start_round = max(nums) + 1 if nums else 1
 
     # 取最新 user_feedback
+    runs = state.get("runs", [])
     user_feedback = ""
     if runs and runs[-1].get("user_feedback"):
         user_feedback = runs[-1]["user_feedback"]
