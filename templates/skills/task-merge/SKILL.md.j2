@@ -274,29 +274,15 @@ test -f "TEST.md" && echo "FOUND" || echo "NOT_FOUND"
 
 **3f-2. 写入反馈并更新任务状态**
 
-调用 `write_feedback_to_task` 用统一格式写入 tasks.md，然后**将任务行 checkbox 从 `[x]` 改为 `[r]`**（reopen），并在行尾追加 `· IMP{N} VFY{N} FAIL`：
+调用 `taskhelper.py` 写入反馈并将任务状态改为 reopen：
 
-```python
-from loop_engineering.task_id import write_feedback_to_task
-import os
-
-tasks_path = os.path.join("$PROJECT_ROOT", "tasks.md")
-write_feedback_to_task(tasks_path, "<task_id>", "<反馈文本>")
+```bash
+python .claude/scripts/taskhelper.py feedback "<task_id>" "<反馈文本>" --project-root $PROJECT_ROOT
+python .claude/scripts/taskhelper.py status "<task_id>" "r" --project-root $PROJECT_ROOT
 ```
 
-写入后编辑任务行：
-- `[x]` → `[r]`（task_id.py 已定义 `r` = reopen）
-- 行尾追加 `· IMP{N} VFY{N} FAIL`
-  - `write_feedback_to_task` 自动递增 IMP 编号（已有最大 +1），格式 `## IMP{N} 反馈` + 缩进内容
-  - 任务行 IMP 编号跟随反馈标题
-
-**反馈格式参考**（`write_feedback_to_task` 写入后 tasks.md 中的实际效果）：
-
-```
-  ## IMP1 反馈
-  1. reopen_task（API）缺少 ## IMP{N} 反馈 标题头 — 需自动统计已有 IMP 条数并追加标题
-  2. write_feedback_to_task（task-merge 拒绝时调用）同样缺少标题头 — 需与 reopen 统一格式
-```
+`feedback` 命令将反馈追加到 state.json 的 `runs[-1].user_feedback`，并自动同步 tasks.md。
+`status r` 将任务标记为 reopen。无需手动编辑 tasks.md。
 
 > 每个反馈条目一行，数字序号 + 冒号 + 具体描述。无需额外前缀（如 `VFY:`）。
 
