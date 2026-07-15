@@ -30,6 +30,18 @@ user_invocable: true
 - **透明管道** — task-runner 不参与任务具体实现。不研究代码、不分析需求、不补充上下文。原样传递 tasks.md 中的描述给 implementer，implementer 自行理解代码并设计方案
 - **子代理只输出结果信号** — IMP/VFY 的最终输出只能是一行 `PASS` 或 `FAIL: <原因>`。完整报告写入带轮次后缀的文件（`imp-output-r{N}.md` / `vfy-output-r{N}.md`），由 `task_done.py` 脚本读取组装 commit message。禁止子代理在最终输出中回传报告全文，避免污染 task-runner 上下文
 
+## [WARNING] Shell 变量不跨 Bash 调用持久化
+
+**每个 `Bash` 工具调用是独立 shell 进程。** `eval $(python .claude/scripts/project_vars.py)` 在一个块里设置的变量，下一个 Bash 块里是空的。
+
+**规则：任何使用 `$AGENT_DIR`、`$PROJECT_ROOT`、`$DEFAULT_REF`、`$TASKS_PATH`、`$whoami` 的 Bash 代码块，第一行必须是：**
+
+```bash
+eval $(python .claude/scripts/project_vars.py) && whoami=$(python -c "import yaml; print(yaml.safe_load(open('.loop-engineering/loop-config.yaml', encoding='utf-8'))['agent']['name'])")
+```
+
+不依赖项目变量的块（如 phase 文件读写、心跳、控制信号检查）不需要。
+
 ## [WARNING] 关键禁令
 
 - **禁止 `git checkout master`** — agent worktree 永远不能 checkout master（master 被主 worktree 占用）。只用 `$DEFAULT_REF` 远程引用。
@@ -49,6 +61,13 @@ Agent 身份从 `loop-config.yaml` 的 `agent.name` 读取：
 whoami=$(python -c "import yaml; print(yaml.safe_load(open('.loop-engineering/loop-config.yaml', encoding='utf-8'))['agent']['name'])")
 eval $(python .claude/scripts/project_vars.py)
 
+# 自校验：AGENT_DIR 必须是 /loop-engineering 结尾的完整路径
+echo "$AGENT_DIR" | grep -q "/loop-engineering$" || {
+  echo "FATAL: AGENT_DIR=$AGENT_DIR 不正确，必须以 /loop-engineering 结尾"
+  echo "请确保使用了 eval \$(python .claude/scripts/project_vars.py)，不要手动拼接"
+  exit 1
+}
+
 # 判断启动位置
 if echo "$(pwd)" | grep -q "$AGENT_WS_LAST"; then
   echo "MODE=AGENT"
@@ -56,6 +75,8 @@ else
   echo "MODE=MAIN"
 fi
 ```
+
+> **⚠️ 严禁手动计算 AGENT_DIR。** `AGENT_DIR` 必须通过 `eval $(python .claude/scripts/project_vars.py)` 获取。不能从 `agent.workspace` 直接拼接——workspace 只是父目录，实际 worktree 是 `$AGENT_WS/loop-engineering`。手动拼接会丢失 `/loop-engineering` 后缀，导致 Step 0b `ls $AGENT_DIR/.git` 失败。
 
 | 输出 | 模式 | 处理方式 |
 |------|------|----------|
@@ -111,10 +132,9 @@ fi
 **先检查是否有进行中的任务**（任务标记 `[~]` 但无 phase 文件时，以 tasks.md 为准）：
 
 ```bash
+eval $(python .claude/scripts/project_vars.py) && whoami=$(python -c "import yaml; print(yaml.safe_load(open('.loop-engineering/loop-config.yaml', encoding='utf-8'))['agent']['name'])")
 python -c "
 import yaml, sys
-with open('.loop-engineering/loop-config.yaml', encoding='utf-8') as f:
-    whoami = yaml.safe_load(f)['agent']['name']
 with open('$TASKS_PATH', encoding='utf-8') as f:
     for line in f:
         if line.startswith('- [~]') and f'(→ {whoami})' in line:
@@ -127,7 +147,8 @@ print('IDLE')
 - `IDLE` → 安全清理：
 
 ```bash
-git fetch origin --prune 2>/dev/null || true
+eval $(python .claude/scripts/project_vars.py) && whoami=$(python -c "import yaml; print(yaml.safe_load(open('.loop-engineering/loop-config.yaml', encoding='utf-8'))['agent']['name'])")
+git fetch origin --prune || true
 git checkout --detach --force $DEFAULT_REF && git clean -fd
 python .claude/scripts/task_cleanup.py $whoami --project-root $PROJECT_ROOT
 ```
@@ -143,6 +164,7 @@ python .claude/scripts/task_cleanup.py $whoami --project-root $PROJECT_ROOT
 **0b. 确认 agent worktree 存在**（由 `loop setup` 创建）：
 
 ```bash
+eval $(python .claude/scripts/project_vars.py)
 ls $AGENT_DIR/.git 2>/dev/null || {
   echo "Agent worktree 不存在，请先运行: loop setup"
   exit 1
@@ -158,10 +180,9 @@ ls $AGENT_DIR/.git 2>/dev/null || {
 **0d. 同步 agent worktree**（先检查是否有进行中的任务）：
 
 ```bash
+eval $(python .claude/scripts/project_vars.py) && whoami=$(python -c "import yaml; print(yaml.safe_load(open('.loop-engineering/loop-config.yaml', encoding='utf-8'))['agent']['name'])")
 python -c "
 import yaml, sys
-with open('.loop-engineering/loop-config.yaml', encoding='utf-8') as f:
-    whoami = yaml.safe_load(f)['agent']['name']
 with open('$TASKS_PATH', encoding='utf-8') as f:
     for line in f:
         if line.startswith('- [~]') and f'(→ {whoami})' in line:
@@ -174,6 +195,7 @@ print('IDLE')
 - `IDLE` → 安全清理：
 
 ```bash
+eval $(python .claude/scripts/project_vars.py)
 git fetch origin --prune
 git checkout --detach --force $DEFAULT_REF && git clean -fd
 ```
@@ -181,6 +203,7 @@ git checkout --detach --force $DEFAULT_REF && git clean -fd
 **0e. 检查已合入的远程分支**：
 
 ```bash
+eval $(python .claude/scripts/project_vars.py) && whoami=$(python -c "import yaml; print(yaml.safe_load(open('.loop-engineering/loop-config.yaml', encoding='utf-8'))['agent']['name'])")
 python .claude/scripts/task_cleanup.py $whoami --project-root $PROJECT_ROOT
 ```
 
@@ -206,6 +229,7 @@ throttle=$(python -c "from loop_engineering.control import get_throttle; print(g
 **选任务**：
 
 ```bash
+eval $(python .claude/scripts/project_vars.py) && whoami=$(python -c "import yaml; print(yaml.safe_load(open('.loop-engineering/loop-config.yaml', encoding='utf-8'))['agent']['name'])")
 python .claude/scripts/task_pick.py $whoami --project-root $PROJECT_ROOT
 ```
 - 输出格式: `taskID=xxx branch=agent/<whoami>/xxx-<slug> desc=... openSpec=true|false reopen=true|false user_feedback=...`
@@ -217,22 +241,22 @@ python .claude/scripts/task_pick.py $whoami --project-root $PROJECT_ROOT
 ### Step 2: Fork 分支 + 标记进行中
 
 ```bash
+eval $(python .claude/scripts/project_vars.py)
 # 用 task_pick 输出的完整分支名
 BRANCH="<task_pick 输出的 branch= 字段>"
 REOPEN="<task_pick 输出的 reopen= 字段>"
 
 if [ "$REOPEN" = "true" ]; then
   # reopen: 在已有分支上继续修改
-  git fetch origin --prune 2>/dev/null || true
+  git fetch origin --prune || true
   git checkout $BRANCH
 else
   # 新任务: 从最新 $DEFAULT_REF 创建分支（覆盖已存在的同名分支）
   git checkout -B $BRANCH $DEFAULT_REF
 fi
 
-# 主工程 tasks.md 标记进行中（不提交，只给人看）
-# [ ] M6 (→ withg)  改为  [~] M6 (→ withg)
-# [r] M6 (→ withg)  改为  [~] M6 (→ withg)
+# 主工程 tasks.md 标记进行中（用 task_line.py，不提交，只给人看）
+python "$PROJECT_ROOT/.claude/scripts/task_line.py" "$TASK_ID" "~" --project-root "$PROJECT_ROOT"
 ```
 
 ## 子代理提示词
@@ -348,6 +372,7 @@ with open('.loop-engineering/vfy-output-r$ROUND.md', encoding='utf-8') as f:
 **PASS**:
 1. 运行 `task_done.py`（内部完成 git add/commit/push + diff + tasks.md + 通知）：
    ```bash
+   eval $(python .claude/scripts/project_vars.py) && whoami=$(python -c "import yaml; print(yaml.safe_load(open('.loop-engineering/loop-config.yaml', encoding='utf-8'))['agent']['name'])")
    python .claude/scripts/task_done.py $whoami [taskID] [ROUND] [ROUND] \
      --project-root $PROJECT_ROOT \
      --output-dir $AGENT_DIR \
@@ -356,6 +381,7 @@ with open('.loop-engineering/vfy-output-r$ROUND.md', encoding='utf-8') as f:
    ```
 2. 清理 phase 文件 + working tree：
    ```bash
+   eval $(python .claude/scripts/project_vars.py)
    rm -f .loop-engineering/task-phase
    git checkout --detach --force $DEFAULT_REF && git clean -fd
    ```
