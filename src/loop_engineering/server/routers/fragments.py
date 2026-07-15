@@ -4,11 +4,12 @@ import os
 import re
 from urllib.parse import quote
 
-from fastapi import APIRouter, Form, Query, Request
+from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 
 from ..dependencies import get_project_root, get_agent_name, templates, render
-from ..services.task_parser import parse_tasks, filter_tasks
+from ..services.task_parser import filter_tasks
+from loop_engineering.taskhelper import list_tasks
 from loop_engineering.path_utils import resolve_control_root
 
 router = APIRouter()
@@ -132,7 +133,7 @@ async def tasks_list(
 ):
     """Return full task area (controls + list) for control operation refresh."""
     pr = get_project_root(request, q=project)
-    tasks = parse_tasks(pr)
+    tasks = list_tasks(pr)
     tasks = filter_tasks(tasks, status=status, order=order, filter_name=filter)
     return templates.TemplateResponse(request, "_tasks_list.html", {
         "request": request,
@@ -154,7 +155,7 @@ async def tasks_list_items(
 ):
     """Return task items only (progress bar + cards) for 30s polling."""
     pr = get_project_root(request, q=project)
-    tasks = parse_tasks(pr)
+    tasks = list_tasks(pr)
     tasks = filter_tasks(tasks, status=status, order=order, filter_name=filter)
     return templates.TemplateResponse(request, "_tasks_items.html", {
         "request": request,
@@ -181,19 +182,18 @@ async def tasks_add(
     filter: str = Form(""),
 ):
     pr = get_project_root(request, q=project)
-    tp = os.path.join(pr, "tasks.md")
-    from loop_engineering.task_id import generate_task_id
+    from loop_engineering.taskhelper import cmd_init
 
-    tid = task_id if task_id and re.match(r'^[a-f0-9]{8}$', task_id) else generate_task_id(description)
-    line = f"- [ ] {description} (→ {assignee}) [{tid}]\n"
+    # 去重检查
+    tp = os.path.join(pr, "tasks.md")
     if os.path.exists(tp):
-        with open(tp, "a", encoding="utf-8") as f:
-            f.write(line)
-    else:
-        with open(tp, "w", encoding="utf-8") as f:
-            f.write("# Tasks\n\n")
-            f.write(line)
-    tasks = parse_tasks(pr)
+        with open(tp, "r", encoding="utf-8") as f:
+            for line in f:
+                if description in line and line.startswith("- ["):
+                    raise HTTPException(409, f"Task with same description already exists")
+
+    cmd_init(pr, description, assignee)
+    tasks = list_tasks(pr)
     tasks = filter_tasks(tasks, status=status, order=order, filter_name=filter)
     return templates.TemplateResponse(request, "_tasks_list.html", {
         "request": request,

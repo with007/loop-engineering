@@ -7,7 +7,8 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import RedirectResponse
 
 from ..dependencies import get_project_root, get_agent_name, render
-from ..services.task_parser import parse_tasks, filter_tasks
+from ..services.task_parser import filter_tasks
+from loop_engineering.taskhelper import list_tasks
 from ..services.project_context import build_projects_context
 
 router = APIRouter()
@@ -51,7 +52,7 @@ async def tasks_page(
     filter: str = Query(""),
 ):
     pr = get_project_root(request, q=project)
-    tasks = parse_tasks(pr)
+    tasks = list_tasks(pr)
     tasks = filter_tasks(tasks, status=status, order=order, filter_name=filter)
     return render(request, "tasks.html", {
         "request": request,

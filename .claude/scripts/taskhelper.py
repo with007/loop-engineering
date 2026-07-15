@@ -384,6 +384,106 @@ def _ensure_all_states(project_root):
             _ensure_state(project_root, tl.task_id)
 
 
+def list_tasks(project_root):
+    """从 state.json 获取任务列表（含 git 分支合并状态）。
+
+    返回 dict 列表，字段: task_id, description, status, assignee, meta, feedback,
+    created_at, phase, run_count.
+    """
+    _ensure_all_states(project_root)
+
+    # Git 分支收集（从 parse_tasks 移植）
+    agent_branches = _collect_agent_branches(project_root)
+
+    result = []
+    tasks_dir = _tasks_dir(project_root)
+    if not os.path.isdir(tasks_dir):
+        return result
+
+    for tid in sorted(os.listdir(tasks_dir)):
+        state = load_state(project_root, tid)
+        if not state:
+            continue
+
+        status_char = state.get("status", " ")
+        # Git 分支合并检测
+        if status_char == "x" and tid in agent_branches:
+            branch = agent_branches[tid]
+            if _is_branch_merged(branch, project_root):
+                status = "done"
+            else:
+                status = "pending_merge"
+        else:
+            s = {" ": "pending", "~": "in_progress", "x": "done", "r": "reopen"}
+            status = s.get(status_char, "pending")
+
+        # 反馈行（从所有 run 收集）
+        feedback = []
+        for run in state.get("runs", []):
+            fb = run.get("user_feedback", "")
+            if fb:
+                for line in fb.split("\n"):
+                    feedback.append(line.strip())
+
+        result.append({
+            "task_id": tid,
+            "description": state.get("desc", ""),
+            "status": status,
+            "assignee": state.get("assignee", ""),
+            "meta": "",                                     # meta 已在 state.json 中不保留
+            "feedback": feedback,
+            "created_at": state.get("created_at"),
+            "phase": state.get("phase"),
+            "run_count": len(state.get("runs", [])),
+        })
+
+    return result
+
+
+def _collect_agent_branches(project_root):
+    """收集 agent 分支名，按 task_id 索引。"""
+    def _extract_tid(name):
+        basename = name.split('/')[-1].strip()
+        if re.match(r'^[a-f0-9]{8}$', basename):
+            return basename
+        parts = basename.split('-', 1)
+        return parts[0] if parts[0] else None
+
+    branches = {}
+    try:
+        r = _run('git branch --list "agent/*"')
+        for line in r.stdout.strip().split("\n"):
+            b = line.strip().lstrip("*+ ")
+            if b:
+                tid = _extract_tid(b)
+                if tid and tid not in branches:
+                    branches[tid] = b
+    except Exception:
+        pass
+
+    try:
+        r = _run('git branch -r --list "origin/agent/*"')
+        for line in r.stdout.strip().split("\n"):
+            b = line.strip()
+            if b:
+                tid = _extract_tid(b)
+                if tid and tid not in branches:
+                    branches[tid] = b
+    except Exception:
+        pass
+
+    return branches
+
+
+def _is_branch_merged(branch, project_root):
+    """检查分支是否已合入 master。"""
+    try:
+        r = _run(f"git branch --merged origin/master | grep -E '(^|\\s){branch}$'")
+        return r.returncode == 0 and bool(r.stdout.strip())
+    except Exception:
+        return False
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 命令实现
 # ═══════════════════════════════════════════════════════════════════════════════

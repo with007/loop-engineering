@@ -5,7 +5,7 @@ import subprocess
 from loop_engineering.registry import list_projects, register_project
 from loop_engineering.config import is_project_dir, read_config
 from loop_engineering.path_utils import get_default_branch
-from .task_parser import parse_tasks
+from loop_engineering.taskhelper import list_tasks
 
 
 def _filter_agent_workspace_copies(project_list):
@@ -55,7 +55,7 @@ def build_projects_context(current_pr, agent_filter=""):
             cfg = read_config(pr)
         except Exception:
             pass
-        tasks = parse_tasks(pr)
+        tasks = list_tasks(pr)
 
         # Branches — use git for-each-ref, sorted by commit time desc
         branches_list = []
