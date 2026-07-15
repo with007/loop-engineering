@@ -103,7 +103,7 @@ Setup 自动完成以下步骤：
 2. 生成 MCP 配置文件（`.mcp.json`、`McpProjectConfig.json`）
 3. 部署 Claude Code skills 和 commands（`.claude/skills/`、`.claude/commands/`）
 4. 部署环境脚本（`.claude/scripts/`）
-5. 生成验证文档（`VERIFY.md`、`TEST.md`）
+5. 生成人工验证清单（`TEST.md`）
 6. 同步配置到 Agent worktree
 
 Setup 完成后自动跳转到项目 Dashboard。
@@ -352,11 +352,11 @@ Dashboard 首页和控制页都展示近 7 天的 PASS 率：
 
 ### 9.3 验证文档在线编辑
 
-Dashboard 提供 VERIFY.md 和 TEST.md 的在线编辑功能。修改后保存即生效，verifier 下一次运行时使用最新版本。
+Dashboard 提供 verifier skills 和 TEST.md 的在线编辑功能。修改后保存即生效，loop-verify 下一次运行时使用最新版本。
 
 ### 9.4 模板重新部署
 
-如果 templates/ 中的模板有更新（如新增了 skill），点击 **重新部署** 将所有模板文件同步到 `.claude/` 目录。**注意**：VERIFY.md 和 TEST.md 会被覆盖，如有自定义内容请先备份。
+如果 templates/ 中的模板有更新（如新增了 skill），点击 **重新部署** 将所有模板文件同步到 `.claude/` 目录。**注意**：TEST.md 会被覆盖，如有自定义内容请先备份。
 
 ---
 

@@ -100,44 +100,36 @@
 
     <!-- 模板预览 — 全宽 -->
     <div x-show="selectedType" style="margin-bottom: 16px;">
-        <!-- Verifier Skills 预览 -->
-            <h3 style="margin-bottom: 8px;">验证技能 (Verifier Skills)</h3>
-            <p style="color: var(--muted); font-size: 13px; margin-bottom: 12px;">
-                部署到 <code>.claude/skills/verifier-*/</code>，<code>/loop-verify</code> 使用它们验证变更。
-            </p>
+        <h3 style="margin-bottom: 8px;">Verifier Skills & TEST.md</h3>
+        <p style="color: var(--muted); font-size: 13px; margin-bottom: 12px;">
+            Verifier Skills 部署到 <code>.claude/skills/verifier-*/</code>，<code>/loop-verify</code> 使用它们验证变更；TEST.md 部署到项目根目录，人工验证清单参考。
+        </p>
 
-            <div x-show="loadingSkills" style="color: var(--dim); font-size: 13px; padding: 12px 0;">加载中...</div>
-            <div x-show="!loadingSkills && previewSkills.length === 0" style="color: var(--dim); font-size: 13px; padding: 12px 0;">该类型无 verifier skill 模板</div>
+        <div x-show="loadingSkills" style="color: var(--dim); font-size: 13px; padding: 12px 0;">加载中...</div>
 
-            <div x-show="!loadingSkills && previewSkills.length > 0">
-                <!-- Skill switcher -->
-                <div style="display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap;">
-                    <template x-for="skill in previewSkills" :key="skill.name">
-                        <button :class="activePreviewSkill === skill.name ? 'btn btn-primary' : 'btn btn-sm'"
-                                style="border-radius: 6px;"
-                                @click="switchPreviewSkill(skill.name)"
-                                :style="activePreviewSkill === skill.name ? '' : 'background: var(--surface2); color: var(--text); border: 1px solid var(--border);'">
-                            <span x-text="skill.label"></span>
-                        </button>
-                    </template>
-                </div>
-
-                <!-- Preview pane -->
-                <div class="report-md" x-html="marked.parse(previewSkillContent || '*（空）*')"
-                     style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: 7px;
-                            padding: 16px; background: var(--surface2); margin-bottom: 20px;"></div>
+        <div x-show="!loadingSkills">
+            <!-- Tab switcher -->
+            <div style="display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap;">
+                <template x-for="skill in previewSkills" :key="skill.name">
+                    <button :class="activePreviewSkill === skill.name ? 'btn btn-primary' : 'btn btn-sm'"
+                            style="border-radius: 6px;"
+                            @click="switchPreviewSkill(skill.name)"
+                            :style="activePreviewSkill === skill.name ? '' : 'background: var(--surface2); color: var(--text); border: 1px solid var(--border);'">
+                        <span x-text="skill.label"></span>
+                    </button>
+                </template>
+                <button :class="activePreviewSkill === 'test' ? 'btn btn-primary' : 'btn btn-sm'"
+                        style="border-radius: 6px;"
+                        @click="switchPreviewSkill('test')"
+                        :style="activePreviewSkill === 'test' ? '' : 'background: var(--surface2); color: var(--text); border: 1px solid var(--border);'">
+                    TEST.md（手动测试）
+                </button>
             </div>
 
-            <!-- TEST.md 预览 -->
-            <h3 style="margin-bottom: 8px;">手动测试 (TEST.md)</h3>
-            <p style="color: var(--muted); font-size: 13px; margin-bottom: 12px;">
-                部署到项目根目录 <code>TEST.md</code>，给人看的手动测试参考。
-            </p>
-            <div x-show="loadingTest" style="color: var(--dim); font-size: 13px; padding: 12px 0;">加载模板...</div>
-            <div x-show="!loadingTest && testTemplate" class="report-md" x-html="marked.parse(testTemplate)"
-                 style="max-height: 400px; overflow-y: auto; border: 1px solid var(--border); border-radius: 7px;
+            <!-- Preview pane -->
+            <div class="report-md" x-html="marked.parse(previewSkillContent || '*（空）*')"
+                 style="max-height: 500px; overflow-y: auto; border: 1px solid var(--border); border-radius: 7px;
                         padding: 16px; background: var(--surface2);"></div>
-            <div x-show="!loadingTest && !testTemplate" style="color: var(--dim); font-size: 13px; padding: 12px 0;">无模板内容</div>
         </div>
     </div>
 

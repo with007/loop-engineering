@@ -281,6 +281,8 @@
                         });
                         if (this.previewSkills.length > 0) {
                             await this.switchPreviewSkill(this.previewSkills[0].name);
+                        } else {
+                            await this.switchPreviewSkill('test');
                         }
                     } catch(e) {
                         this.previewSkills = [];
@@ -304,6 +306,10 @@
                 },
                 async switchPreviewSkill(skillName) {
                     this.activePreviewSkill = skillName;
+                    if (skillName === 'test') {
+                        this.previewSkillContent = this.testTemplate || '';
+                        return;
+                    }
                     var skill = this.previewSkills.find(function(s) { return s.name === skillName; });
                     if (skill && skill.content) {
                         this.previewSkillContent = skill.content;

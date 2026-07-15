@@ -95,13 +95,16 @@ print('OK' if rendered == deployed else 'DIFF')
 - 不要同时保留 `.j2` 和闲置 `.md`（用 `.j2` 就删 `.md`）
 - **不要在 agent worktree 中运行 `loop setup`** — `detect_config()` 从 agent worktree 路径自动检测 workspace 和 project_root，会算出错误值（如 `project_name + "-agent"`）并写入 `loop-config.yaml`，导致后续 `build_prompt.py` 生成错误的提示词路径。验证模板用 Jinja2 直接渲染即可，不需要 `loop setup`
 
-## 4. TEST.md / VERIFY.md 定位
+## 4. TEST.md 定位
 
-`TEST.md` 和 `VERIFY.md` 是**方法论参考**，不是必须全部执行的死清单。
+`TEST.md` 是**人工验证清单参考**，不是必须全部执行的死清单。
 
-- 文档自身已说明定位（"测试方法论参考"、"验证范围由变更驱动"）
+- 自动化验证（服务启动、API 检查、边界探测、模板渲染等）由 `loop-verify` + `verifier-*` skills 处理
+- TEST.md 专注需要人眼判断的验证项：页面渲染效果、交互流程、视觉一致性等
+- 合入时：先调用 loop-verify 做自动验证，再根据需要从 TEST.md 取人工检查清单
+- 文档自身已说明定位（"人工验证清单参考"）
 - 使用方只需引用文档，按其中说明执行，不要重新解释文档定位
-- 执行时：先理解变更范围，再从中选择涉及模块的手段，未涉及的跳过
+- 执行时：先理解变更范围，再从中选择涉及模块的检查点，未涉及的跳过
 
 ## 6. 端到端开发测试闭环
 

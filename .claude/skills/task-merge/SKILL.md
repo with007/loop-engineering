@@ -102,11 +102,11 @@ git diff $DEFAULT_REF...<branch> --stat
 
 用户确认后进入 Step 3。
 
-### Step 3: 验证门禁 — 手动测试
+### Step 3: 验证门禁 — 自动 + 手动测试
 
-在真正合入 $DEFAULT_REF 之前，先在 agent worktree 中预合入任务分支，按 TEST.md 执行完整测试流程（含环境准备和测试后恢复）。全部通过才允许进入后续步骤执行合入。
+在真正合入 $DEFAULT_REF 之前，先在 agent worktree 中预合入任务分支，执行自动验证（loop-verify）和可选的手动测试。全部通过才允许进入后续步骤执行合入。
 
-> **TEST.md 是测试流程的唯一权威来源。** 从环境准备、测试执行到停止服务、切回主 worktree 重新安装依赖，每一步都必须遵守 TEST.md，不可省略。
+> **自动验证由 loop-verify + verifier-* skills 处理。** 手动测试的环境命令从 verifier-* skills 获取，人工检查清单从 TEST.md 获取。各司其职。
 
 #### 3a. 进入 Agent Worktree
 
@@ -144,98 +144,102 @@ git branch --show-current
 # 必须输出 <branch>
 ```
 
-#### 3c. 读取 TEST.md
+#### 3c. 自动验证 — 调用 loop-verify
+
+用 **AskUserQuestion** 询问是否运行自动验证：
+
+```json
+{
+  "header": "自动验证",
+  "multiSelect": false,
+  "options": [
+    {"label": "运行", "description": "调用 loop-verify skill 自动验证变更（编译、API、模板、边界探测等）"},
+    {"label": "跳过", "description": "不做自动验证，仅依赖人工测试"}
+  ],
+  "question": "是否运行 loop-verify 自动验证？"
+}
+```
+
+- **运行** → 调用 `Skill("loop-verify")`。loop-verify 会读 diff、匹配 verifier-* skills、执行自动验证并输出报告。等待完成后记录结果。
+- **跳过** → 记录"自动验证已跳过"，继续。
+
+#### 3d. 手动测试（可选）
+
+用 **AskUserQuestion** 询问是否需要手动测试：
+
+```json
+{
+  "header": "手动测试",
+  "multiSelect": false,
+  "options": [
+    {"label": "需要", "description": "按 TEST.md 人工检查清单做浏览器/GUI 验证"},
+    {"label": "跳过", "description": "自动验证已足够，跳过手动测试"}
+  ],
+  "question": "自动验证已完成。是否需要手动测试？"
+}
+```
+
+如果**需要**：
+
+**1) 获取环境命令（从 verifier-* skills）**
+
+```bash
+# 检查项目有哪些 verifier skills
+ls .claude/skills/verifier-*/SKILL.md
+```
+
+读相关 verifier skill 的"启动检查"和"清理"章节，获取：
+- 启动命令和服务就绪检查
+- 清理/停止命令
+
+**2) 获取人工检查清单（从 TEST.md）**
 
 ```bash
 test -f "TEST.md" && echo "FOUND" || echo "NOT_FOUND"
 ```
 
-- **不存在** → 输出"项目未配置 TEST.md，跳过手动测试"，直接跳到 3e（汇总确认后继续合入）
-- **存在** → 读取 TEST.md 内容
+- **存在** → 读取 TEST.md 中的人工检查点（关键页面 URL、交互流程、视觉检查项等）
+- **不存在** → 提示"项目未配置 TEST.md，无法生成人工检查清单。建议运行 loop-verify-init 初始化。"
 
-#### 3d. 按需制定测试计划并执行
+**3) 执行手动测试**
 
-TEST.md 是**测试方法论参考**，不是必须全部执行的死清单。
-
-**1) 分析变更，列出测试点**
-
-先读 diff 和 commit 报告，理解改了什么文件、涉及哪些模块。列出需要覆盖的测试点。
-
-**2) 对照 TEST.md 制定测试计划**
-
-TEST.md 说明了项目中可用的测试手段（pip install、启动服务、curl API、WebFetch 页面、CLI 命令等），以及各模块的测试示例。根据测试点选择相关手段：
-
-- 变更涉及的模块在 TEST.md 有示例 → 按示例执行
-- 变更涉及的模块不在 TEST.md 中 → 参照 TEST.md 的测试方法，为新增模块推导合适的测试
-
-只测变更相关的，不罗列跳过的项。
-
-**3) 执行自动测试**
-
-先跑能自动执行的步骤（`pip install`、`curl`、CLI 命令、pytest 等），每完成一项输出结果（✅/❌），失败时记下原因。
-
-> **测试期间严格遵守"不排查不修复"原则**：结果出来后直接进入 3e 汇总，不要读源码分析为什么失败、不要尝试修复。让用户看到结果后决定 pass/fail。
-
-**4) 询问手动测试**
-
-自动测试跑完后，用 **AskUserQuestion** 询问：
-
-```json
-{
-  "header": "浏览器测试",
-  "multiSelect": false,
-  "options": [
-    {"label": "需要", "description": "启动服务，在浏览器中手动验证页面"},
-    {"label": "跳过", "description": "仅自动测试已足够，跳过浏览器验证"}
-  ],
-  "question": "自动测试已完成。是否需要进行浏览器手动测试？"
-}
-```
-
-如果需要：
-
-- 重启服务（确保端口可用）
-- 根据前面制定的测试计划，为每个需要浏览器验证的测试点生成具体操作步骤，指引格式：
+根据 verifier-* 的启动命令启动服务/应用，然后根据 TEST.md 的检查清单为每个测试点生成具体操作步骤：
 
 ```
-## 🔍 浏览器手动测试
+## 🔍 手动测试
 
-服务已在 http://127.0.0.1:<port> 运行，请打开浏览器按以下步骤操作：
+服务/应用已启动，请按以下步骤操作：
 
 **Step 1** — <具体操作：打开哪个 URL、点击什么、确认什么>
 **Step 2** — <具体操作>
 ...
-**Step N** — 所有页面确认后关闭浏览器标签页
+**Step N** — 所有检查点确认后继续
 ```
 
 指引要点：
-- 每一步告诉用户打开哪个 URL、点击哪个导航标签、检查什么内容
-- 基于测试计划中的测试点推导，不笼统说"浏览所有页面"
+- 每一步告诉用户具体做什么、检查什么
+- 基于 TEST.md 的检查清单推导，不笼统说"浏览所有页面"
 - 等用户确认结果后再继续
 
-- 测试完成后停止服务
+手动测试完成后，从 verifier-* 的"清理"章节获取停止/恢复命令并执行。
 
-> 测试范围由变更驱动，TEST.md 提供方法。
+> 测试范围由变更驱动，verifier-* 提供环境命令，TEST.md 提供人工检查清单。
 
-#### 3e. 停止服务 + 汇总确认
+#### 3e. 汇总确认
 
-测试完成后停止后台服务（如有启动），然后向用户展示测试汇总表，区分自动测试和浏览器手动测试：
+向用户展示测试汇总表：
 
 ```
-## 测试结果 — <branch>
+## 验证结果 — <branch>
 
-### 自动测试
-| # | 测试项 | 结果 |
+### 自动验证 (loop-verify)
+<loop-verify 的输出结论>
+
+### 手动测试
+| # | 检查点 | 结果 |
 |---|--------|------|
-| 1 | pip install | ✅ |
-| 2 | pytest (N tests) | ✅ N/N passed |
+| 1 | /overview 图表渲染 | ✅ |
 | ... | ... | ... |
-
-### 浏览器手动测试
-| # | 页面 | 检查点 | 结果 |
-|---|------|--------|------|
-| 1 | / 概览 | 图表渲染 | ✅ |
-| ... | ... | ... | ... |
 
 **结论**: <全部通过 → "建议通过" / 有失败 → "存在失败项，建议不通过">
 ```
@@ -247,16 +251,14 @@ TEST.md 说明了项目中可用的测试手段（pip install、启动服务、c
   "header": "合入确认",
   "multiSelect": false,
   "options": [
-    {"label": "pass（建议）", "description": "测试全部通过，继续合入"},
+    {"label": "pass（建议）", "description": "验证全部通过，继续合入"},
     {"label": "fail", "description": "取消合入并清理 agent worktree"}
   ],
-  "question": "测试结果：<汇总>。继续合入还是取消？"
+  "question": "验证结果：<汇总>。继续合入还是取消？"
 }
 ```
 
-> 推荐项（pass 或 fail，取决于测试结果）放第一个并标注（建议）。
-
-> 如果本次有为新增模块推导的测试步骤（TEST.md 中未覆盖的），额外询问是否要添加到 TEST.md 作为示例。用户同意后将新步骤写回 agent worktree 中的 TEST.md。
+> 推荐项（pass 或 fail，取决于结果）放第一个并标注（建议）。
 
 > **如果所有项都 ✅**: 默认建议 pass，但让用户最终决定。
 > **如果有 ❌**: 列出失败项和原因，提醒用户注意。仍可 pass（如果用户认为失败项无关紧要）。
@@ -340,11 +342,9 @@ git checkout --detach $DEFAULT_REF
 ExitWorktree(action="keep")
 ```
 
-**按 TEST.md 执行测试后恢复**（如重新安装依赖等），然后再继续。
-
 输出：
 ```
-## 手动测试通过 ✅
+## 验证通过 ✅
 正在切回主 worktree 继续合入流程...
 ```
 
@@ -547,15 +547,19 @@ Python 代码冲突时，检查：
 
 ### Step 7: 手动测试提醒
 
-合入已在 Step 3 中通过 agent worktree 验证，此处仅提醒：push 前可在 $DEFAULT_REF 上快速复核。
+合入已在 Step 3 中通过 agent worktree 验证（loop-verify 自动验证 + 可选手动测试），此处仅提醒：push 前可在 $DEFAULT_REF 上快速复核。
 
-如果 TEST.md 存在，简要提示：
+如果完成了手动测试，简要提示：
 ```
-## 手动测试
-已在 agent worktree 中按 TEST.md 完成手动测试并通过。push 前可在 $DEFAULT_REF 上快速复核。
+## 验证
+已在 agent worktree 中完成 loop-verify 自动验证和手动测试并通过。push 前可在 $DEFAULT_REF 上快速复核。
 ```
 
-如果 TEST.md 不存在，跳过。
+如果仅自动验证（跳过了手动测试），提示：
+```
+## 验证
+已在 agent worktree 中完成 loop-verify 自动验证（手动测试已跳过）。push 前可在 $DEFAULT_REF 上快速复核。
+```
 
 ### Step 8: 验证结果
 
