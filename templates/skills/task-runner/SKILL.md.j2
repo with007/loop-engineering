@@ -222,6 +222,8 @@ python -c "from loop_engineering.control import write_heartbeat; write_heartbeat
 **检查控制信号**：
 
 ```bash
+# 暂停检查
+python -c "from loop_engineering.control import is_paused; exit(0 if is_paused('.') else 1)" && echo "PAUSED" && exit 0
 # throttle 读取
 throttle=$(python -c "from loop_engineering.control import get_throttle; print(get_throttle('.'))")
 ```
@@ -240,6 +242,7 @@ python .claude/scripts/task_pick.py $whoami --project-root $PROJECT_ROOT
 **确定 ROUND**（新任务从 1 开始，reopen 从已有输出文件的最大轮次 +1 继续）：
 
 ```bash
+TASK_ID="<task_pick 输出的 taskID= 字段>"
 REOPEN="<task_pick 输出的 reopen= 字段>"
 if [ "$REOPEN" = "true" ]; then
   ROUND=$(python -c "
@@ -252,9 +255,13 @@ else
   ROUND=1
 fi
 echo "ROUND=$ROUND"
+
+# 创建任务目录并记录起始轮次（task_done.py 只收集 >= start-round 的轮次）
+mkdir -p ".loop-engineering/tasks/$TASK_ID"
+echo $ROUND > ".loop-engineering/tasks/$TASK_ID/start-round"
 ```
 
-> ROUND 从不重置。新任务 = 1，每次 VFY FAIL 递增，reopen 继续递增。历史输出文件保留完整脉络，前轮 IMP/VFY 可自行读取。
+> ROUND 从不重置。新任务 = 1，每次 VFY FAIL 递增，reopen 继续递增。`start-round` 标记本次执行的起始轮次，确保 commit 不重复包含历史轮次。
 
 ### Step 2: Fork 分支 + 标记进行中
 
@@ -272,9 +279,6 @@ else
   # 新任务: 从最新 $DEFAULT_REF 创建分支（覆盖已存在的同名分支）
   git checkout -B $BRANCH $DEFAULT_REF
 fi
-
-# 创建任务输出目录
-mkdir -p ".loop-engineering/tasks/$TASK_ID"
 
 # 主工程 tasks.md 标记进行中（用 task_line.py，不提交，只给人看）
 python "$PROJECT_ROOT/.claude/scripts/task_line.py" "$TASK_ID" "~" --project-root "$PROJECT_ROOT"
@@ -398,16 +402,17 @@ with open('.loop-engineering/tasks/${TASK_ID}/vfy-output-r$ROUND.md', encoding='
      --project-root $PROJECT_ROOT \
      --output-dir $AGENT_DIR \
      --task-desc "<task_pick 输出的 desc= 字段>" \
+     --start-round $(cat .loop-engineering/tasks/$TASK_ID/start-round) \
      --do-commit
    ```
-2. 清理 phase 文件 + working tree：
+2. 清理 phase 文件 + working tree（保留输出文件以便 reopen 继续递增）：
    ```bash
    eval $(python .claude/scripts/project_vars.py)
-   rm -rf .loop-engineering/tasks/$TASK_ID
+   rm -f .loop-engineering/tasks/$TASK_ID/phase
    git checkout --detach --force $DEFAULT_REF && git clean -fd
    ```
 
-> **说明**：`task_done.py --do-commit` 会从 `.loop-engineering/tasks/<taskID>/` 收集所有 `imp-output-r*.md` 和 `vfy-output-r*.md`，按交替格式（R1: IMP→VFY, R2: IMP→VFY, …）组装 commit message。只有最后一轮保留完整报告，前轮 IMP 精简为"反馈 + 修复内容"。然后 git add/commit/push，生成 diff、更新 tasks.md、弹通知。task-runner 不读报告内容。
+> **说明**：`task_done.py --do-commit` 从 `.loop-engineering/tasks/<taskID>/` 收集 `>= --start-round` 的 `imp-output-r*.md` 和 `vfy-output-r*.md`，按交替格式（R{N}: IMP→VFY, R{N+1}: IMP→VFY, …）组装 commit message。只包含本次执行的轮次，不重复历史。然后 git add/commit/push，生成 diff、更新 tasks.md、弹通知。task-runner 不读报告内容。
 
 **FAIL**（Verifier 发现测试失败）:
 ```

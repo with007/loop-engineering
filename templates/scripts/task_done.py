@@ -170,6 +170,7 @@ def main():
     task_id = sys.argv[2]
     imp_n = sys.argv[3] if len(sys.argv) > 3 else "1"
     vfy_n = sys.argv[4] if len(sys.argv) > 4 else "1"
+    start_round = 1
     do_commit = "--do-commit" in sys.argv
 
     # 过滤掉位置参数中可能误传入的非数字
@@ -198,6 +199,8 @@ def main():
             do_commit = True
         elif arg == "--format" and i + 1 < len(sys.argv):
             fmt = sys.argv[i + 1]
+        elif arg == "--start-round" and i + 1 < len(sys.argv):
+            start_round = int(sys.argv[i + 1])
 
     if not project_root:
         project_root = find_project_root()
@@ -209,14 +212,21 @@ def main():
     # ── commit + push ──
     if do_commit:
         commit_title = task_desc or task_id
-        total_rounds = int(imp_n)  # IMP 和 VFY 共享同一轮次计数
         loop_dir = os.path.join(output_dir, ".loop-engineering", "tasks", task_id)
         imp_rounds = _collect_round_files(loop_dir, "imp-output-r*.md")
         vfy_rounds = _collect_round_files(loop_dir, "vfy-output-r*.md")
 
+        # 只收集本次执行（>= start_round）的轮次
+        all_rounds = sorted(set(list(imp_rounds.keys()) + list(vfy_rounds.keys())))
+        my_rounds = [r for r in all_rounds if r >= start_round]
+        if my_rounds:
+            final_round = my_rounds[-1]
+        else:
+            final_round = 0
+
         commit_msg = f"[{task_id}] {commit_title}\n\n"
 
-        for r in range(1, total_rounds + 1):
+        for r in my_rounds:
             commit_msg += f"## Round {r}\n\n"
 
             # IMP
@@ -224,7 +234,7 @@ def main():
             if r in imp_rounds:
                 imp_content = _read_output_file(imp_rounds[r])
             if imp_content:
-                if r < total_rounds:
+                if r < final_round:
                     trimmed = _trim_imp_for_earlier_round(imp_content)
                     if trimmed:
                         commit_msg += "### IMP\n\n" + trimmed
@@ -238,7 +248,8 @@ def main():
             if vfy_content:
                 commit_msg += "### VFY\n\n" + vfy_content + "\n\n"
 
-        commit_msg += f"---\nIMP{imp_n} VFY{imp_n}"
+        if my_rounds:
+            commit_msg += f"---\nIMP{len([r for r in my_rounds if r in imp_rounds])} VFY{len([r for r in my_rounds if r in vfy_rounds])}"
 
         # git add 改动文件（排除 tasks.md，只提交代码变更）
         r = _run("git status --porcelain")
