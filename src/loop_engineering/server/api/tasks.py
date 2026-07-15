@@ -61,20 +61,21 @@ def list_tasks(project: str = Query(None)):
 
 @router.post("/add")
 def add_task(req: AddTaskRequest, project: str = Query(None)):
-    """添加任务到 tasks.md（自动生成 task_id）."""
+    """添加任务：创建 state.json + 同步 tasks.md。"""
+    from loop_engineering.taskhelper import cmd_init
+
     pr = resolve_project_root(project=project)
+
+    # 去重检查
     tasks_path = os.path.join(pr, "tasks.md")
-
-    task_id = generate_task_id(req.description)
-    line = f"- [ ] {req.description} (→ {req.assignee}) [{task_id}]\n"
-
     if os.path.exists(tasks_path):
-        with open(tasks_path, "a", encoding="utf-8") as f:
-            f.write(line)
-    else:
-        with open(tasks_path, "w", encoding="utf-8") as f:
-            f.write("# Tasks\n\n")
-            f.write(line)
+        with open(tasks_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if req.description in line and line.startswith("- ["):
+                    raise HTTPException(409, f"Task with same description already exists")
+
+    cmd_init(pr, req.description, req.assignee)
+    task_id = generate_task_id(req.description)
 
     return {"added": True, "description": req.description, "assignee": req.assignee, "task_id": task_id}
 

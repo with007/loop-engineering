@@ -335,6 +335,23 @@ def deploy_scripts(config):
     else:
         print(f"  共部署 {deployed} 个脚本")
 
+    # taskhelper.py 直接从 src/loop_engineering/ 复制（无模板副本）
+    pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src_th = os.path.join(pkg_dir, "loop-engineering", "taskhelper.py")
+    dst_th = os.path.join(target_dir, "taskhelper.py")
+    if os.path.exists(src_th):
+        if os.path.exists(dst_th):
+            with open(src_th, "rb") as fs:
+                src_content = fs.read()
+            with open(dst_th, "rb") as fd:
+                dst_content = fd.read()
+            if src_content != dst_content:
+                shutil.copy2(src_th, dst_th)
+                print(f"  [OK] taskhelper.py 已更新 (来自 src/)")
+        else:
+            shutil.copy2(src_th, dst_th)
+            print(f"  [OK] taskhelper.py 已部署 (来自 src/)")
+
 
 def deploy_verify_docs(config):
     """从 Jinja2 模板渲染 TEST.md 到项目根目录."""

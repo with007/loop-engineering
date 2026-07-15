@@ -35,18 +35,8 @@ user_invocable: true
 
 每次添加前：
 1. `git config user.name` 获取当前用户
-2. 读 `tasks.md`，若文件不存在则创建：
-   ```markdown
-   # Tasks
-
-   > 约定: 任务按日期分组，同天内按优先级从上到下排列
-
-   ## YYYY-MM-DD
-
-   ```
+2. 读 `tasks.md`，若文件不存在则创建空文件
 3. **去重检查**：grep `tasks.md` 中是否已存在相同描述的条目（忽略 `[ ]` / `[x]` 状态标记）。若存在则提示用户"任务已存在"并停止，不重复添加。
-4. **定位日期分组**：取当天日期，若 `## YYYY-MM-DD` 段落不存在则创建。
-5. **生成 task_id**：用 `python -c "from loop_engineering.task_id import generate_task_id; print(generate_task_id('<描述>'))"` 生成 8 位十六进制 task_id。
 
 ## 模式 1: 直接添加
 
@@ -55,10 +45,11 @@ user_invocable: true
 1. **描述质量门控**——必须同时满足两个要素，缺一则追问用户：
    - **做什么**：具体可执行的动作描述（不是"修 bug"、"优化"等模糊词）
    - **怎么验证**：验收条件，如"编译 0 error"、"read_console 无异常"、"游戏内 X 功能正常"
-2. 在当天的日期分组末尾追加：
-   ```markdown
-   - [ ] <描述> (→ <user>) [<task_id>]
+2. 去重检查通过后，调用 `taskhelper.py init` 创建任务（state.json + tasks.md 同步）：
+   ```bash
+   python .claude/scripts/taskhelper.py init --desc "<描述>" --assignee "<user>" --project-root "$PROJECT_ROOT"
    ```
+   task_id 由 `cmd_init` 内部生成并输出。
 3. 不 commit，留给用户自己提交
 
 ## 模式 2: OpenSpec 新建 change
@@ -67,9 +58,9 @@ user_invocable: true
 
 1. 调用 `openspec-new-change` skill，和用户交互梳理需求 → 生成完整的 change（包含 spec、design、tasks.md）
 2. **确保已提交**：change 文件生成后必须 commit（含 proposal.md、design.md、specs/、tasks.md），否则 agent worktree 读不到这些文件。不要求 push，但至少本地 commit。
-3. change 生成并提交后，去重检查通过后，生成 task_id（用 change-name 作为描述），在当天日期分组末尾追加：
-   ```markdown
-   - [ ] <change-name> (→ <user>) [<task_id>]
+3. change 生成并提交后，去重检查通过后，调用 `taskhelper.py init` 创建任务：
+   ```bash
+   python .claude/scripts/taskhelper.py init --desc "<change-name>" --assignee "<user>" --project-root "$PROJECT_ROOT"
    ```
 4. 告诉用户 change 已生成，可以去 `openspec/changes/<name>/tasks.md` 看详情
 
@@ -108,9 +99,9 @@ python .claude/scripts/task_changes.py
      ```
    - **部分完成**（有 `[ ]` 有 `[x]`）→ 正常添加，输出中标注进度
    - **全未开始**（全部 `[ ]`）→ 正常添加
-4. 去重检查通过后，生成 task_id（用 change-name 作为描述），在当天日期分组末尾追加：
-   ```markdown
-   - [ ] <change-name> (→ <user>) [<task_id>]
+4. 去重检查通过后，调用 `taskhelper.py init` 创建任务：
+   ```bash
+   python .claude/scripts/taskhelper.py init --desc "<change-name>" --assignee "<user>" --project-root "$PROJECT_ROOT"
    ```
 
 ## 输出

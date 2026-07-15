@@ -93,6 +93,169 @@ def _find_project_root(start_dir=None):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# 旧格式迁移
+# ═══════════════════════════════════════════════════════════════════════════════
+
+META_ENTRY_RE = re.compile(
+    r'(\d{1,2}:\d{2})?\s*IMP(\d+)\s+VFY(\d+)\s+(PASS|FAIL)'
+)
+FEEDBACK_HEADER_RE = re.compile(r'^##\s+IMP(\d+)\s*反馈')
+
+
+def parse_meta_to_runs(meta_raw, date_str):
+    """将旧格式 meta 字符串解析为 runs 列表。
+
+    meta 格式: `15:42 IMP1 VFY1 PASS · 16:45 IMP2 VFY1 PASS`
+    每个 `IMP{n} VFY{m} RESULT` (可选前导时间) 为一个 run 条目。
+    """
+    if not meta_raw:
+        return []
+
+    runs = []
+    for m in META_ENTRY_RE.finditer(meta_raw):
+        time_str = m.group(1)       # e.g. "15:42" or None
+        imp_round = int(m.group(2))
+        vfy_round = int(m.group(3))
+        result = m.group(4).lower()  # "pass" or "fail"
+
+        started_at = None
+        if time_str and date_str and date_str != "unknown":
+            started_at = f"{date_str}T{time_str}:00Z"
+
+        runs.append({
+            "started_at": started_at,
+            "completed_at": None,
+            "result": result,
+            "start_round": imp_round,
+            "end_round": vfy_round,
+            "user_feedback": "",
+            "outputs": None,
+        })
+
+    return runs
+
+
+def parse_feedback_to_runs(feedback_lines):
+    """将反馈行按 ## IMP{N} 分配到 run 条目。保留标题头。
+
+    返回: {run_index: feedback_text_with_header, ...}  (0-indexed)
+    """
+    feedback_by_run = {}
+    current_run_idx = None
+    current_header = None
+    current_lines = []
+
+    for line in feedback_lines:
+        m = FEEDBACK_HEADER_RE.match(line)
+        if m:
+            if current_run_idx is not None and current_header:
+                text = current_header + "\n" + "\n".join(current_lines).strip()
+                feedback_by_run[current_run_idx] = text.strip()
+            current_run_idx = int(m.group(1)) - 1  # IMP1 → run[0]
+            current_header = line
+            current_lines = []
+        elif current_run_idx is not None:
+            current_lines.append(line)
+
+    if current_run_idx is not None and current_header:
+        text = current_header + "\n" + "\n".join(current_lines).strip()
+        feedback_by_run[current_run_idx] = text.strip()
+
+    return feedback_by_run
+
+
+def create_state_from_old_entry(project_root, entry, date_str):
+    """从旧 tasks.md 条目创建 state.json。已存在则跳过。
+
+    entry 字段: task_id, description, assignee, status, meta_raw, feedback_lines
+    返回 (created: bool, detail: str).
+    """
+    task_id = entry["task_id"]
+    path = _state_path(project_root, task_id)
+    if os.path.exists(path):
+        return False, "skipped (exists)"
+
+    runs = parse_meta_to_runs(entry.get("meta_raw", ""), date_str)
+    feedback_map = parse_feedback_to_runs(entry.get("feedback_lines", []))
+
+    for run_idx, fb_text in feedback_map.items():
+        if run_idx < len(runs):
+            runs[run_idx]["user_feedback"] = fb_text
+        else:
+            runs.append({
+                "started_at": None, "completed_at": None, "result": None,
+                "start_round": run_idx + 1, "end_round": None,
+                "user_feedback": fb_text, "outputs": None,
+            })
+
+    if not runs and entry.get("feedback_lines"):
+        runs.append({
+            "started_at": None, "completed_at": None,
+            "result": "pass" if entry.get("status") == "x" else None,
+            "start_round": 1, "end_round": None,
+            "user_feedback": "\n".join(entry["feedback_lines"]),
+            "outputs": None,
+        })
+
+    created_at = f"{date_str}T00:00:00Z" if date_str and date_str != "unknown" else None
+
+    state = {
+        "task_id": task_id,
+        "desc": entry["description"],
+        "assignee": entry["assignee"],
+        "created_at": created_at,
+        "status": entry.get("status", " "),
+        "phase": None,
+        "runs": runs,
+    }
+
+    save_state(project_root, task_id, state)
+    return True, f"{len(runs)} runs"
+
+
+def rebuild_tasks_md(project_root, date_groups):
+    """从 date_groups + state.json 重建 tasks.md。
+
+    date_groups: OrderedDict of {date_str: [entry_dict, ...]}
+    entry_dict 至少需要 task_id, description, assignee, status.
+    """
+    tasks_path = os.path.join(project_root, "tasks.md")
+
+    lines = [
+        "# Tasks",
+        "",
+        "> 约定: 状态和详情见 Web 面板。本文由 state.json 自动生成，勿手动编辑。",
+        "",
+    ]
+
+    for date_str, entries in date_groups.items():
+        lines.append(f"## {date_str}")
+        lines.append("")
+        for entry in entries:
+            tl = TaskLine(
+                status=entry.get("status", " "),
+                description=entry["description"],
+                assignee=entry.get("assignee", ""),
+                task_id=entry["task_id"],
+            )
+            lines.append(tl.format())
+            # 从 state.json 取反馈行
+            state = load_state(project_root, entry["task_id"])
+            if state:
+                for run in state.get("runs", []):
+                    fb = run.get("user_feedback", "")
+                    if fb:
+                        for line in fb.split("\n"):
+                            lines.append(f"  {line.strip()}")
+        lines.append("")
+
+    with open(tasks_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines))
+
+    return tasks_path
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # state.json 读写
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -191,13 +354,13 @@ def sync_tasks_md(project_root, task_id):
         task_id=task_id,
     )
 
-    # 反馈行：取最近一次 run 的 user_feedback
+    # 反馈行：取所有 run 的 user_feedback
     runs = state.get("runs", [])
-    active_run = next((r for r in runs if r.get("completed_at") is None), None)
-    source = active_run or (runs[-1] if runs else None)
-    if source and source.get("user_feedback"):
-        for line in source["user_feedback"].split("\n"):
-            tl.feedback.append(line.strip())
+    for run in runs:
+        fb = run.get("user_feedback", "")
+        if fb:
+            for line in fb.split("\n"):
+                tl.feedback.append(line.strip())
 
     # 替换或追加
     replace_task(entries, task_id, tl)
