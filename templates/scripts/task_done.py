@@ -210,7 +210,7 @@ def main():
     if do_commit:
         commit_title = task_desc or task_id
         total_rounds = int(imp_n)  # IMP 和 VFY 共享同一轮次计数
-        loop_dir = os.path.join(output_dir, ".loop-engineering")
+        loop_dir = os.path.join(output_dir, ".loop-engineering", "tasks", task_id)
         imp_rounds = _collect_round_files(loop_dir, "imp-output-r*.md")
         vfy_rounds = _collect_round_files(loop_dir, "vfy-output-r*.md")
 
