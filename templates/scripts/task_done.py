@@ -305,10 +305,12 @@ def main():
 
 
 def _update_tasks_md(task_id, whoami, project_root):
-    """更新 tasks.md: [ ]/[~]/[r] → [x]."""
+    """更新 tasks.md: [ ]/[~]/[r] → [x]，记录完成时间."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    meta_text = now
     modified, _, _ = update_task(
         os.path.join(project_root, "tasks.md"), task_id,
-        status="x", assignee=whoami,
+        status="x", append_meta=meta_text, assignee=whoami,
         if_status_in=(" ", "~", "r"),
     )
     status = "[x]" if modified else "未匹配"
