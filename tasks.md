@@ -30,7 +30,7 @@
 
 ## 2026-07-13
 
-- [r] streamline-test-verify-docs (→ with) [770ea8b5] — 12:24 IMP1 VFY1 PASS · IMP1 VFY2 FAIL · 14:44 IMP1 VFY1 PASS · IMP2 VFY1 FAIL
+- [r] streamline-test-verify-docs (→ with) [770ea8b5] — 12:24 IMP1 VFY1 PASS · IMP1 VFY2 FAIL · 14:44 IMP1 VFY1 PASS · IMP2 VFY1 FAIL · 10:40 IMP3 VFY3 PASS · IMP4 VFY4 FAIL
   ## IMP1 反馈
   1. commit message 描述删除了 6 个文件（VERIFY.md.j2 ×3、loop-test-init 模板/部署副本、项目根 VERIFY.md），但实际分支只包含 10 个文件修改，无任何删除。分支改动不完整。
   2. 部署页(/setup)的 TEST.md 是单独一个预览区域，与设置页(/settings)「verifier skills 和 TEST.md」合并为一个编辑入口的风格不一致。建议统一。
@@ -39,3 +39,7 @@
   1. IMP1: commit 8a285be 声称删除 6 个文件，实际只有 10 个 M
   2. IMP2: commit 0ce2dc4 声称删除 6 个文件+2 HTML，实际只有 2 个 M
   根因：删除文件需用 git rm 而非 rm，或 commit 时确保 git add -A。
+  ## IMP3 反馈
+  1. setup 预览为空：切换项目类型后预览区域不刷新，始终显示空白，但文档 tab 按钮正常刷新 — 检查 setup.html 中项目类型切换事件是否正确触发预览更新
+  2. 模板渲染缺失章节：python-server TEST.md.j2 渲染后缺少「Web 页面/模板」章节 — 精简模板时可能误删了关键 section
+  3. 初始化页面不应该可以编辑验证 skill 内容：loop-verify-init 区域当前是可编辑的输入框，应该是只读预览 — 与 setup 预览问题可能同源
