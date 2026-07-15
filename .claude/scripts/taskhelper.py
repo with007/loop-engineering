@@ -366,13 +366,16 @@ def cmd_run_start(project_root, task_id):
         print(f"ERROR: task {task_id} not found", file=sys.stderr)
         sys.exit(1)
 
-    # 计算 start_round
-    runs = state.get("runs", [])
-    if runs:
-        last_end = runs[-1].get("end_round", 0) or 0
-        start_round = last_end + 1
-    else:
-        start_round = 1
+    # 计算 start_round：扫描现有输出文件取最大轮次 +1
+    task_dir = os.path.join(_tasks_dir(project_root), task_id)
+    existing = glob.glob(os.path.join(task_dir, "imp-output-r*.md")) + \
+               glob.glob(os.path.join(task_dir, "vfy-output-r*.md"))
+    nums = []
+    for f in existing:
+        m = re.search(r'-r(\d+)\.md$', os.path.basename(f))
+        if m:
+            nums.append(int(m.group(1)))
+    start_round = max(nums) + 1 if nums else 1
 
     # 取最新 user_feedback
     user_feedback = ""
@@ -412,15 +415,29 @@ def cmd_run_done(project_root, task_id, result, do_commit):
     run["completed_at"] = _now_iso()
     run["result"] = result
 
-    # 扫描输出文件
+    # 扫描输出文件（只收集 >= start_round 的本轮文件）
     task_dir = os.path.join(_tasks_dir(project_root), task_id)
-    imp_files = sorted(glob.glob(os.path.join(task_dir, "imp-output-r*.md")))
-    vfy_files = sorted(glob.glob(os.path.join(task_dir, "vfy-output-r*.md")))
+    start_round = run["start_round"]
+    all_imp = sorted(glob.glob(os.path.join(task_dir, "imp-output-r*.md")))
+    all_vfy = sorted(glob.glob(os.path.join(task_dir, "vfy-output-r*.md")))
+
+    def _round_num(path):
+        m = re.search(r'-r(\d+)\.md$', os.path.basename(path))
+        return int(m.group(1)) if m else 0
+
+    imp_files = [f for f in all_imp if _round_num(f) >= start_round]
+    vfy_files = [f for f in all_vfy if _round_num(f) >= start_round]
     run["outputs"] = {
         "imp": [os.path.basename(f) for f in imp_files],
         "vfy": [os.path.basename(f) for f in vfy_files],
     }
-    run["end_round"] = run["start_round"] + max(len(imp_files), len(vfy_files)) - 1
+    if imp_files or vfy_files:
+        run["end_round"] = max(
+            max([_round_num(f) for f in imp_files]) if imp_files else start_round,
+            max([_round_num(f) for f in vfy_files]) if vfy_files else start_round,
+        )
+    else:
+        run["end_round"] = start_round - 1  # 没有输出，标记为无效轮次
 
     if result == "pass":
         state["status"] = "x"
