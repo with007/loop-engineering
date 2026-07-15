@@ -132,20 +132,19 @@ def _init_state_from_md(project_root, task_id):
                 "task_id": task_id,
                 "desc": tl.description,
                 "assignee": tl.assignee,
-                "created_at": _now_iso(),
+                "created_at": None,       # 从 tasks.md 恢复，创建时间未知
                 "phase": None,
                 "runs": [],
             }
-            # 恢复 feedback（如果有缩进行）
             if tl.feedback:
                 state["runs"].append({
                     "started_at": None,
-                    "completed_at": _now_iso(),
+                    "completed_at": None,  # 从 tasks.md 恢复，执行详情未知
                     "result": "pass" if tl.status == "x" else None,
                     "start_round": 1,
-                    "end_round": 1,
+                    "end_round": None,
                     "user_feedback": "\n".join(tl.feedback),
-                    "outputs": None,
+                    "outputs": {},
                 })
             save_state(project_root, task_id, state)
             return state
@@ -210,7 +209,7 @@ def init_state_from_all_md(project_root):
                 "task_id": tl.task_id,
                 "desc": tl.description,
                 "assignee": tl.assignee,
-                "created_at": _now_iso(),
+                "created_at": None,       # 从 tasks.md 恢复，创建时间未知
                 "status": tl.status,
                 "phase": None,
                 "runs": [],

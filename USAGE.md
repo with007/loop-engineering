@@ -128,7 +128,7 @@ Setup 完成后自动跳转到项目 Dashboard。
               │       └────┬─────┘
               │            │
               │            ├── implementer + verifier PASS
-              │            │   task_done.py 标记 [x]
+              │            │   taskhelper run-done 标记 [x]
               │            ▼
               │       ┌──────────┐
               │       │   [x]    │  完成（done）
