@@ -135,7 +135,7 @@ fi
 eval $(python .claude/scripts/project_vars.py) && whoami=$(python -c "import yaml; print(yaml.safe_load(open('.loop-engineering/loop-config.yaml', encoding='utf-8'))['agent']['name'])")
 python -c "
 import yaml, sys
-with open('$TASKS_PATH', encoding='utf-8') as f:
+with open(r'$TASKS_PATH', encoding='utf-8') as f:
     for line in f:
         if line.startswith('- [~]') and f'(→ {whoami})' in line:
             print('BUSY'); sys.exit(0)
@@ -183,7 +183,7 @@ ls $AGENT_DIR/.git 2>/dev/null || {
 eval $(python .claude/scripts/project_vars.py) && whoami=$(python -c "import yaml; print(yaml.safe_load(open('.loop-engineering/loop-config.yaml', encoding='utf-8'))['agent']['name'])")
 python -c "
 import yaml, sys
-with open('$TASKS_PATH', encoding='utf-8') as f:
+with open(r'$TASKS_PATH', encoding='utf-8') as f:
     for line in f:
         if line.startswith('- [~]') and f'(→ {whoami})' in line:
             print('BUSY'); sys.exit(0)
