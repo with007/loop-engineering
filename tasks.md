@@ -42,4 +42,4 @@
   2. 模板渲染缺失章节：python-server TEST.md.j2 渲染后缺少「Web 页面/模板」章节 — 精简模板时可能误删了关键 section
   3. 初始化页面不应该可以编辑验证 skill 内容：loop-verify-init 区域当前是可编辑的输入框，应该是只读预览 — 与 setup 预览问题可能同源
 
-- [ ] task-detail-panel (→ with) [79fb9ca7]
+- [x] task-detail-panel (→ with) [79fb9ca7]
