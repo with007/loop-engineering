@@ -223,8 +223,6 @@ python -c "from loop_engineering.control import write_heartbeat; write_heartbeat
 **检查控制信号**：
 
 ```bash
-# 暂停检查
-python -c "from loop_engineering.control import is_paused; exit(0 if is_paused('.') else 1)" && echo "PAUSED" && exit 0
 # throttle 读取
 throttle=$(python -c "from loop_engineering.control import get_throttle; print(get_throttle('.'))")
 ```
