@@ -127,22 +127,9 @@
             </div>
 
             <!-- Preview pane -->
-            <div style="display: flex; flex-direction: column; gap: 12px;">
-                <div>
-                    <label style="color: var(--muted); font-size: 12px; display: block; margin-bottom: 4px;">编辑 (Markdown)</label>
-                    <textarea x-model="editedContent" @input="onEdit()"
-                              style="width: 100%; height: 250px; padding: 12px; background: var(--bg); color: var(--text);
-                                     border: 1px solid var(--border); border-radius: 7px; font-size: 13px;
-                                     font-family: 'SF Mono', 'Fira Code', monospace; resize: vertical;"
-                              placeholder="选择项目类型后自动加载..."></textarea>
-                </div>
-                <div>
-                    <label style="color: var(--muted); font-size: 12px; display: block; margin-bottom: 4px;">预览</label>
-                    <div class="report-md" x-html="previewHtml"
-                         style="height: 250px; overflow-y: auto; border: 1px solid var(--border); border-radius: 7px;
-                                padding: 16px; background: var(--surface2);"></div>
-                </div>
-            </div>
+            <div class="report-md" x-html="marked.parse(previewSkillContent || '*（空）*')"
+                 style="max-height: 500px; overflow-y: auto; border: 1px solid var(--border); border-radius: 7px;
+                        padding: 16px; background: var(--surface2);"></div>
         </div>
     </div>
 
