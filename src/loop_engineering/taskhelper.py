@@ -197,24 +197,21 @@ def sync_tasks_md(project_root, task_id):
     save_tasks(tasks_path, entries)
 
 
-def init_state_from_all_md(project_root):
+def _ensure_state(project_root, task_id):
+    """确保 state.json 存在。不存在则从 tasks.md 解析创建。"""
+    if not os.path.exists(_state_path(project_root, task_id)):
+        _init_state_from_md(project_root, task_id)
+
+
+def _ensure_all_states(project_root):
     """遍历 tasks.md，为所有缺 state.json 的任务创建最小 state.json。"""
     tasks_path = os.path.join(project_root, "tasks.md")
     if not os.path.exists(tasks_path):
         return
     entries = load_tasks(tasks_path)
     for tl, _ in entries:
-        if tl and tl.task_id and not os.path.exists(_state_path(project_root, tl.task_id)):
-            state = {
-                "task_id": tl.task_id,
-                "desc": tl.description,
-                "assignee": tl.assignee,
-                "created_at": None,       # 从 tasks.md 恢复，创建时间未知
-                "status": tl.status,
-                "phase": None,
-                "runs": [],
-            }
-            save_state(project_root, tl.task_id, state)
+        if tl and tl.task_id:
+            _ensure_state(project_root, tl.task_id)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -240,7 +237,7 @@ def cmd_init(project_root, desc, assignee):
 
 def cmd_pick(project_root, whoami):
     """选下一个待办任务。"""
-    init_state_from_all_md(project_root)
+    _ensure_all_states(project_root)
     tasks_path = os.path.join(project_root, "tasks.md")
     entries = load_tasks(tasks_path)
 
@@ -529,26 +526,23 @@ def _do_commit_push(project_root, task_id, state):
 
     last_run = runs[-1]
     start_round = last_run.get("start_round", 1)
+    outputs = last_run.get("outputs") or {}
     task_dir = os.path.join(_tasks_dir(project_root), task_id)
 
-    # 收集输出文件（只收集 >= start_round 的）
-    imp_files = sorted(glob.glob(os.path.join(task_dir, "imp-output-r*.md")))
-    vfy_files = sorted(glob.glob(os.path.join(task_dir, "vfy-output-r*.md")))
-
     imp_by_round = {}
-    for f in imp_files:
-        m = re.search(r'-r(\d+)\.md$', os.path.basename(f))
+    for basename in outputs.get("imp", []):
+        m = re.search(r'-r(\d+)\.md$', basename)
         if m:
-            imp_by_round[int(m.group(1))] = f
+            imp_by_round[int(m.group(1))] = os.path.join(task_dir, basename)
 
     vfy_by_round = {}
-    for f in vfy_files:
-        m = re.search(r'-r(\d+)\.md$', os.path.basename(f))
+    for basename in outputs.get("vfy", []):
+        m = re.search(r'-r(\d+)\.md$', basename)
         if m:
-            vfy_by_round[int(m.group(1))] = f
+            vfy_by_round[int(m.group(1))] = os.path.join(task_dir, basename)
 
     all_rounds = sorted(set(list(imp_by_round.keys()) + list(vfy_by_round.keys())))
-    my_rounds = [r for r in all_rounds if r >= start_round]
+    my_rounds = all_rounds  # outputs 已经被 cmd_run_done 过滤过
     if not my_rounds:
         return
 
