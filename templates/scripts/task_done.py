@@ -282,7 +282,7 @@ def main():
     print(f"Diff: {diff_path}")
 
     # 更新 tasks.md
-    _update_tasks_md(task_id, whoami, imp_n, vfy_n, project_root)
+    _update_tasks_md(task_id, whoami, project_root)
 
     # 写 run log
     _write_run_log(project_root, task_id, whoami, imp_n, vfy_n, branch)
@@ -304,13 +304,11 @@ def main():
         print(f"DIFF={shlex.quote(diff_path)}")
 
 
-def _update_tasks_md(task_id, whoami, imp_n, vfy_n, project_root):
-    """更新 tasks.md: [ ]/[~]/[r] → [x] 并追加运行记录."""
-    now = datetime.now().strftime("%H:%M")
-    meta_text = f"{now} IMP{imp_n} VFY{vfy_n} PASS"
+def _update_tasks_md(task_id, whoami, project_root):
+    """更新 tasks.md: [ ]/[~]/[r] → [x]."""
     modified, _, _ = update_task(
         os.path.join(project_root, "tasks.md"), task_id,
-        status="x", append_meta=meta_text, assignee=whoami,
+        status="x", assignee=whoami,
         if_status_in=(" ", "~", "r"),
     )
     status = "[x]" if modified else "未匹配"
