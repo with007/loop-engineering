@@ -25,10 +25,10 @@ def main():
             break
         p = parent
 
-    project_root = cfg.get("project_root") or cfg.get("project", {}).get("root") or p
-    agent_workspace = cfg.get("agent", {}).get("workspace", os.getcwd())
+    project_root = (cfg.get("project_root") or cfg.get("project", {}).get("root") or p).replace("\\", "/")
+    agent_workspace = cfg.get("agent", {}).get("workspace", os.getcwd()).replace("\\", "/")
     agent_dir = agent_workspace + "/loop-engineering"
-    agent_ws_last = agent_workspace.replace("\\", "/").rstrip("/").split("/")[-1]
+    agent_ws_last = agent_workspace.rstrip("/").split("/")[-1]
     agent_port = str(cfg.get("agent", {}).get("mcp_port", 9080))
     default_ref = cfg.get("default_ref", "master")
     tasks_path = project_root + "/tasks.md"
