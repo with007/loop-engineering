@@ -237,6 +237,24 @@ python .claude/scripts/task_pick.py $whoami --project-root $PROJECT_ROOT
 - `openSpec=true` → 任务关联 `openspec/changes/$desc/`，implementer 按 OpenSpec apply 流程处理
 - 无匹配则 `NONE` → `ExitWorktree(action="keep")` → 停止。
 
+**确定 ROUND**（新任务从 1 开始，reopen 从已有输出文件的最大轮次 +1 继续）：
+
+```bash
+REOPEN="<task_pick 输出的 reopen= 字段>"
+if [ "$REOPEN" = "true" ]; then
+  ROUND=$(python -c "
+import glob, re
+files = glob.glob('.loop-engineering/imp-output-r*.md') + glob.glob('.loop-engineering/vfy-output-r*.md')
+nums = [int(re.search(r'-r(\d+)\.md', f).group(1)) for f in files if re.search(r'-r(\d+)\.md', f)]
+print(max(nums) + 1 if nums else 1)
+")
+else
+  ROUND=1
+fi
+echo "ROUND=$ROUND"
+```
+
+> ROUND 从不重置。新任务 = 1，每次 VFY FAIL 递增，reopen 继续递增。历史输出文件保留完整脉络，前轮 IMP/VFY 可自行读取。
 
 ### Step 2: Fork 分支 + 标记进行中
 
