@@ -11,20 +11,37 @@
 import json
 import os
 import sys
+import yaml
 
 
 def _find_project_root(start_dir=None):
-    """从 start_dir 向上查找项目根（有 openspec/changes/ 或 loop-config.yaml）。"""
+    """从 start_dir 向上查找项目根。
+
+    优先读取 loop-config.yaml 中的 project.root 字段；
+    若无配置，回退到包含 openspec/changes/ 或配置文件的目录。
+    """
     if start_dir is None:
         start_dir = os.getcwd()
     start_dir = os.path.abspath(start_dir)
     p = start_dir
     for _ in range(10):
+        config_path = None
+        for candidate in [os.path.join(p, ".loop-engineering", "loop-config.yaml"),
+                          os.path.join(p, "loop-config.yaml")]:
+            if os.path.exists(candidate):
+                config_path = candidate
+                break
+        if config_path:
+            try:
+                with open(config_path, encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f)
+                root = cfg.get("project", {}).get("root")
+                if root:
+                    return root
+            except Exception:
+                pass
+            return p
         if os.path.isdir(os.path.join(p, "openspec", "changes")):
-            return p
-        if os.path.exists(os.path.join(p, "loop-config.yaml")):
-            return p
-        if os.path.exists(os.path.join(p, ".loop-engineering", "loop-config.yaml")):
             return p
         parent = os.path.dirname(p)
         if parent == p:
