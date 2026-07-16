@@ -19,9 +19,11 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import time
+import yaml
 from datetime import datetime, timezone
 
 # ── TaskLine: tasks.md 任务行的解析、格式化、状态修改 ──
@@ -465,6 +467,21 @@ def _tasks_dir(project_root):
     return os.path.join(project_root, ".loop-engineering", "tasks")
 
 
+def _agent_task_dir(project_root, task_id):
+    """从 loop-config.yaml 提取 agent.workspace，返回 agent worktree 的任务目录路径。
+    无 agent 配置时返回 None。"""
+    for name in [".loop-engineering/loop-config.yaml", "loop-config.yaml"]:
+        path = os.path.join(project_root, name)
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f)
+        agent_ws = (cfg.get("agent") or {}).get("workspace", "")
+        if agent_ws:
+            return agent_ws.replace("\\", "/") + "/loop-engineering/.loop-engineering/tasks/" + task_id
+    return None
+
+
 def _state_path(project_root, task_id):
     return os.path.join(_tasks_dir(project_root), task_id, "state.json")
 
@@ -896,7 +913,18 @@ def cmd_run_done(project_root, task_id, result, do_commit):
 
     # 扫描输出文件（只收集 >= start_round 的本轮文件）
     task_dir = os.path.join(_tasks_dir(project_root), task_id)
+    os.makedirs(task_dir, exist_ok=True)
     start_round = run["start_round"]
+
+    # 从 agent worktree 同步输出文件到主 worktree（子代理可能在 agent worktree 写入）
+    agent_dir = _agent_task_dir(project_root, task_id)
+    if agent_dir and os.path.isdir(agent_dir):
+        for pattern in ["imp-output-r*.md", "vfy-output-r*.md"]:
+            for src in glob.glob(os.path.join(agent_dir, pattern)):
+                dst = os.path.join(task_dir, os.path.basename(src))
+                if not os.path.exists(dst) or os.path.getmtime(src) > os.path.getmtime(dst):
+                    shutil.copy2(src, dst)
+
     all_imp = sorted(glob.glob(os.path.join(task_dir, "imp-output-r*.md")))
     all_vfy = sorted(glob.glob(os.path.join(task_dir, "vfy-output-r*.md")))
 
