@@ -7,8 +7,8 @@ from loop_engineering.task_id import (
     parse_task_id,
     extract_task_id_from_branch,
     make_branch_name,
-    TaskLine,
 )
+from loop_engineering.taskhelper import TaskLine
 
 
 class TestGenerateTaskId:

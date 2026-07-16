@@ -35,6 +35,9 @@ _TASK_LINE_RE = re.compile(
     r'$'
 )
 
+# 匹配缩进行（2+ 空格后接非空白字符），用于识别任务反馈行
+FEEDBACK_LINE_RE = re.compile(r'^\s{2,}\S')
+
 
 class TaskLine:
     """tasks.md 中单行任务的解析、格式化、状态修改."""
@@ -73,6 +76,27 @@ class TaskLine:
         if self.meta:
             parts.append(f" — {self.meta}")
         return "".join(parts)
+
+    def __repr__(self):
+        fields = [f"status={self.status!r}"]
+        if self.description:
+            fields.append(f"description={self.description!r}")
+        if self.assignee:
+            fields.append(f"assignee={self.assignee!r}")
+        if self.task_id:
+            fields.append(f"task_id={self.task_id!r}")
+        if self.meta:
+            fields.append(f"meta={self.meta!r}")
+        return f"TaskLine({', '.join(fields)})"
+
+    def __eq__(self, other):
+        if not isinstance(other, TaskLine):
+            return NotImplemented
+        return (self.status == other.status and
+                self.description == other.description and
+                self.assignee == other.assignee and
+                self.task_id == other.task_id and
+                self.meta == other.meta)
 
     # ── 状态修改 ──
 

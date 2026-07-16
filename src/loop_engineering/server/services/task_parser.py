@@ -2,7 +2,7 @@
 
 import os
 import re
-from loop_engineering.task_id import FEEDBACK_LINE_RE
+from loop_engineering.taskhelper import FEEDBACK_LINE_RE
 
 
 def filter_tasks(tasks, status="pending,in_progress", order="desc", filter_name=""):

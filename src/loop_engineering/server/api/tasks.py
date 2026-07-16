@@ -5,8 +5,8 @@ import re
 import subprocess
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from loop_engineering.task_id import parse_task_id, extract_task_id_from_branch, generate_task_id, FEEDBACK_LINE_RE
-from loop_engineering.taskhelper import TaskLine
+from loop_engineering.task_id import parse_task_id, extract_task_id_from_branch, generate_task_id
+from loop_engineering.taskhelper import TaskLine, FEEDBACK_LINE_RE
 from loop_engineering.path_utils import resolve_project_root, get_default_branch
 
 router = APIRouter()
