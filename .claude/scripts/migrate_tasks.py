@@ -14,8 +14,7 @@ import sys
 from collections import OrderedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from task_line import find_project_root
-from taskhelper import create_state_from_old_entry, rebuild_tasks_md, parse_meta_to_runs, _state_path
+from taskhelper import find_project_root, create_state_from_old_entry, rebuild_tasks_md, parse_meta_to_runs, _state_path
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
