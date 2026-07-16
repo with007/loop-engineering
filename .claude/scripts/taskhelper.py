@@ -762,9 +762,10 @@ def cmd_pick(project_root, whoami):
                               file=sys.stderr)
                         continue
                 else:
-                    print(f"WARNING: [r] task {task_id} — branch not found (local/reflog), skipping.",
+                    # 分支完全无法恢复 → 回退到新建分支（保留 reopen flag 传递用户反馈）
+                    branch = expected
+                    print(f"NOTE: [r] task {task_id} — branch unrecoverable, starting fresh",
                           file=sys.stderr)
-                    continue
         else:
             branch = _make_branch_name(whoami, task_id, desc)
 

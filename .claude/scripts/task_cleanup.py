@@ -74,6 +74,13 @@ def is_merged(branch, base=None, is_remote=True, repo_path=None):
     else:
         b = branch.replace('origin/', '') if is_remote else branch
 
+        # 0. 本地分支：检查是否有 base 之外的提交
+        r = _run(f"git rev-list --count {b} --not {base}", cwd=repo_path)
+        if r.returncode == 0 and r.stdout.strip() == "0":
+            # 分支 tip 与 base 相同或 base 已包含所有提交 → 无独立工作
+            # 但只有远程分支 merge 后才会出现这种情况，本地未推送分支不应当作 merged
+            return False
+
         # 1. 祖先检测
         r = _run(f"git merge-base --is-ancestor {b} {base}", cwd=repo_path)
         if r.returncode == 0:
