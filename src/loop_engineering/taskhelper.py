@@ -515,6 +515,24 @@ def find_active_phase(project_root):
 # tasks.md 块级同步
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def get_feedback_lines(runs):
+    """从 runs 列表提取反馈行，自动加 ## IMP{N} 反馈 标题头。
+
+    只处理有 user_feedback 的 run，按出现顺序编号。
+    返回扁平字符串列表，可直接赋值给 TaskLine.feedback。
+    """
+    lines = []
+    imp_n = 0
+    for run in runs:
+        fb = run.get("user_feedback", "")
+        if fb:
+            imp_n += 1
+            lines.append(f"## IMP{imp_n} 反馈")
+            for line in fb.split("\n"):
+                lines.append(line.strip())
+    return lines
+
+
 def sync_tasks_md(project_root, task_id):
     """从 state.json 同步 tasks.md 中对应任务的块。"""
     state = load_state(project_root, task_id)
@@ -532,16 +550,8 @@ def sync_tasks_md(project_root, task_id):
         task_id=task_id,
     )
 
-    # 反馈行：取所有 run 的 user_feedback，加 IMP 标题头
-    runs = state.get("runs", [])
-    imp_n = 0
-    for run in runs:
-        fb = run.get("user_feedback", "")
-        if fb:
-            imp_n += 1
-            tl.feedback.append(f"## IMP{imp_n} 反馈")
-            for line in fb.split("\n"):
-                tl.feedback.append(line.strip())
+    # 反馈行
+    tl.feedback = get_feedback_lines(state.get("runs", []))
 
     # 替换或追加
     replace_task(entries, task_id, tl)
@@ -598,13 +608,8 @@ def list_tasks(project_root):
             s = {" ": "pending", "~": "in_progress", "x": "done", "r": "reopen"}
             status = s.get(status_char, "pending")
 
-        # 反馈行（从所有 run 收集）
-        feedback = []
-        for run in state.get("runs", []):
-            fb = run.get("user_feedback", "")
-            if fb:
-                for line in fb.split("\n"):
-                    feedback.append(line.strip())
+        # 反馈行
+        feedback = get_feedback_lines(state.get("runs", []))
 
         result.append({
             "task_id": tid,
