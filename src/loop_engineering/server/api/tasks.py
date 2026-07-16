@@ -5,7 +5,7 @@ import re
 import subprocess
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from loop_engineering.task_id import parse_task_id, extract_task_id_from_branch, TaskLine, generate_task_id, FEEDBACK_LINE_RE, write_feedback_to_task
+from loop_engineering.task_id import parse_task_id, extract_task_id_from_branch, TaskLine, generate_task_id, FEEDBACK_LINE_RE
 from loop_engineering.path_utils import resolve_project_root, get_default_branch
 
 router = APIRouter()
@@ -168,50 +168,28 @@ def reset_task(task_id: str, project: str = Query(None)):
 @router.put("/{task_id}/reopen")
 def reopen_task(task_id: str, req: ReopenRequest, project: str = Query(None)):
     """将已完成任务 ([x]) 重新打开为返工状态 ([r])，可选追加反馈（含 IMP 标题头）."""
+    from loop_engineering.taskhelper import cmd_status, cmd_feedback, load_state
+
     pr = resolve_project_root(project=project)
-    tasks_path = os.path.join(pr, "tasks.md")
-    if not os.path.exists(tasks_path):
-        raise HTTPException(404, "tasks.md not found")
 
-    lines = []
-    with open(tasks_path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
+    # 校验：任务存在且当前状态为 x
+    state = load_state(pr, task_id)
+    if not state:
+        raise HTTPException(404, f"Task '{task_id}' not found")
+    if state.get("status") != "x":
+        raise HTTPException(400, "Only completed tasks can be reopened")
 
-    found = False
-    for i, line in enumerate(lines):
-        m = re.match(r'^- \[(.)\]\s+(.+)', line)
-        if not m:
-            continue
-        if parse_task_id(line) != task_id:
-            continue
+    # 状态 → state.json + sync tasks.md
+    cmd_status(pr, task_id, "r")
 
-        # 找到目标任务
-        if m.group(1) != "x":
-            raise HTTPException(400, "Only completed tasks can be reopened")
-        lines[i] = line.replace("- [x] ", "- [r] ", 1)
-        found = True
-        break
-
-    if not found:
-        raise HTTPException(404, f"Completed task '{task_id}' not found")
-
-    # 先写入状态变更
-    with open(tasks_path, "w", encoding="utf-8") as f:
-        f.writelines(lines)
-
-    # 有反馈时通过 write_feedback_to_task 写入（自动统计 IMP 编号并追加标题头）
+    # 反馈 → state.json + sync tasks.md（含 IMP 标题头）
     imp_num = None
     if req.feedback.strip():
-        try:
-            imp_num = write_feedback_to_task(tasks_path, task_id, req.feedback)
-        except (FileNotFoundError, ValueError) as e:
-            # 反馈写入失败不阻断 reopen 本身
-            pass
+        imp_num = len(state.get("runs", [])) + 1
+        formatted = f"## IMP{imp_num} 反馈\n" + req.feedback.strip()
+        cmd_feedback(pr, task_id, formatted)
 
-    msg = f"Task '{task_id}' reopened as [r]"
-    if imp_num:
-        msg += f", IMP{imp_num} feedback written"
-    return {"reopened": True, "task_id": task_id, "imp_num": imp_num, "message": msg}
+    return {"reopened": True, "task_id": task_id, "imp_num": imp_num}
 
 
 @router.get("/{task_id}/report")
