@@ -19,21 +19,8 @@ def find_project_root(start_dir=None):
     Returns:
         项目根目录的绝对路径
     """
-    if start_dir is None:
-        start_dir = os.getcwd()
-    start_dir = os.path.abspath(start_dir)
-
-    from loop_engineering.config import is_project_dir
-
-    p = start_dir
-    for _ in range(10):
-        if is_project_dir(p):
-            return p
-        parent = os.path.dirname(p)
-        if parent == p:
-            break
-        p = parent
-    return start_dir  # fallback
+    from loop_engineering.taskhelper import find_project_root as _fpr
+    return _fpr(start_dir)
 
 
 def resolve_project_root(project=None, request=None):

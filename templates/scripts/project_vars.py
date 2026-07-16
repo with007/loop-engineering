@@ -5,25 +5,19 @@ Usage: eval $(python .claude/scripts/project_vars.py)
 Sets: PROJECT_ROOT, AGENT_DIR, AGENT_PORT, AGENT_WS_LAST, DEFAULT_REF, TASKS_PATH, HAS_DATA_REPO, DATA_REPO_NAME
 """
 import os, sys, yaml
+from taskhelper import find_project_root
 
 
 def main():
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-    p = os.path.abspath(os.getcwd())
+    p = find_project_root()
     cfg = {}
-    for _ in range(10):
-        for name in [".loop-engineering/loop-config.yaml", "loop-config.yaml"]:
-            path = os.path.join(p, name)
-            if os.path.exists(path):
-                with open(path, encoding="utf-8") as f:
-                    cfg = yaml.safe_load(f)
-                break
-        if cfg:
+    for name in [".loop-engineering/loop-config.yaml", "loop-config.yaml"]:
+        path = os.path.join(p, name)
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                cfg = yaml.safe_load(f)
             break
-        parent = os.path.dirname(p)
-        if parent == p:
-            break
-        p = parent
 
     project_root = (cfg.get("project_root") or cfg.get("project", {}).get("root") or p).replace("\\", "/")
     agent_workspace = cfg.get("agent", {}).get("workspace", os.getcwd()).replace("\\", "/")
