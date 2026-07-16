@@ -532,11 +532,14 @@ def sync_tasks_md(project_root, task_id):
         task_id=task_id,
     )
 
-    # 反馈行：取所有 run 的 user_feedback
+    # 反馈行：取所有 run 的 user_feedback，加 IMP 标题头
     runs = state.get("runs", [])
+    imp_n = 0
     for run in runs:
         fb = run.get("user_feedback", "")
         if fb:
+            imp_n += 1
+            tl.feedback.append(f"## IMP{imp_n} 反馈")
             for line in fb.split("\n"):
                 tl.feedback.append(line.strip())
 

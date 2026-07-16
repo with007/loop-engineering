@@ -182,14 +182,11 @@ def reopen_task(task_id: str, req: ReopenRequest, project: str = Query(None)):
     # 状态 → state.json + sync tasks.md
     cmd_status(pr, task_id, "r")
 
-    # 反馈 → state.json + sync tasks.md（含 IMP 标题头）
-    imp_num = None
+    # 反馈 → state.json + sync tasks.md
     if req.feedback.strip():
-        imp_num = len(state.get("runs", [])) + 1
-        formatted = f"## IMP{imp_num} 反馈\n" + req.feedback.strip()
-        cmd_feedback(pr, task_id, formatted)
+        cmd_feedback(pr, task_id, req.feedback.strip())
 
-    return {"reopened": True, "task_id": task_id, "imp_num": imp_num}
+    return {"reopened": True, "task_id": task_id}
 
 
 @router.get("/{task_id}/report")
